@@ -30,7 +30,11 @@ impl<'a> BitReader<'a> {
     fn readbits_16(&mut self, bits: u32) -> u32 {
         let b = self.buf;
         let p = self.pos;
-        let result = ((b[p] as u32) << 16) | ((b[p + 1] as u32) << 8) | (b[p + 2] as u32);
+        // Guard against reading past end of buffer (matches C behavior of reading garbage)
+        let b0 = if p < b.len() { b[p] as u32 } else { 0 };
+        let b1 = if p + 1 < b.len() { b[p + 1] as u32 } else { 0 };
+        let b2 = if p + 2 < b.len() { b[p + 2] as u32 } else { 0 };
+        let result = (b0 << 16) | (b1 << 8) | b2;
         let result = (result << self.bit) & 0x00ffffff;
         let result = result >> (24 - bits);
         let new_acc = self.bit + bits;
@@ -49,8 +53,8 @@ impl<'a> BitReader<'a> {
     }
 
     fn readbit(&mut self) -> u32 {
-        let result = (self.buf[self.pos] as u32) << self.bit;
-        let result = (result >> 7) & 1;
+        let result = if self.pos < self.buf.len() { self.buf[self.pos] as u32 } else { 0 };
+        let result = (result << self.bit) >> 7 & 1;
         let new_acc = self.bit + 1;
         self.pos += (new_acc / 8) as usize;
         self.bit = new_acc % 8;
