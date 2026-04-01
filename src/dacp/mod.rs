@@ -31,6 +31,7 @@ use crate::error::NetworkError;
 /// # }
 /// ```
 pub struct DacpClient {
+    #[allow(dead_code)]
     dacp_id: String,
     active_remote: String,
     addr: Option<SocketAddr>,
