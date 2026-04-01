@@ -195,10 +195,12 @@ pub(crate) fn handle_setup(
     if let Some(rtp) = &mut conn.raop_rtp {
         // We need to start RTP in a blocking context — store params for later
         // For now, use tokio::runtime::Handle to block
-        let handle = tokio::runtime::Handle::try_current().ok()?;
-        let (cport, tport, dport) = handle.block_on(
-            rtp.start(use_udp, remote_cport, remote_tport)
-        ).ok()?;
+        
+        let (cport, tport, dport) = tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(
+                rtp.start(use_udp, remote_cport, remote_tport)
+            )
+        }).ok()?;
 
         let transport_resp = if use_udp {
             format!(

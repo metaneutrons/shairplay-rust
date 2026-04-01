@@ -70,10 +70,7 @@ pub(crate) fn dispatch(conn: &mut RaopConnection, request: &HttpRequest) -> Http
         response.add_header("Connection", "close");
         response.set_disconnect(true);
         if let Some(mut rtp) = conn.raop_rtp.take() {
-            let handle = tokio::runtime::Handle::try_current().ok();
-            if let Some(h) = handle {
-                h.block_on(rtp.stop());
-            }
+            tokio::task::block_in_place(|| tokio::runtime::Handle::current().block_on(rtp.stop()));
         }
         None
     } else {
