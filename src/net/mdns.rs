@@ -72,9 +72,30 @@ impl AirPlayServiceInfo {
     }
 }
 
-/// Build a DNS-SD TXT record from a HashMap.
+/// Build a DNS-SD TXT record from a HashMap, with txtvers first.
 fn build_txt(txt: &HashMap<String, String>) -> HashMap<String, String> {
+    // astro-dnssd uses HashMap internally, but we ensure txtvers is present
     txt.clone()
+}
+
+/// Build an ordered TXT record as key=value pairs for astro-dnssd.
+/// Uses a Vec of tuples to preserve insertion order via with_key_value().
+fn register_service(regtype: &str, name: &str, port: u16, txt: &HashMap<String, String>) -> Result<astro_dnssd::RegisteredDnsService, NetworkError> {
+    let mut builder = astro_dnssd::DNSServiceBuilder::new(regtype, port)
+        .with_name(name);
+
+    // Add txtvers first (Apple devices expect it first)
+    if let Some(v) = txt.get("txtvers") {
+        builder = builder.with_key_value("txtvers".to_string(), v.to_string());
+    }
+    // Add remaining keys in deterministic order
+    let mut keys: Vec<&String> = txt.keys().filter(|k| k.as_str() != "txtvers").collect();
+    keys.sort();
+    for k in keys {
+        builder = builder.with_key_value(k.to_string(), txt[k].to_string());
+    }
+
+    builder.register().map_err(|e| NetworkError::Mdns(format!("{e:?}")))
 }
 
 /// mDNS service registrar using the system's native DNS-SD (Bonjour/Avahi).
@@ -89,22 +110,12 @@ impl MdnsService {
     }
 
     pub fn register_raop(&mut self, info: &AirPlayServiceInfo) -> Result<(), NetworkError> {
-        let reg = astro_dnssd::DNSServiceBuilder::new("_raop._tcp", info.port)
-            .with_name(&info.raop_name)
-            .with_txt_record(build_txt(&info.raop_txt))
-            .register()
-            .map_err(|e| NetworkError::Mdns(format!("{e:?}")))?;
-        self._raop_reg = Some(reg);
+        self._raop_reg = Some(register_service("_raop._tcp", &info.raop_name, info.port, &info.raop_txt)?);
         Ok(())
     }
 
     pub fn register_airplay(&mut self, info: &AirPlayServiceInfo) -> Result<(), NetworkError> {
-        let reg = astro_dnssd::DNSServiceBuilder::new("_airplay._tcp", info.port)
-            .with_name(&info.airplay_name)
-            .with_txt_record(build_txt(&info.airplay_txt))
-            .register()
-            .map_err(|e| NetworkError::Mdns(format!("{e:?}")))?;
-        self._airplay_reg = Some(reg);
+        self._airplay_reg = Some(register_service("_airplay._tcp", &info.airplay_name, info.port, &info.airplay_txt)?);
         Ok(())
     }
 
