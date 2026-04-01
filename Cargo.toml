@@ -1,0 +1,57 @@
+[workspace]
+members = [".", "crates/fairplay-garble"]
+
+[package]
+name = "shairplay"
+version = "0.1.0"
+edition = "2021"
+license = "LGPL-3.0-or-later"
+description = "Pure Rust AirPlay server library"
+repository = "https://github.com/juhovh/shairplay"
+rust-version = "1.75"
+
+[dependencies]
+# Async runtime
+tokio = { version = "1", features = ["net", "rt-multi-thread", "sync", "macros", "signal", "io-util", "time"] }
+bytes = "1"
+
+# HTTP/RTSP parsing
+httparse = "1"
+
+# mDNS
+mdns-sd = "0.12"
+
+# Crypto
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+x25519-dalek = { version = "2", features = ["static_secrets"] }
+rsa = "0.9"
+aes = "0.8"
+cbc = "0.1"
+ctr = "0.9"
+sha1 = "0.10"
+sha2 = "0.10"
+md-5 = "0.10"
+hmac = "0.12"
+rand = "0.8"
+
+# Internal
+fairplay-garble = { path = "crates/fairplay-garble" }
+
+# Encoding / parsing
+base64 = "0.22"
+plist = "1"
+
+# Error handling
+thiserror = "2"
+
+# Logging
+tracing = "0.1"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["test-util"] }
+tracing-subscriber = "0.3"
+cpal = "0.15"
+
+# Disable overflow checks only for the FairPlay garble crate (C-style wrapping arithmetic)
+[profile.dev.package.fairplay-garble]
+overflow-checks = false

@@ -1,0 +1,37 @@
+[package]
+name = "shairplay-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.shairplay]
+path = ".."
+
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "fuzz_http"
+path = "fuzz_targets/fuzz_http.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_sdp"
+path = "fuzz_targets/fuzz_sdp.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_plist"
+path = "fuzz_targets/fuzz_plist.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_rtp"
+path = "fuzz_targets/fuzz_rtp.rs"
+doc = false
