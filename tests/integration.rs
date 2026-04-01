@@ -27,16 +27,14 @@ impl AudioSession for TestSession {
     }
 }
 
-fn pem_key() -> String {
-    std::fs::read_to_string("airport.key").expect("airport.key must exist in repo root")
-}
+
 
 async fn start_server() -> (RaopServer, u16, Arc<Mutex<Vec<AudioFormat>>>) {
     let inits = Arc::new(Mutex::new(Vec::new()));
     let handler = Arc::new(TestHandler { inits: inits.clone() });
     let mut server = RaopServer::builder()
         .name("IntegrationTest")
-        .pem_key(pem_key())
+        
         .hwaddr([0x00, 0x11, 0x22, 0x33, 0x44, 0x55])
         .port(0) // auto-assign
         .build(handler)
@@ -137,7 +135,7 @@ async fn unauthorized_without_password_header() {
     let handler = Arc::new(TestHandler { inits: Arc::new(Mutex::new(Vec::new())) });
     let mut server = RaopServer::builder()
         .name("AuthTest")
-        .pem_key(pem_key())
+        
         .hwaddr([0xAA; 6])
         .port(0)
         .password("secret123")

@@ -1,7 +1,8 @@
 //! AirPlay receiver that plays audio through the system's default output device.
 //!
 //! Usage:
-//!   cargo run --example player -- --name "My Speaker" --key airport.key
+//!   cargo run --example player
+//!   cargo run --example player -- --name "My Speaker"
 //!
 //! Then select "My Speaker" as AirPlay output on your iPhone/Mac.
 
@@ -85,21 +86,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let name = args.iter().position(|a| a == "--name")
         .map(|i| args[i + 1].as_str())
         .unwrap_or("Shairplay Rust");
-    let key_path = args.iter().position(|a| a == "--key")
-        .map(|i| args[i + 1].as_str())
-        .unwrap_or("airport.key");
-
-    let pem_key = std::fs::read_to_string(key_path)
-        .unwrap_or_else(|_| panic!("Cannot read key file: {key_path}"));
 
     // Set up cpal audio output
     let host = cpal::default_host();
     let device = host.default_output_device().expect("no output device");
     eprintln!("🔈 Output device: {}", device.name().unwrap_or_default());
 
+    let supported = device.default_output_config().expect("no supported output config");
+    eprintln!("🎛️  Device config: {} ch, {} Hz, {:?}",
+        supported.channels(), supported.sample_rate().0, supported.sample_format());
+
     let config = cpal::StreamConfig {
-        channels: 2,
-        sample_rate: cpal::SampleRate(44100),
+        channels: supported.channels(),
+        sample_rate: supported.sample_rate(),
         buffer_size: cpal::BufferSize::Default,
     };
 
@@ -108,10 +107,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let stream = device.build_output_stream(
         &config,
-        move |data: &mut [i16], _: &cpal::OutputCallbackInfo| {
+        move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
             let mut ring = ring_for_cpal.lock().unwrap();
             for sample in data.iter_mut() {
-                *sample = ring.pop_sample();
+                *sample = ring.pop_sample() as f32 / 32768.0;
             }
         },
         |err| eprintln!("⚠️  Audio error: {err}"),
@@ -119,13 +118,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
     stream.play()?;
 
-    // Start AirPlay server
+    // Start AirPlay server — key is baked into the library
     let handler = Arc::new(Handler { ring });
     let mut server = RaopServer::builder()
         .name(name)
-        .pem_key(pem_key)
         .hwaddr([0x48, 0x5d, 0x60, 0x7c, 0xee, 0x22])
-        .port(5000)
+        .port(0)
         .build(handler)?;
 
     server.start().await?;

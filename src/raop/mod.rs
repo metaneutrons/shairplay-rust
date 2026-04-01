@@ -97,7 +97,11 @@ impl ConnectionHandler for RaopConnectionHandler {
 
 // On drop, RTP session is cleaned up automatically (RaopRtp dropped → shutdown sent)
 
-/// Builder for configuring and constructing a [`RaopServer`].
+/// The well-known RSA private key from the Apple AirPort Express firmware.
+/// Used by all open-source AirPlay receiver implementations.
+/// Apple devices use the corresponding public key to encrypt session keys.
+const AIRPORT_KEY: &str = include_str!("../../airport.key");
+
 /// The main AirPlay/RAOP server.
 ///
 /// Listens for RTSP connections, handles pairing and encryption,
@@ -138,9 +142,7 @@ impl RaopServerBuilder {
     pub fn name(mut self, name: impl Into<String>) -> Self { self.name = name.into(); self }
 
     pub fn build(self, handler: Arc<dyn AudioHandler>) -> Result<RaopServer, ShairplayError> {
-        let pem = self.pem_key.ok_or({
-            crate::error::RaopError::NotStarted
-        })?;
+        let pem = self.pem_key.unwrap_or_else(|| AIRPORT_KEY.to_string());
         let rsakey = Arc::new(RsaKey::from_pem(&pem)?);
         let pairing = Arc::new(Pairing::generate()?);
         let hwaddr = self.hwaddr.unwrap_or_else(|| vec![0x48, 0x5d, 0x60, 0x7c, 0xee, 0x22]);
