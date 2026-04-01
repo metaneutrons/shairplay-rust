@@ -102,6 +102,12 @@ impl ConnectionHandler for RaopConnectionHandler {
 /// Apple devices use the corresponding public key to encrypt session keys.
 const AIRPORT_KEY: &str = include_str!("../../airport.key");
 
+fn airport_rsakey() -> Arc<RsaKey> {
+    use std::sync::OnceLock;
+    static KEY: OnceLock<Arc<RsaKey>> = OnceLock::new();
+    KEY.get_or_init(|| Arc::new(RsaKey::from_pem(AIRPORT_KEY).expect("built-in airport.key is invalid"))).clone()
+}
+
 /// The main AirPlay/RAOP server.
 ///
 /// Listens for RTSP connections, handles pairing and encryption,
@@ -109,7 +115,6 @@ const AIRPORT_KEY: &str = include_str!("../../airport.key");
 /// Automatically registers mDNS services for network discovery.
 pub struct RaopServerBuilder {
     max_clients: usize,
-    pem_key: Option<String>,
     hwaddr: Option<Vec<u8>>,
     password: Option<String>,
     port: u16,
@@ -126,7 +131,6 @@ impl RaopServerBuilder {
     pub fn new() -> Self {
         Self {
             max_clients: 10,
-            pem_key: None,
             hwaddr: None,
             password: None,
             port: 5000,
@@ -135,15 +139,13 @@ impl RaopServerBuilder {
     }
 
     pub fn max_clients(mut self, n: usize) -> Self { self.max_clients = n; self }
-    pub fn pem_key(mut self, pem: impl Into<String>) -> Self { self.pem_key = Some(pem.into()); self }
     pub fn hwaddr(mut self, addr: impl Into<Vec<u8>>) -> Self { self.hwaddr = Some(addr.into()); self }
     pub fn password(mut self, pw: impl Into<String>) -> Self { self.password = Some(pw.into()); self }
     pub fn port(mut self, port: u16) -> Self { self.port = port; self }
     pub fn name(mut self, name: impl Into<String>) -> Self { self.name = name.into(); self }
 
     pub fn build(self, handler: Arc<dyn AudioHandler>) -> Result<RaopServer, ShairplayError> {
-        let pem = self.pem_key.unwrap_or_else(|| AIRPORT_KEY.to_string());
-        let rsakey = Arc::new(RsaKey::from_pem(&pem)?);
+        let rsakey = airport_rsakey();
         let pairing = Arc::new(Pairing::generate()?);
         let hwaddr = self.hwaddr.unwrap_or_else(|| vec![0x48, 0x5d, 0x60, 0x7c, 0xee, 0x22]);
 

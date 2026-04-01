@@ -27,11 +27,9 @@ impl AudioSession for MySession {
 }
 
 # async fn run() -> Result<(), shairplay::ShairplayError> {
-let pem_key = std::fs::read_to_string(\"airport.key\").unwrap();
 let handler = Arc::new(MyHandler);
 let mut server = RaopServer::builder()
     .name(\"My Speaker\")
-    .pem_key(pem_key)
     .hwaddr([0x48, 0x5d, 0x60, 0x7c, 0xee, 0x22])
     .port(5000)
     .build(handler)?;
