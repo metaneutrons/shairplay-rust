@@ -63,7 +63,7 @@ async fn server_start_stop() {
     let info = server.service_info();
     assert_eq!(info.port, port);
     assert_eq!(info.airplay_name, "IntegrationTest");
-    assert_eq!(info.raop_txt.get("ch").map(|s| s.as_str()), Some("2"));
+    assert_eq!(info.raop_txt.iter().find(|(k,_)| k == "ch").map(|(_,v)| v.as_str()), Some("2"));
 
     server.stop().await;
     assert!(!server.is_running());

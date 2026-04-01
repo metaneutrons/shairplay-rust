@@ -19,7 +19,7 @@ bytes = "1"
 httparse = "1"
 
 # mDNS
-astro-dnssd = "0.3"
+astro-dnssd = { path = "vendor/astro-dnssd" }
 
 # Crypto
 ed25519-dalek = { version = "2", features = ["rand_core"] }

@@ -351,16 +351,16 @@ fn rtp_buffer_reject_short_packet() {
 fn service_info_txt_records() {
     let info = AirPlayServiceInfo::new("TestSpeaker", 5000, &[0x48, 0x5d, 0x60, 0x7c, 0xee, 0x22], false);
     assert_eq!(info.raop_name, "485D607CEE22@TestSpeaker");
-    assert_eq!(info.raop_txt.get("ch").map(|s| s.as_str()), Some("2"));
-    assert_eq!(info.raop_txt.get("sr").map(|s| s.as_str()), Some("44100"));
-    assert_eq!(info.raop_txt.get("pw").map(|s| s.as_str()), Some("false"));
-    assert_eq!(info.airplay_txt.get("model").map(|s| s.as_str()), Some("AppleTV2,1"));
+    assert_eq!(info.raop_txt.iter().find(|(k,_)| k == "ch").map(|(_,v)| v.as_str()), Some("2"));
+    assert_eq!(info.raop_txt.iter().find(|(k,_)| k == "sr").map(|(_,v)| v.as_str()), Some("44100"));
+    assert_eq!(info.raop_txt.iter().find(|(k,_)| k == "pw").map(|(_,v)| v.as_str()), Some("false"));
+    assert_eq!(info.airplay_txt.iter().find(|(k,_)| k == "model").map(|(_,v)| v.as_str()), Some("AppleTV2,1"));
 }
 
 #[test]
 fn service_info_with_password() {
     let info = AirPlayServiceInfo::new("Test", 5000, &[0; 6], true);
-    assert_eq!(info.raop_txt.get("pw").map(|s| s.as_str()), Some("true"));
+    assert_eq!(info.raop_txt.iter().find(|(k,_)| k == "pw").map(|(_,v)| v.as_str()), Some("true"));
 }
 
 // ============================================================

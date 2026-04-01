@@ -122,7 +122,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let handler = Arc::new(Handler { ring });
     let mut server = RaopServer::builder()
         .name(name)
-        .hwaddr([0x48, 0x5d, 0x60, 0x7c, 0xee, 0x22])
+        .hwaddr([0xf6, 0xc1, 0xcc, 0xce, 0xb4, 0x8c])
         .build(handler)?;
 
     server.start().await?;
