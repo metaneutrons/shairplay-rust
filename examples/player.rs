@@ -123,7 +123,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut server = RaopServer::builder()
         .name(name)
         .hwaddr([0x48, 0x5d, 0x60, 0x7c, 0xee, 0x22])
-        .port(0)
         .build(handler)?;
 
     server.start().await?;

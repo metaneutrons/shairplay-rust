@@ -1,8 +1,10 @@
 //! Integration tests: start a real RaopServer, connect via TCP, exercise the RTSP protocol.
+//! Tests are serialized to avoid mDNS registration conflicts.
 
 use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
+use serial_test::serial;
 
 use shairplay::{AudioFormat, AudioHandler, AudioSession, RaopServer};
 
@@ -52,6 +54,7 @@ async fn send_rtsp(stream: &mut TcpStream, request: &str) -> String {
 }
 
 #[tokio::test]
+#[serial]
 async fn server_start_stop() {
     let (mut server, port, _) = start_server().await;
     assert!(server.is_running());
@@ -67,6 +70,7 @@ async fn server_start_stop() {
 }
 
 #[tokio::test]
+#[serial]
 async fn tcp_connect_and_options() {
     let (mut server, port, _) = start_server().await;
 
@@ -83,6 +87,7 @@ async fn tcp_connect_and_options() {
 }
 
 #[tokio::test]
+#[serial]
 async fn pair_setup_returns_public_key() {
     let (mut server, port, _) = start_server().await;
 
@@ -107,6 +112,7 @@ async fn pair_setup_returns_public_key() {
 }
 
 #[tokio::test]
+#[serial]
 async fn fp_setup_returns_142_bytes() {
     let (mut server, port, _) = start_server().await;
 
@@ -131,6 +137,7 @@ async fn fp_setup_returns_142_bytes() {
 }
 
 #[tokio::test]
+#[serial]
 async fn unauthorized_without_password_header() {
     let handler = Arc::new(TestHandler { inits: Arc::new(Mutex::new(Vec::new())) });
     let mut server = RaopServer::builder()
@@ -155,6 +162,7 @@ async fn unauthorized_without_password_header() {
 }
 
 #[tokio::test]
+#[serial]
 async fn multiple_connections() {
     let (mut server, port, _) = start_server().await;
 
@@ -174,6 +182,7 @@ async fn multiple_connections() {
 }
 
 #[tokio::test]
+#[serial]
 async fn teardown_closes_connection() {
     let (mut server, port, _) = start_server().await;
 

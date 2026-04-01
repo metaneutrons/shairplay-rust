@@ -19,7 +19,7 @@ bytes = "1"
 httparse = "1"
 
 # mDNS
-mdns-sd = "0.12"
+astro-dnssd = "0.3"
 
 # Crypto
 ed25519-dalek = { version = "2", features = ["rand_core"] }
@@ -50,6 +50,7 @@ tracing = "0.1"
 [dev-dependencies]
 tokio = { version = "1", features = ["test-util"] }
 tracing-subscriber = "0.3"
+serial_test = "3"
 cpal = "0.15"
 
 # Disable overflow checks only for the FairPlay garble crate (C-style wrapping arithmetic)

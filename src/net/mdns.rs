@@ -21,13 +21,11 @@ pub const GLOBAL_FEATURES: u32 = 0x7;
 pub const GLOBAL_MODEL: &str = "AppleTV2,1";
 pub const GLOBAL_VERSION: &str = "130.14";
 
-/// All information needed to register AirPlay services via mDNS.
-#[derive(Debug, Clone)]
 /// mDNS service information for AirPlay network discovery.
 ///
 /// Contains all TXT records and service names needed to register
-/// `_raop._tcp` and `_airplay._tcp` services. Can be used for
-/// manual mDNS registration if the built-in registration is not suitable.
+/// `_raop._tcp` and `_airplay._tcp` services.
+#[derive(Debug, Clone)]
 pub struct AirPlayServiceInfo {
     pub raop_name: String,
     pub airplay_name: String,
@@ -74,73 +72,49 @@ impl AirPlayServiceInfo {
     }
 }
 
-/// mDNS service registrar using mdns-sd. Equivalent to dnssd_t.
+/// Build a DNS-SD TXT record from a HashMap.
+fn build_txt(txt: &HashMap<String, String>) -> HashMap<String, String> {
+    txt.clone()
+}
+
+/// mDNS service registrar using the system's native DNS-SD (Bonjour/Avahi).
 pub struct MdnsService {
-    daemon: mdns_sd::ServiceDaemon,
-    raop_fullname: Option<String>,
-    airplay_fullname: Option<String>,
+    _raop_reg: Option<astro_dnssd::RegisteredDnsService>,
+    _airplay_reg: Option<astro_dnssd::RegisteredDnsService>,
 }
 
 impl MdnsService {
     pub fn new() -> Result<Self, NetworkError> {
-        let daemon = mdns_sd::ServiceDaemon::new()
-            .map_err(|e| NetworkError::Mdns(e.to_string()))?;
-        Ok(Self { daemon, raop_fullname: None, airplay_fullname: None })
+        Ok(Self { _raop_reg: None, _airplay_reg: None })
     }
 
     pub fn register_raop(&mut self, info: &AirPlayServiceInfo) -> Result<(), NetworkError> {
-        let mut props = Vec::new();
-        for (k, v) in &info.raop_txt {
-            props.push((k.as_str(), v.as_str()));
-        }
-        let svc = mdns_sd::ServiceInfo::new(
-            "_raop._tcp.local.",
-            &info.raop_name,
-            &format!("{}.local.", info.raop_name.replace(['@', ' '], "-")),
-            "",
-            info.port,
-            &props[..],
-        ).map_err(|e| NetworkError::Mdns(e.to_string()))?;
-        self.raop_fullname = Some(svc.get_fullname().to_string());
-        self.daemon.register(svc).map_err(|e| NetworkError::Mdns(e.to_string()))?;
+        let reg = astro_dnssd::DNSServiceBuilder::new("_raop._tcp", info.port)
+            .with_name(&info.raop_name)
+            .with_txt_record(build_txt(&info.raop_txt))
+            .register()
+            .map_err(|e| NetworkError::Mdns(format!("{e:?}")))?;
+        self._raop_reg = Some(reg);
         Ok(())
     }
 
     pub fn register_airplay(&mut self, info: &AirPlayServiceInfo) -> Result<(), NetworkError> {
-        let mut props = Vec::new();
-        for (k, v) in &info.airplay_txt {
-            props.push((k.as_str(), v.as_str()));
-        }
-        let svc = mdns_sd::ServiceInfo::new(
-            "_airplay._tcp.local.",
-            &info.airplay_name,
-            &format!("{}.local.", info.airplay_name.replace(' ', "-")),
-            "",
-            info.port,
-            &props[..],
-        ).map_err(|e| NetworkError::Mdns(e.to_string()))?;
-        self.airplay_fullname = Some(svc.get_fullname().to_string());
-        self.daemon.register(svc).map_err(|e| NetworkError::Mdns(e.to_string()))?;
+        let reg = astro_dnssd::DNSServiceBuilder::new("_airplay._tcp", info.port)
+            .with_name(&info.airplay_name)
+            .with_txt_record(build_txt(&info.airplay_txt))
+            .register()
+            .map_err(|e| NetworkError::Mdns(format!("{e:?}")))?;
+        self._airplay_reg = Some(reg);
         Ok(())
     }
 
-    pub fn unregister_raop(&mut self) {
-        if let Some(name) = self.raop_fullname.take() {
-            let _ = self.daemon.unregister(&name);
-        }
-    }
-
-    pub fn unregister_airplay(&mut self) {
-        if let Some(name) = self.airplay_fullname.take() {
-            let _ = self.daemon.unregister(&name);
-        }
-    }
+    pub fn unregister_raop(&mut self) { self._raop_reg = None; }
+    pub fn unregister_airplay(&mut self) { self._airplay_reg = None; }
 }
 
 impl Drop for MdnsService {
     fn drop(&mut self) {
         self.unregister_raop();
         self.unregister_airplay();
-        let _ = self.daemon.shutdown();
     }
 }

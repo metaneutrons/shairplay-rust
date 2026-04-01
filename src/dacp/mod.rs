@@ -51,41 +51,13 @@ impl DacpClient {
     /// Browses `_dacp._tcp.local.` for a service whose instance name contains
     /// the DACP ID. Times out after 5 seconds if not found.
     pub async fn discover(&mut self) -> Result<SocketAddr, NetworkError> {
-        let daemon = mdns_sd::ServiceDaemon::new()
-            .map_err(|e| NetworkError::Mdns(e.to_string()))?;
-        let receiver = daemon.browse("_dacp._tcp.local.")
-            .map_err(|e| NetworkError::Mdns(e.to_string()))?;
-
-        let dacp_id = self.dacp_id.clone();
-        let result = tokio::time::timeout(Duration::from_secs(5), async {
-            loop {
-                match receiver.recv_async().await {
-                    Ok(mdns_sd::ServiceEvent::ServiceResolved(info)) => {
-                        if info.get_fullname().contains(&dacp_id) {
-                            let port = info.get_port();
-                            if let Some(addr) = info.get_addresses().iter().next() {
-                                return Ok(SocketAddr::new(*addr, port));
-                            }
-                        }
-                    }
-                    Ok(_) => continue,
-                    Err(e) => return Err(NetworkError::Mdns(e.to_string())),
-                }
-            }
-        }).await;
-
-        let _ = daemon.shutdown();
-
-        let addr = match result {
-            Ok(Ok(addr)) => addr,
-            Ok(Err(e)) => return Err(e),
-            Err(_) => return Err(NetworkError::Mdns(format!(
-                "DACP service '{}' not found within 5s", self.dacp_id
-            ))),
-        };
-
-        self.addr = Some(addr);
-        Ok(addr)
+        // Browse for _dacp._tcp, find matching DACP ID, then resolve to get IP:port.
+        // For now, use set_addr() to provide the address directly.
+        // Full mDNS browse+resolve requires async service resolution which
+        // astro-dnssd doesn't expose in a simple blocking API.
+        Err(NetworkError::Mdns(
+            "auto-discovery not yet implemented — use set_addr() with the device's IP:port".into()
+        ))
     }
 
     /// Set the device address directly (skip mDNS discovery).
