@@ -197,7 +197,7 @@ impl RaopServer {
     }
 
     pub async fn start(&mut self) -> Result<(), ShairplayError> {
-        let actual_port = self.httpd.start(self.bind.port).await?;
+        let _actual_port = self.httpd.start(self.bind.port).await?;
         
 
         // Register mDNS services

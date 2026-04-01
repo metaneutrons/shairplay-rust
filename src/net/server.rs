@@ -147,7 +147,7 @@ async fn bind_listener(addr: IpAddr, start_port: u16, auto_port: bool) -> Result
     loop {
         match TcpListener::bind(SocketAddr::new(addr, port)).await {
             Ok(listener) => return Ok(listener),
-            Err(e) if auto_port && port < start_port.saturating_add(100) => {
+            Err(_e) if auto_port && port < start_port.saturating_add(100) => {
                 port += 1;
             }
             Err(e) => return Err(NetworkError::Io(e)),
