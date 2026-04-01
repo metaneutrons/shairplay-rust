@@ -97,8 +97,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         supported.channels(), supported.sample_rate().0, supported.sample_format());
 
     let config = cpal::StreamConfig {
-        channels: supported.channels(),
-        sample_rate: supported.sample_rate(),
+        channels: 2,
+        sample_rate: cpal::SampleRate(44100), // AirPlay always sends 44100 Hz
         buffer_size: cpal::BufferSize::Default,
     };
 
