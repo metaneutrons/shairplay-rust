@@ -60,4 +60,5 @@ pub(crate) mod util;
 
 pub use error::ShairplayError;
 pub use net::mdns::AirPlayServiceInfo;
+pub use net::server::BindConfig;
 pub use raop::{AudioFormat, AudioHandler, AudioSession, RaopServer, RaopServerBuilder};

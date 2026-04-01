@@ -1,4 +1,4 @@
-use std::net::SocketAddr;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::Arc;
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -7,6 +7,26 @@ use tokio::sync::{Semaphore, watch};
 
 use crate::error::NetworkError;
 use crate::proto::http::{HttpRequest, HttpResponse};
+
+/// Controls how the server binds to network addresses.
+#[derive(Debug, Clone)]
+pub struct BindConfig {
+    /// IP address to bind to. `None` = bind to all interfaces (0.0.0.0 / [::]).
+    pub addr: Option<IpAddr>,
+    /// Port number. Used as starting port for auto-sensing, or exact port if `auto_port` is false.
+    pub port: u16,
+    /// If true (default), try incrementing ports if the requested port is busy.
+    /// If false, fail immediately if the exact port is unavailable.
+    pub auto_port: bool,
+    /// Enable IPv6 listener (in addition to IPv4). Ignored if `addr` is set to a specific IP.
+    pub ipv6: bool,
+}
+
+impl Default for BindConfig {
+    fn default() -> Self {
+        Self { addr: None, port: 5000, auto_port: true, ipv6: true }
+    }
+}
 
 /// Callback trait for HTTP/RTSP connection lifecycle. Equivalent to httpd_callbacks_t.
 pub trait HttpdCallbacks: Send + Sync + 'static {
@@ -25,6 +45,7 @@ pub struct HttpServer {
     shutdown_tx: Option<watch::Sender<bool>>,
     port: u16,
     running: bool,
+    bind_config: BindConfig,
 }
 
 impl HttpServer {
@@ -35,7 +56,12 @@ impl HttpServer {
             shutdown_tx: None,
             port: 0,
             running: false,
+            bind_config: BindConfig::default(),
         }
+    }
+
+    pub fn set_bind_config(&mut self, config: BindConfig) {
+        self.bind_config = config;
     }
 
     pub async fn start(&mut self, port: u16) -> Result<u16, NetworkError> {
@@ -43,34 +69,67 @@ impl HttpServer {
             return Ok(self.port);
         }
 
-        let addr4 = format!("0.0.0.0:{}", port);
-        let listener4 = TcpListener::bind(&addr4).await?;
-        let actual_port = listener4.local_addr()?.port();
+        let bind_port = if port > 0 { port } else { self.bind_config.port };
+        let bind_ip = self.bind_config.addr;
+        let auto_port = self.bind_config.auto_port;
+        let enable_ipv6 = self.bind_config.ipv6;
 
-        // Try IPv6 on same port, non-fatal if it fails
-        let listener6 = TcpListener::bind(format!("[::]:{}",actual_port)).await.ok();
+        // Determine bind addresses
+        let is_specific_ip = bind_ip.is_some();
+        let ipv4_addr = bind_ip.unwrap_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED));
+        let is_ipv6_addr = matches!(ipv4_addr, IpAddr::V6(_));
+
+        // Try binding, with optional port auto-sensing
+        let listener4 = if !is_ipv6_addr {
+            Some(bind_listener(ipv4_addr, bind_port, auto_port).await?)
+        } else {
+            None
+        };
+
+        let actual_port = if let Some(ref l) = listener4 {
+            l.local_addr()?.port()
+        } else {
+            bind_port
+        };
+
+        // IPv6 listener: only if enabled and not binding to a specific IPv4 address
+        let listener6 = if enable_ipv6 && !is_specific_ip && !is_ipv6_addr {
+            bind_listener(IpAddr::V6(Ipv6Addr::UNSPECIFIED), actual_port, false).await.ok()
+        } else if is_ipv6_addr {
+            Some(bind_listener(ipv4_addr, bind_port, auto_port).await?)
+        } else {
+            None
+        };
+
+        let final_port = listener4.as_ref()
+            .or(listener6.as_ref())
+            .map(|l| l.local_addr().unwrap().port())
+            .unwrap_or(bind_port);
 
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
         self.shutdown_tx = Some(shutdown_tx);
-        self.port = actual_port;
+        self.port = final_port;
         self.running = true;
 
         let callbacks = self.callbacks.clone();
         let semaphore = Arc::new(Semaphore::new(self.max_connections));
 
-        // Spawn accept loop for IPv4
-        spawn_accept_loop(listener4, callbacks.clone(), semaphore.clone(), shutdown_rx.clone());
-
-        // Spawn accept loop for IPv6 if available
+        if let Some(l4) = listener4 {
+            spawn_accept_loop(l4, callbacks.clone(), semaphore.clone(), shutdown_rx.clone());
+        }
         if let Some(l6) = listener6 {
             spawn_accept_loop(l6, callbacks, semaphore, shutdown_rx);
         }
 
-        Ok(actual_port)
+        Ok(final_port)
     }
 
     pub fn is_running(&self) -> bool {
         self.running
+    }
+
+    pub fn port(&self) -> u16 {
+        self.port
     }
 
     pub async fn stop(&mut self) {
@@ -81,6 +140,20 @@ impl HttpServer {
     }
 }
 
+
+/// Try to bind a TCP listener, optionally auto-incrementing the port.
+async fn bind_listener(addr: IpAddr, start_port: u16, auto_port: bool) -> Result<TcpListener, NetworkError> {
+    let mut port = start_port;
+    loop {
+        match TcpListener::bind(SocketAddr::new(addr, port)).await {
+            Ok(listener) => return Ok(listener),
+            Err(e) if auto_port && port < start_port.saturating_add(100) => {
+                port += 1;
+            }
+            Err(e) => return Err(NetworkError::Io(e)),
+        }
+    }
+}
 fn spawn_accept_loop(
     listener: TcpListener,
     callbacks: Arc<dyn HttpdCallbacks>,

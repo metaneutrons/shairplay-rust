@@ -113,12 +113,14 @@ fn airport_rsakey() -> Arc<RsaKey> {
 /// Listens for RTSP connections, handles pairing and encryption,
 /// decodes ALAC audio, and delivers PCM samples via [`AudioSession`].
 /// Automatically registers mDNS services for network discovery.
+pub use crate::net::server::BindConfig;
+
 pub struct RaopServerBuilder {
     max_clients: usize,
     hwaddr: Option<Vec<u8>>,
     password: Option<String>,
-    port: u16,
     name: String,
+    bind: BindConfig,
 }
 
 impl Default for RaopServerBuilder {
@@ -133,15 +135,18 @@ impl RaopServerBuilder {
             max_clients: 10,
             hwaddr: None,
             password: None,
-            port: 5000,
             name: "Shairplay".to_string(),
+            bind: BindConfig::default(),
         }
     }
 
     pub fn max_clients(mut self, n: usize) -> Self { self.max_clients = n; self }
     pub fn hwaddr(mut self, addr: impl Into<Vec<u8>>) -> Self { self.hwaddr = Some(addr.into()); self }
     pub fn password(mut self, pw: impl Into<String>) -> Self { self.password = Some(pw.into()); self }
-    pub fn port(mut self, port: u16) -> Self { self.port = port; self }
+    /// Set the RTSP listening port. Default: 5000.
+    pub fn port(mut self, port: u16) -> Self { self.bind.port = port; self }
+    /// Set full bind configuration (address, port, auto-sensing, IPv6).
+    pub fn bind(mut self, config: BindConfig) -> Self { self.bind = config; self }
     pub fn name(mut self, name: impl Into<String>) -> Self { self.name = name.into(); self }
 
     pub fn build(self, handler: Arc<dyn AudioHandler>) -> Result<RaopServer, ShairplayError> {
@@ -157,13 +162,14 @@ impl RaopServerBuilder {
             handler,
         });
 
-        let httpd = HttpServer::new(shared.clone(), self.max_clients);
+        let mut httpd = HttpServer::new(shared.clone(), self.max_clients);
+        httpd.set_bind_config(self.bind.clone());
 
         Ok(RaopServer {
             shared,
             httpd,
             mdns: None,
-            port: self.port,
+            bind: self.bind,
             name: self.name,
             hwaddr,
         })
@@ -180,7 +186,7 @@ pub struct RaopServer {
     shared: Arc<RaopShared>,
     httpd: HttpServer,
     mdns: Option<MdnsService>,
-    port: u16,
+    bind: BindConfig,
     name: String,
     hwaddr: Vec<u8>,
 }
@@ -191,8 +197,8 @@ impl RaopServer {
     }
 
     pub async fn start(&mut self) -> Result<(), ShairplayError> {
-        let actual_port = self.httpd.start(self.port).await?;
-        self.port = actual_port;
+        let actual_port = self.httpd.start(self.bind.port).await?;
+        
 
         // Register mDNS services
         let info = self.service_info();
@@ -219,7 +225,7 @@ impl RaopServer {
     pub fn service_info(&self) -> AirPlayServiceInfo {
         AirPlayServiceInfo::new(
             &self.name,
-            self.port,
+            self.httpd.port(),
             &self.hwaddr,
             !self.shared.password.is_empty(),
         )
