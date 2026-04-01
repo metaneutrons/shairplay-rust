@@ -46,8 +46,8 @@ fn sdp_missing_fields() {
 #[test]
 fn http_parse_rtsp_request() {
     let mut req = HttpRequest::new();
-    // httparse expects HTTP/1.x format; AirPlay RTSP uses same wire format
-    req.add_data(b"OPTIONS * HTTP/1.0\r\nCSeq: 1\r\nApple-Challenge: dGVzdA==\r\n\r\n").unwrap();
+    // Real Apple devices send RTSP/1.0 — parser must handle it
+    req.add_data(b"OPTIONS * RTSP/1.0\r\nCSeq: 1\r\nApple-Challenge: dGVzdA==\r\n\r\n").unwrap();
     assert!(req.is_complete());
     assert_eq!(req.method(), Some("OPTIONS"));
     assert_eq!(req.url(), Some("*"));
@@ -57,9 +57,17 @@ fn http_parse_rtsp_request() {
 }
 
 #[test]
+fn http_parse_http_request() {
+    let mut req = HttpRequest::new();
+    req.add_data(b"OPTIONS * HTTP/1.0\r\nCSeq: 1\r\n\r\n").unwrap();
+    assert!(req.is_complete());
+    assert_eq!(req.method(), Some("OPTIONS"));
+}
+
+#[test]
 fn http_incremental_parse() {
     let mut req = HttpRequest::new();
-    req.add_data(b"GET /test HTTP/1.0\r\n").unwrap();
+    req.add_data(b"GET /test RTSP/1.0\r\n").unwrap();
     assert!(!req.is_complete());
     req.add_data(b"CSeq: 5\r\n\r\n").unwrap();
     assert!(req.is_complete());
@@ -70,7 +78,7 @@ fn http_incremental_parse() {
 #[test]
 fn http_request_with_body() {
     let mut req = HttpRequest::new();
-    req.add_data(b"POST /fp-setup HTTP/1.0\r\nContent-Length: 4\r\n\r\nABCD").unwrap();
+    req.add_data(b"POST /fp-setup RTSP/1.0\r\nContent-Length: 4\r\n\r\nABCD").unwrap();
     assert!(req.is_complete());
     assert_eq!(req.data(), Some(b"ABCD".as_ref()));
 }

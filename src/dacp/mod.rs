@@ -21,14 +21,10 @@ use crate::error::NetworkError;
 /// ```rust,no_run
 /// use shairplay::dacp::DacpClient;
 ///
-/// # async fn example() {
 /// let mut client = DacpClient::new("7711DA8B47838CB5", "1986535575");
-/// if client.discover().await.is_ok() {
-///     client.play_pause().await.ok();
-///     client.next().await.ok();
-///     client.set_volume(80).await.ok();
-/// }
-/// # }
+/// client.discover_from_remote("192.168.1.5".parse().unwrap());
+/// // Then in an async context:
+/// // client.play_pause().await.ok();
 /// ```
 pub struct DacpClient {
     #[allow(dead_code)]

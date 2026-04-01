@@ -52,11 +52,17 @@ impl HttpRequest {
     }
 
     fn try_parse_headers(&mut self) -> Result<(), ProtocolError> {
-        // httparse needs a fixed-size header array
+        // httparse only accepts HTTP/1.x — Apple devices send RTSP/1.0.
+        // Replace RTSP/1.0 with HTTP/1.0 in the buffer before parsing.
+        let mut parse_buf = self.buffer.clone();
+        if let Some(pos) = parse_buf.windows(8).position(|w| w == b"RTSP/1.0") {
+            parse_buf[pos..pos + 4].copy_from_slice(b"HTTP");
+        }
+
         let mut header_buf = [httparse::EMPTY_HEADER; 64];
         let mut req = httparse::Request::new(&mut header_buf);
 
-        match req.parse(&self.buffer) {
+        match req.parse(&parse_buf) {
             Ok(httparse::Status::Complete(body_offset)) => {
                 self.method = req.method.map(|m| m.to_string());
                 self.url = req.path.map(|p| p.to_string());
