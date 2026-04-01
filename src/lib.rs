@@ -52,6 +52,7 @@ server.start().await?;
 
 pub mod codec;
 pub mod crypto;
+pub mod dacp;
 pub mod error;
 pub mod net;
 pub mod proto;
