@@ -563,17 +563,16 @@ pub(crate) fn handle_setup_2(
                 // Remote Control data channel
                 tracing::info!("Remote Control stream setup (type 130)");
 
-                // Always bind a data port — iPhone expects it in the response
-                let bind_addr = if conn.local_addr.len() == 16 { "[::]:0" } else { "0.0.0.0:0" };
-                let data_listener = tokio::task::block_in_place(|| {
-                    tokio::runtime::Handle::current().block_on(
-                        tokio::net::TcpListener::bind(bind_addr)
-                    )
-                }).ok()?;
-                let data_port = data_listener.local_addr().ok()?.port();
-
-                // If seed is present, spawn encrypted data channel listener
+                // On PTP connections, type 130 is just acknowledged
+                // On RC connections, it sets up an encrypted data channel
                 if let Some(_seed) = stream0.get("seed").and_then(|v| v.as_unsigned_integer()) {
+                    let bind_addr = if conn.local_addr.len() == 16 { "[::]:0" } else { "0.0.0.0:0" };
+                    let data_listener = tokio::task::block_in_place(|| {
+                        tokio::runtime::Handle::current().block_on(
+                            tokio::net::TcpListener::bind(bind_addr)
+                        )
+                    }).ok()?;
+                    let data_port = data_listener.local_addr().ok()?.port();
                     tracing::debug!(data_port, "RC data channel opened");
 
                     // Spawn listener (just accept + log for now)
@@ -588,14 +587,7 @@ pub(crate) fn handle_setup_2(
                     stream_resp.insert("streamID".into(), plist::Value::Integer(1_i64.into()));
                     stream_resp.insert("dataPort".into(), plist::Value::Integer(data_port.into()));
                 } else {
-                    // No seed — just accept and drop (iPhone still expects the port)
-                    tokio::task::block_in_place(|| {
-                        tokio::runtime::Handle::current().spawn(async move {
-                            let _ = data_listener.accept().await;
-                        })
-                    });
                     stream_resp.insert("streamID".into(), plist::Value::Integer(1_i64.into()));
-                    stream_resp.insert("dataPort".into(), plist::Value::Integer(data_port.into()));
                 }
             }
             _ => {
