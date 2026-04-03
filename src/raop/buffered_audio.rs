@@ -201,7 +201,7 @@ async fn receive_loop(
             // Setup resampler if needed
             let target_sr = output_config.sample_rate.unwrap_or(sr);
             if target_sr != sr {
-                info!(from = sr, to = target_sr, "Resampling needed (TODO)");
+                debug!(from = sr, to = target_sr, "Resampling needed");
             }
         }
         // Detect format change
@@ -223,7 +223,7 @@ async fn receive_loop(
 
             stream_resampler = crate::codec::resample::StreamResampler::new(src_sr, target_sr, target_ch as usize);
             if stream_resampler.is_some() {
-                info!(from = src_sr, to = target_sr, "Resampler initialized");
+                debug!(from = src_sr, to = target_sr, "Resampler initialized");
             }
 
             source_channels = src_ch;
