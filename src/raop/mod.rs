@@ -135,15 +135,62 @@ impl HttpdCallbacks for RaopShared {
             #[cfg(feature = "airplay2")]
             pairing_store: self.pairing_store.clone(),
         };
-        Some(Box::new(RaopConnectionHandler(conn)))
+        Some(Box::new(RaopConnectionHandler {
+            conn,
+            #[cfg(feature = "airplay2")]
+            cipher: None,
+        }))
     }
 }
 
-struct RaopConnectionHandler(handlers::RaopConnection);
+struct RaopConnectionHandler {
+    conn: handlers::RaopConnection,
+    #[cfg(feature = "airplay2")]
+    cipher: Option<crate::crypto::chacha_transport::EncryptedChannel>,
+}
 
 impl ConnectionHandler for RaopConnectionHandler {
     fn conn_request(&mut self, request: &HttpRequest) -> HttpResponse {
-        rtsp::dispatch(&mut self.0, request)
+        let resp = rtsp::dispatch(&mut self.conn, request);
+
+        // After pair-setup/verify completes, activate encryption
+        #[cfg(feature = "airplay2")]
+        if self.cipher.is_none() {
+            if let Some(secret) = &self.conn.ap2_shared_secret {
+                match crate::crypto::chacha_transport::EncryptedChannel::control(secret) {
+                    Ok(ch) => {
+                        tracing::info!("Encrypted RTSP transport activated");
+                        self.cipher = Some(ch);
+                    }
+                    Err(e) => tracing::warn!("Failed to create cipher: {e}"),
+                }
+            }
+        }
+
+        resp
+    }
+
+    fn is_encrypted(&self) -> bool {
+        #[cfg(feature = "airplay2")]
+        { self.cipher.is_some() }
+        #[cfg(not(feature = "airplay2"))]
+        { false }
+    }
+
+    fn decrypt_incoming(&mut self, data: &[u8]) -> Option<(Vec<u8>, usize)> {
+        #[cfg(feature = "airplay2")]
+        if let Some(ch) = &mut self.cipher {
+            return ch.decrypt_ctx.decrypt(data).ok();
+        }
+        Some((data.to_vec(), data.len()))
+    }
+
+    fn encrypt_outgoing(&mut self, data: &[u8]) -> Vec<u8> {
+        #[cfg(feature = "airplay2")]
+        if let Some(ch) = &mut self.cipher {
+            return ch.encrypt_ctx.encrypt(data).unwrap_or_else(|_| data.to_vec());
+        }
+        data.to_vec()
     }
 }
 

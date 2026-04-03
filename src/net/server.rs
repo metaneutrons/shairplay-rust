@@ -36,6 +36,20 @@ pub trait HttpdCallbacks: Send + Sync + 'static {
 /// Per-connection request handler. Equivalent to conn_request + conn_destroy.
 pub trait ConnectionHandler: Send {
     fn conn_request(&mut self, request: &HttpRequest) -> HttpResponse;
+
+    /// Decrypt incoming raw bytes. Returns decrypted data and bytes consumed.
+    /// Default: passthrough (no encryption).
+    fn decrypt_incoming(&mut self, data: &[u8]) -> Option<(Vec<u8>, usize)> {
+        Some((data.to_vec(), data.len()))
+    }
+
+    /// Encrypt outgoing response bytes. Default: passthrough.
+    fn encrypt_outgoing(&mut self, data: &[u8]) -> Vec<u8> {
+        data.to_vec()
+    }
+
+    /// Whether the connection is in encrypted mode.
+    fn is_encrypted(&self) -> bool { false }
 }
 
 /// Async TCP server supporting IPv4 and IPv6. Equivalent to httpd_t.
@@ -187,19 +201,20 @@ fn spawn_accept_loop(
                         let mut stream = stream;
                         let mut buf = [0u8; 4096];
                         let mut request = HttpRequest::new();
-                        let mut pending = Vec::new(); // leftover data from previous read
+                        let mut pending = Vec::new();
+                        let mut raw_buf = Vec::new(); // accumulates encrypted data
 
                         loop {
-                            // First, try to parse any pending data
+                            // Try to parse pending decrypted data
                             if !pending.is_empty() {
                                 if request.add_data(&pending).is_err() {
-                                    tracing::warn!("HTTP parse error on pending data, first bytes: {:02x?}", &pending[..pending.len().min(32)]);
+                                    tracing::warn!("HTTP parse error on pending data");
                                     break;
                                 }
                                 pending.clear();
                             }
 
-                            // If request is complete, handle it
+                            // Handle complete requests
                             while request.is_complete() {
                                 let method = request.method().unwrap_or("?").to_string();
                                 let url = request.url().unwrap_or("?").to_string();
@@ -208,33 +223,59 @@ fn spawn_accept_loop(
                                 let status = response.status_code();
                                 tracing::debug!(%method, %url, status, "RTSP response");
                                 let disconnect = response.get_disconnect();
-                                let data = response.get_data();
-                                if stream.write_all(data).await.is_err() {
+                                let raw_out = response.get_data();
+                                let wire_out = if handler.is_encrypted() {
+                                    handler.encrypt_outgoing(raw_out)
+                                } else {
+                                    raw_out.to_vec()
+                                };
+                                if stream.write_all(&wire_out).await.is_err() {
                                     return;
                                 }
                                 if disconnect {
                                     let _ = stream.shutdown().await;
                                     return;
                                 }
-                                // Grab any leftover bytes beyond the complete request
                                 let leftover = request.take_leftover();
                                 request = HttpRequest::new();
                                 if !leftover.is_empty() {
                                     if request.add_data(&leftover).is_err() {
-                                        tracing::warn!("HTTP parse error on leftover");
                                         return;
                                     }
                                 }
                             }
 
-                            // Read more data from the network
+                            // Read from network
                             let n = match stream.read(&mut buf).await {
                                 Ok(0) | Err(_) => break,
                                 Ok(n) => n,
                             };
-                            if request.add_data(&buf[..n]).is_err() {
-                                tracing::warn!("HTTP parse error, first bytes: {:02x?}", &buf[..n.min(32)]);
-                                break;
+
+                            // Decrypt if encrypted, otherwise feed directly
+                            if handler.is_encrypted() {
+                                raw_buf.extend_from_slice(&buf[..n]);
+                                match handler.decrypt_incoming(&raw_buf) {
+                                    Some((plain, consumed)) => {
+                                        if consumed > 0 {
+                                            raw_buf.drain(..consumed);
+                                        }
+                                        if !plain.is_empty() {
+                                            if request.add_data(&plain).is_err() {
+                                                tracing::warn!("HTTP parse error on decrypted data");
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    None => {
+                                        tracing::warn!("Decryption failed");
+                                        break;
+                                    }
+                                }
+                            } else {
+                                if request.add_data(&buf[..n]).is_err() {
+                                    tracing::warn!("HTTP parse error, first bytes: {:02x?}", &buf[..n.min(32)]);
+                                    break;
+                                }
                             }
                         }
                         tracing::info!(%remote, "Connection closed");
