@@ -606,4 +606,171 @@ mod tests {
     fn hex_encode(data: &[u8]) -> String {
         data.iter().map(|b| format!("{:02x}", b)).collect()
     }
+
+    /// Full non-transient pair-setup self-test: SRP → M5/M6 with encrypted Ed25519.
+    #[test]
+    fn normal_pairing_m5_m6_self_test() {
+        let device_id = "TestDevice42";
+        let mut server = SrpServer::new(Some("1234")).unwrap();
+
+        // --- SRP rounds (same as transient but with PIN "1234") ---
+        let mut m1 = TlvValues::new();
+        m1.add(TlvType::State as u8, &[1]);
+        m1.add(TlvType::Method as u8, &[0]);
+        // No Flags → non-transient
+        server.process_m1(&m1.encode()).unwrap();
+        assert!(!server.is_transient());
+
+        let m2_data = server.build_m2();
+        let m2 = TlvValues::decode(&m2_data).unwrap();
+        let salt = m2.get_type(TlvType::Salt).unwrap();
+        let pk_b = m2.get_type(TlvType::PublicKey).unwrap();
+
+        // Mock client SRP
+        let n = BigUint::parse_bytes(N_3072_HEX.as_bytes(), 16).unwrap();
+        let g = BigUint::from(G_3072);
+        let mut a_bytes = [0u8; 32];
+        rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut a_bytes);
+        let a = BigUint::from_bytes_be(&a_bytes);
+        let big_a = g.modpow(&a, &n);
+        let salt_bn = BigUint::from_bytes_be(salt);
+        let big_b = BigUint::from_bytes_be(pk_b);
+        let k = h_nn_pad(&n, &g, N_3072_LEN);
+        let u = h_nn_pad(&big_a, &big_b, N_3072_LEN);
+        let x = calculate_x(&salt_bn, USERNAME, b"1234");
+        let gx = g.modpow(&x, &n);
+        let kgx = (&k * &gx) % &n;
+        let base = (&big_b + &n - &kgx) % &n;
+        let big_s = base.modpow(&(&a + &u * &x), &n);
+        let session_key = sha512(&to_bytes_be(&big_s));
+        let client_m = calculate_m(&n, &g, USERNAME, &salt_bn, &big_a, &big_b, &session_key);
+
+        let mut m3 = TlvValues::new();
+        m3.add(TlvType::State as u8, &[3]);
+        m3.add(TlvType::PublicKey as u8, &to_bytes_be(&big_a));
+        m3.add(TlvType::Proof as u8, &client_m);
+        assert!(server.process_m3(&m3.encode()).unwrap());
+
+        // Transient would stop here, but non-transient continues to M5/M6
+        assert!(server.shared_secret().is_none()); // not transient → no secret yet
+
+        // --- M5: Client sends encrypted device info ---
+        let client_sk = SigningKey::generate(&mut rand::thread_rng());
+        let client_vk = client_sk.verifying_key();
+        let client_device_id = "MockClient01";
+
+        // Derive device_x for signing
+        let mut device_x = [0u8; 32];
+        hkdf_derive(&session_key, "Pair-Setup-Controller-Sign-Salt", "Pair-Setup-Controller-Sign-Info", &mut device_x).unwrap();
+
+        let mut sign_info = Vec::new();
+        sign_info.extend_from_slice(&device_x);
+        sign_info.extend_from_slice(client_device_id.as_bytes());
+        sign_info.extend_from_slice(client_vk.as_bytes());
+        let signature = client_sk.sign(&sign_info);
+
+        let mut inner = TlvValues::new();
+        inner.add(TlvType::Identifier as u8, client_device_id.as_bytes());
+        inner.add(TlvType::Signature as u8, &signature.to_bytes());
+        inner.add(TlvType::PublicKey as u8, client_vk.as_bytes());
+        let plaintext = inner.encode();
+
+        let mut enc_key = [0u8; 32];
+        hkdf_derive(&session_key, "Pair-Setup-Encrypt-Salt", "Pair-Setup-Encrypt-Info", &mut enc_key).unwrap();
+        let nonce = make_nonce(b"PS-Msg05");
+        let encrypted = encrypt_chacha(&enc_key, &nonce, &plaintext).unwrap();
+
+        let mut m5 = TlvValues::new();
+        m5.add(TlvType::State as u8, &[5]);
+        m5.add(TlvType::EncryptedData as u8, &encrypted);
+        server.process_m5(&m5.encode()).unwrap();
+
+        // --- M6: Server responds with its encrypted device info ---
+        let m6_data = server.build_m6(device_id).unwrap();
+        let m6 = TlvValues::decode(&m6_data).unwrap();
+        assert_eq!(m6.get_type(TlvType::State), Some(&[6u8][..]));
+        let m6_enc = m6.get_type(TlvType::EncryptedData).unwrap();
+
+        // Client decrypts M6
+        let nonce6 = make_nonce(b"PS-Msg06");
+        let decrypted = decrypt_chacha(&enc_key, &nonce6, m6_enc).unwrap();
+        let m6_inner = TlvValues::decode(&decrypted).unwrap();
+
+        let server_id = m6_inner.get_type(TlvType::Identifier).unwrap();
+        let server_sig = m6_inner.get_type(TlvType::Signature).unwrap();
+        let server_pk = m6_inner.get_type(TlvType::PublicKey).unwrap();
+
+        assert_eq!(server_id, device_id.as_bytes());
+        assert_eq!(server_pk.len(), 32);
+
+        // Verify server signature
+        let mut acc_x = [0u8; 32];
+        hkdf_derive(&session_key, "Pair-Setup-Accessory-Sign-Salt", "Pair-Setup-Accessory-Sign-Info", &mut acc_x).unwrap();
+        let mut verify_info = Vec::new();
+        verify_info.extend_from_slice(&acc_x);
+        verify_info.extend_from_slice(server_id);
+        verify_info.extend_from_slice(server_pk);
+
+        let svk = VerifyingKey::from_bytes(server_pk.try_into().unwrap()).unwrap();
+        let ssig = Signature::from_bytes(server_sig.try_into().unwrap());
+        svk.verify(&verify_info, &ssig).expect("Server M6 signature should verify");
+    }
+
+    /// Pair-verify self-test: server + mock client ECDH handshake.
+    #[test]
+    fn pair_verify_self_test() {
+        let device_id = "VerifyDev01";
+        let mut server = PairVerifyServer::new(device_id);
+
+        // Client generates ephemeral key
+        let mut client_eph_sk_bytes = [0u8; 32];
+        rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut client_eph_sk_bytes);
+        let client_secret = x25519_dalek::StaticSecret::from(client_eph_sk_bytes);
+        let client_eph_pk = x25519_dalek::PublicKey::from(&client_secret);
+
+        // Client → M1
+        let mut m1 = TlvValues::new();
+        m1.add(TlvType::State as u8, &[1]);
+        m1.add(TlvType::PublicKey as u8, client_eph_pk.as_bytes());
+
+        // Server processes M1, builds M2
+        let m2_data = server.process_m1_build_m2(&m1.encode()).unwrap();
+        let m2 = TlvValues::decode(&m2_data).unwrap();
+        assert_eq!(m2.get_type(TlvType::State), Some(&[2u8][..]));
+        let server_eph_pk_bytes = m2.get_type(TlvType::PublicKey).unwrap();
+        assert_eq!(server_eph_pk_bytes.len(), 32);
+
+        // Client computes shared secret
+        let server_pub = x25519_dalek::PublicKey::from(<[u8; 32]>::try_from(server_eph_pk_bytes).unwrap());
+        let client_shared = client_secret.diffie_hellman(&server_pub);
+
+        // Client builds M3 (encrypted identifier + signature)
+        let (client_sk, _) = server_keypair("ClientDev01"); // reuse helper for test
+        let mut sign_info = Vec::new();
+        sign_info.extend_from_slice(client_eph_pk.as_bytes());
+        sign_info.extend_from_slice(server_eph_pk_bytes);
+        let signature = client_sk.sign(&sign_info);
+
+        let mut inner = TlvValues::new();
+        inner.add(TlvType::Identifier as u8, b"ClientDev01");
+        inner.add(TlvType::Signature as u8, &signature.to_bytes());
+        let plaintext = inner.encode();
+
+        let mut derived_key = [0u8; 32];
+        hkdf_derive(client_shared.as_bytes(), "Pair-Verify-Encrypt-Salt", "Pair-Verify-Encrypt-Info", &mut derived_key).unwrap();
+        let nonce = make_nonce(b"PV-Msg03");
+        let encrypted = encrypt_chacha(&derived_key, &nonce, &plaintext).unwrap();
+
+        let mut m3 = TlvValues::new();
+        m3.add(TlvType::State as u8, &[3]);
+        m3.add(TlvType::EncryptedData as u8, &encrypted);
+
+        let m4_data = server.process_m3_build_m4(&m3.encode()).unwrap();
+        let m4 = TlvValues::decode(&m4_data).unwrap();
+        assert_eq!(m4.get_type(TlvType::State), Some(&[4u8][..]));
+
+        // Both sides should have the same shared secret
+        let server_secret = server.shared_secret().expect("should be completed");
+        assert_eq!(server_secret, client_shared.as_bytes());
+    }
 }
