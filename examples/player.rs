@@ -57,21 +57,21 @@ impl AudioSession for Session {
     }
 
     fn audio_set_volume(&mut self, volume: f32) {
-        eprintln!("🔊 Volume: {:.1} dB", volume);
+        tracing::info!(volume, "Volume changed");
     }
 
     fn audio_set_metadata(&mut self, _metadata: &[u8]) {
-        eprintln!("📝 Got track metadata");
+        tracing::info!("Track metadata received");
     }
 
     fn audio_set_coverart(&mut self, coverart: &[u8]) {
-        eprintln!("🖼️  Got cover art ({} bytes)", coverart.len());
+        tracing::info!(bytes = coverart.len(), "Cover art received");
     }
 
     fn audio_set_progress(&mut self, start: u32, current: u32, end: u32) {
         let total = end.saturating_sub(start) as f64 / 44100.0;
         let pos = current.saturating_sub(start) as f64 / 44100.0;
-        eprintln!("⏱️  Progress: {:.0}s / {:.0}s", pos, total);
+        tracing::info!(pos_s = pos as u32, total_s = total as u32, "Playback progress");
     }
 }
 
