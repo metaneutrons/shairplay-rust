@@ -526,18 +526,37 @@ pub(crate) fn handle_setup_2(
 
         match stream_type {
             96 => {
-                // Realtime ALAC over UDP. Uses ChaCha20-Poly1305 per-packet encryption
-                // (same shk key as type 103) but UDP framing and ALAC codec.
-                // iPhone rarely requests this for music (prefers type 103 buffered AAC).
-                // Used for low-latency audio (Siri, phone calls, system sounds).
-                // TODO: implement UDP receiver with ALAC decode pipeline
+                // Realtime ALAC over UDP with ChaCha20-Poly1305 per-packet encryption.
                 let sr = stream0.get("sr").and_then(|v| v.as_unsigned_integer()).unwrap_or(44100);
                 tracing::info!(stream_type = 96, sample_rate = sr, "AP2 realtime ALAC stream setup");
 
+                let shk = stream0.get("shk").and_then(|v| v.as_data()).unwrap_or(&[]);
+                if shk.len() != 32 {
+                    tracing::warn!(len = shk.len(), "Invalid shk length for type 96");
+                    return None;
+                }
+                let mut shk_arr = [0u8; 32];
+                shk_arr.copy_from_slice(shk);
+
                 let bind_addr = bind_addr_for(conn);
-                let udp_sock = std::net::UdpSocket::bind(bind_addr).ok()?;
-                let audio_port = udp_sock.local_addr().ok()?.port();
-                drop(udp_sock);
+                let socket = tokio::task::block_in_place(|| {
+                    tokio::runtime::Handle::current().block_on(
+                        tokio::net::UdpSocket::bind(&bind_addr)
+                    )
+                }).ok()?;
+                let audio_port = socket.local_addr().ok()?.port();
+
+                let handler = conn.handler.clone();
+                let output_config = crate::raop::realtime_audio::OutputConfig {
+                    sample_rate: conn.output_sample_rate,
+                    max_channels: conn.output_max_channels,
+                };
+
+                tokio::task::block_in_place(|| {
+                    tokio::runtime::Handle::current().spawn(
+                        crate::raop::realtime_audio::run(socket, shk_arr, handler, output_config)
+                    );
+                });
 
                 stream_resp.insert("dataPort".into(), plist::Value::Integer(audio_port.into()));
             }

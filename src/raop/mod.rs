@@ -3,6 +3,8 @@ pub mod buffer;
 pub mod buffered_audio;
 #[cfg(feature = "ap2")]
 pub mod event_channel;
+#[cfg(feature = "ap2")]
+pub mod realtime_audio;
 pub mod handlers;
 pub mod rtp;
 mod rtsp;

@@ -16,6 +16,7 @@
 | Timed playout buffer | 103 | Pause/resume/flush, stale frame discard |
 | Metadata forwarding | — | Volume, artwork, progress, DMAP track info |
 | Event channel | — | Bidirectional encrypted TCP, updateInfo |
+| Realtime audio | 96 | ALAC decode, ChaCha20 decrypt, immediate delivery |
 | Video (experimental) | 110 | AES-128-CTR decrypt, raw H.264/H.265 NAL delivery |
 | Unified output | — | Always F32LE interleaved PCM to app |
 
@@ -36,22 +37,6 @@ Tested and ruled out:
 - Shairport-sync has the same feedback behavior (empty when not playing)
 
 The delay does not affect audio quality or playback once connected.
-
-## Not Implemented
-
-### Realtime ALAC (Stream Type 96)
-
-Low-latency audio over UDP. Used for Siri responses, phone calls, and system
-sounds. The iPhone rarely requests type 96 for music — it prefers type 103.
-
-Currently a stub: we bind a UDP port and return it in the SETUP response so the
-iPhone doesn't error, but no audio receiver is spawned.
-
-Implementation would require a UDP receiver with ChaCha20-Poly1305 decryption
-and ALAC decoding. The AP1 RTP pipeline cannot be reused directly (AES-CBC vs
-ChaCha20), but the packet parsing and ALAC decoder are reusable.
-
-Priority: Low. Only needed for non-music audio passthrough.
 
 ## AP2 Remote Control — Research
 

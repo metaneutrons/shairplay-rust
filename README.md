@@ -115,7 +115,10 @@ Rock solid. ALAC decoding, AES encryption, DACP remote control, metadata (artwor
 
 ### ✅ AirPlay 2 Audio — Production Ready
 
-Full pipeline: SRP-6a pairing → encrypted RTSP → FairPlay → PTP timing → buffered AAC decode → F32LE PCM output. Multichannel 5.1/7.1 with ITU-R BS.775 mixdown. Automatic resampling.
+Full pipeline: SRP-6a pairing → encrypted RTSP → FairPlay → PTP timing → buffered AAC decode → F32LE PCM output. Multichannel 5.1/7.1 with ITU-R BS.775 mixdown. Automatic resampling. Both stream types implemented:
+
+- **Type 103 (buffered)** — AAC over TCP with timed playout buffer. Used for music.
+- **Type 96 (realtime)** — ALAC over UDP with immediate delivery. Used for Siri, phone calls, system sounds.
 
 **Known issue:** ~10 second delay between selecting the AirPlay target and audio starting. The iPhone opens a Remote Control connection first and waits before starting audio. This appears to be related to companion-link integration that third-party receivers cannot replicate. Audio playback itself is fast once connected. See [AP2-STATUS.md](AP2-STATUS.md).
 
