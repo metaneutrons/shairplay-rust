@@ -1,5 +1,7 @@
 pub mod buffer;
 #[cfg(feature = "airplay2")]
+pub mod buffered_audio;
+#[cfg(feature = "airplay2")]
 pub mod event_channel;
 pub mod handlers;
 pub mod rtp;
