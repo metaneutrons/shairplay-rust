@@ -256,20 +256,20 @@ fn spawn_accept_loop(
                             // Decrypt if encrypted, otherwise feed directly
                             if handler.is_encrypted() {
                                 raw_buf.extend_from_slice(&buf[..n]);
-                                tracing::debug!(encrypted = true, raw_len = raw_buf.len(), new_bytes = n, "Read");
+                                tracing::trace!(encrypted = true, raw_len = raw_buf.len(), new_bytes = n, "Read");
                                 match handler.decrypt_incoming(&raw_buf) {
                                     Some((plain, consumed)) => {
-                                        tracing::debug!(plain_len = plain.len(), consumed, "Decrypt");
+                                        tracing::trace!(plain_len = plain.len(), consumed, "Decrypt");
                                         if consumed > 0 {
                                             raw_buf.drain(..consumed);
                                         }
                                         if !plain.is_empty() {
-                                            tracing::debug!("Decrypted: {:?}", String::from_utf8_lossy(&plain[..plain.len().min(120)]));
+                                            tracing::trace!("Decrypted: {:?}", String::from_utf8_lossy(&plain[..plain.len().min(120)]));
                                             if request.add_data(&plain).is_err() {
                                                 tracing::warn!("HTTP parse error on decrypted data");
                                                 break;
                                             }
-                                            tracing::debug!(complete = request.is_complete(), headers_complete = request.headers_complete(), "After add_data");
+                                            tracing::trace!(complete = request.is_complete(), headers_complete = request.headers_complete(), "After add_data");
                                         }
                                     }
                                     None => {
@@ -278,7 +278,7 @@ fn spawn_accept_loop(
                                     }
                                 }
                             } else {
-                                tracing::debug!(encrypted = false, n, "Read (plaintext)");
+                                tracing::trace!(encrypted = false, n, "Read (plaintext)");
                                 if request.add_data(&buf[..n]).is_err() {
                                     tracing::warn!("HTTP parse error, first bytes: {:02x?}", &buf[..n.min(32)]);
                                     break;

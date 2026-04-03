@@ -571,7 +571,7 @@ pub(crate) fn handle_setup_2(
                         )
                     }).ok()?;
                     let data_port = data_listener.local_addr().ok()?.port();
-                    tracing::info!(data_port, seed, "RC data channel opened");
+                    tracing::debug!(data_port, "RC data channel opened");
 
                     // Spawn listener (just accept + log for now)
                     tokio::task::block_in_place(|| {
@@ -801,7 +801,6 @@ pub(crate) fn handle_command(
                 let cmd_type = dict.get("type").and_then(|v| v.as_string()).unwrap_or("unknown");
                 tracing::debug!(cmd_type, "POST /command");
                 if cmd_type == "updateMRSupportedCommands" {
-                    tracing::debug!(cmd_type, "POST /command");
                 }
             }
         }
