@@ -237,11 +237,29 @@ impl RaopServer {
     }
 
     pub fn service_info(&self) -> AirPlayServiceInfo {
-        AirPlayServiceInfo::new(
-            &self.name,
-            self.httpd.port(),
-            &self.hwaddr,
-            !self.shared.password.is_empty(),
-        )
+        #[cfg(feature = "airplay2")]
+        {
+            let device_id = crate::util::hwaddr_airplay(&self.hwaddr);
+            let (_, vk) = crate::crypto::pairing_homekit::server_keypair(&device_id);
+            let pk_hex: String = vk.as_bytes().iter().map(|b| format!("{:02x}", b)).collect();
+            let pi = uuid::Uuid::new_v4().to_string();
+            AirPlayServiceInfo::new_airplay2(
+                &self.name,
+                self.httpd.port(),
+                &self.hwaddr,
+                !self.shared.password.is_empty(),
+                &pk_hex,
+                &pi,
+            )
+        }
+        #[cfg(not(feature = "airplay2"))]
+        {
+            AirPlayServiceInfo::new(
+                &self.name,
+                self.httpd.port(),
+                &self.hwaddr,
+                !self.shared.password.is_empty(),
+            )
+        }
     }
 }
