@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [main, airplay2]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    name: Check
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        features: ["", "airplay2"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Check (features=${{ matrix.features || 'default' }})
+        run: cargo check --workspace ${{ matrix.features && format('--features {0}', matrix.features) || '' }}
+
+  test:
+    name: Test
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Test (default features)
+        run: cargo test --workspace
+      - name: Test (airplay2)
+        run: cargo test --workspace --features airplay2
+
+  clippy:
+    name: Clippy
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Clippy (default)
+        run: cargo clippy --workspace -- -D warnings -A clippy::all -W clippy::correctness
+      - name: Clippy (airplay2)
+        run: cargo clippy --workspace --features airplay2 -- -D warnings -A clippy::all -W clippy::correctness
+
+  fmt:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all -- --check

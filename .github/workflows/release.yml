@@ -1,0 +1,66 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: Test before release
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --workspace --features airplay2
+
+  publish:
+    name: Publish to crates.io
+    needs: test
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Publish fairplay-garble
+        run: cargo publish -p fairplay-garble --allow-dirty || true
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+      - name: Wait for crates.io index
+        run: sleep 30
+      - name: Publish shairplay
+        run: cargo publish -p shairplay --allow-dirty
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+  github-release:
+    name: GitHub Release
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Generate changelog
+        id: changelog
+        run: |
+          # Get previous tag
+          PREV_TAG=$(git tag --sort=-version:refname | head -2 | tail -1)
+          if [ -z "$PREV_TAG" ]; then
+            PREV_TAG=$(git rev-list --max-parents=0 HEAD)
+          fi
+          echo "## Changes" > changelog.md
+          echo "" >> changelog.md
+          git log ${PREV_TAG}..HEAD --pretty=format:"- %s" --no-merges >> changelog.md
+          echo "" >> changelog.md
+          echo "prev_tag=$PREV_TAG" >> "$GITHUB_OUTPUT"
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: changelog.md
+          generate_release_notes: false

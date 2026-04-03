@@ -7,7 +7,7 @@ version = "0.1.0"
 edition = "2021"
 license = "LGPL-3.0-or-later"
 description = "Pure Rust AirPlay server library"
-repository = "https://github.com/juhovh/shairplay"
+repository = "https://github.com/fabianlindfors/shairplay"
 rust-version = "1.75"
 
 [dependencies]
