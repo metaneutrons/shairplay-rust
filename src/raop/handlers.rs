@@ -39,6 +39,8 @@ pub(crate) struct RaopConnection {
     pub is_ap2: bool,
     #[cfg(feature = "airplay2")]
     pub pairing_store: Arc<dyn crate::raop::PairingStore>,
+    #[cfg(feature = "airplay2")]
+    pub playout_cmd: Option<tokio::sync::mpsc::UnboundedSender<crate::raop::buffered_audio::PlayoutCommand>>,
 }
 
 pub(crate) fn handle_none(
@@ -484,17 +486,18 @@ pub(crate) fn handle_setup_2(
 
                 let handler = conn.handler.clone();
 
-                tokio::task::block_in_place(|| {
-                    tokio::runtime::Handle::current().spawn(async move {
+                let cmd_tx = tokio::task::block_in_place(|| {
+                    tokio::runtime::Handle::current().block_on(async {
                         let format = crate::raop::AudioFormat { channels: 2, bits: 16, sample_rate: 44100 };
-                        let mut session = handler.audio_init(format);
-
                         let proc = crate::raop::buffered_audio::BufferedAudioProcessor { listener, port: audio_port };
-                        proc.run(shk_arr, 44100, 2, move |adts_data, _ts, _seq| {
-                            session.audio_process(adts_data);
-                        }).await;
+                        let session = handler.audio_init(format);
+                        let session = std::sync::Mutex::new(session);
+                        proc.start(shk_arr, 44100, 2, move |adts_data| {
+                            session.lock().unwrap().audio_process(adts_data);
+                        })
                     })
                 });
+                conn.playout_cmd = Some(cmd_tx);
 
                 stream_resp.insert("dataPort".into(), plist::Value::Integer(audio_port.into()));
                 stream_resp.insert("audioBufferSize".into(), plist::Value::Integer(0x100000_i64.into()));
@@ -599,7 +602,7 @@ pub(crate) fn handle_record_2(
 
 #[cfg(feature = "airplay2")]
 pub(crate) fn handle_setrateanchorti(
-    _conn: &mut RaopConnection,
+    conn: &mut RaopConnection,
     request: &HttpRequest,
     _response: &mut HttpResponse,
 ) -> Option<Vec<u8>> {
@@ -607,16 +610,27 @@ pub(crate) fn handle_setrateanchorti(
     let plist_val: plist::Value = plist::from_bytes(data).ok()?;
     let dict = plist_val.as_dictionary()?;
 
-    let rate = dict.get("rate").and_then(|v| v.as_unsigned_integer()).unwrap_or(0);
-    let rtp_time = dict.get("rtpTime").and_then(|v| v.as_unsigned_integer()).unwrap_or(0);
+    let rate = dict.get("rate").and_then(|v| v.as_unsigned_integer()).unwrap_or(0) as u32;
+    let rtp_time = dict.get("rtpTime").and_then(|v| v.as_unsigned_integer()).unwrap_or(0) as u32;
     let net_secs = dict.get("networkTimeSecs").and_then(|v| v.as_unsigned_integer()).unwrap_or(0);
-    let _net_frac = dict.get("networkTimeFrac").and_then(|v| v.as_unsigned_integer()).unwrap_or(0);
-    let clock_id = dict.get("networkTimeTimelineID").and_then(|v| v.as_unsigned_integer()).unwrap_or(0);
+    let net_frac = dict.get("networkTimeFrac").and_then(|v| v.as_unsigned_integer()).unwrap_or(0);
+
+    // Convert network time to nanoseconds
+    let frac_ns = ((net_frac >> 32) * 1_000_000_000) >> 32;
+    let anchor_time_ns = net_secs * 1_000_000_000 + frac_ns;
 
     if rate & 1 != 0 {
-        tracing::info!(rtp_time, net_secs, clock_id = %format!("{:x}", clock_id), "AP2 play start");
+        tracing::info!(rtp_time, anchor_time_ns, "AP2 play start");
     } else {
         tracing::info!("AP2 play pause");
+    }
+
+    if let Some(cmd) = &conn.playout_cmd {
+        let _ = cmd.send(crate::raop::buffered_audio::PlayoutCommand::SetRate {
+            anchor_rtp: rtp_time,
+            anchor_time_ns,
+            rate,
+        });
     }
 
     None
@@ -641,16 +655,19 @@ pub(crate) fn handle_setpeers(
 
 #[cfg(feature = "airplay2")]
 pub(crate) fn handle_flushbuffered(
-    _conn: &mut RaopConnection,
+    conn: &mut RaopConnection,
     request: &HttpRequest,
     _response: &mut HttpResponse,
 ) -> Option<Vec<u8>> {
     if let Some(data) = request.data() {
         if let Ok(plist_val) = plist::from_bytes::<plist::Value>(data) {
             let dict = plist_val.as_dictionary();
-            let from_seq = dict.and_then(|d| d.get("flushFromSeq")).and_then(|v| v.as_unsigned_integer());
-            let until_seq = dict.and_then(|d| d.get("flushUntilSeq")).and_then(|v| v.as_unsigned_integer());
-            tracing::debug!(?from_seq, ?until_seq, "FLUSHBUFFERED");
+            let from_seq = dict.and_then(|d| d.get("flushFromSeq")).and_then(|v| v.as_unsigned_integer()).unwrap_or(0) as u32;
+            let until_seq = dict.and_then(|d| d.get("flushUntilSeq")).and_then(|v| v.as_unsigned_integer()).unwrap_or(0) as u32;
+            tracing::debug!(from_seq, until_seq, "FLUSHBUFFERED");
+            if let Some(cmd) = &conn.playout_cmd {
+                let _ = cmd.send(crate::raop::buffered_audio::PlayoutCommand::Flush { from_seq, until_seq });
+            }
         }
     }
     None

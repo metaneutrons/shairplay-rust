@@ -134,6 +134,8 @@ impl HttpdCallbacks for RaopShared {
             is_ap2: false,
             #[cfg(feature = "airplay2")]
             pairing_store: self.pairing_store.clone(),
+            #[cfg(feature = "airplay2")]
+            playout_cmd: None,
         };
         Some(Box::new(RaopConnectionHandler {
             conn,
