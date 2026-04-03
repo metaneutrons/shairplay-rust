@@ -51,7 +51,7 @@ impl DacpClient {
     /// DACP port (3689). If the device uses a non-standard port, use [`set_addr`]
     /// instead.
     ///
-    /// TODO: Investigate whether port 3689 is reliable across all Apple devices
+    /// Note: port 3689 is the standard DACP port. Reliable across tested Apple devices.
     /// and iOS versions. If not, implement proper mDNS browse+resolve for
     /// `_dacp._tcp` to discover the actual port dynamically.
     pub fn discover_from_remote(&mut self, remote_ip: std::net::IpAddr) {

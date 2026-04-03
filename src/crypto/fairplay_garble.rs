@@ -128,8 +128,8 @@ pub fn garble(buffer0: &mut [u8; 20], buffer1: &mut [u8; 210], buffer2: &mut [u8
     // C: buffer3[12] =  (0u32.wrapping_sub(34).wrapping_sub(D));
     buffer3[12] = ((0u32.wrapping_sub(34).wrapping_sub(D))) as u8;
 
-    // C: A = 8 - ((buffer2[22] & 7));     // FIXME: buffer2[22] = 74, so A is always 6 and B^C is just ror8(buffer1[33], 6);
-    A = 8u32.wrapping_sub(((buffer2[22] as u32) & 7));     // FIXME: (buffer2[22] as u32) = 74, so A is always 6 and B^C is just ror8((buffer1[33] as u32), 6);
+    // C: A = 8 - ((buffer2[22] & 7));     // NOTE: buffer2[22] = 74, so A is always 6 and B^C is just ror8(buffer1[33], 6);
+    A = 8u32.wrapping_sub(((buffer2[22] as u32) & 7));     // NOTE: (buffer2[22] as u32) = 74, so A is always 6 and B^C is just ror8((buffer1[33] as u32), 6);
 
     // C: B = (buffer1[33] >> (A & 7));
     B = ((buffer1[33] as u32) >> (A & 7));
