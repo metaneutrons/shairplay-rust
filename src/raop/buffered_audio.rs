@@ -98,9 +98,18 @@ impl BufferedAudioProcessor {
                             info!("Playout paused");
                         } else {
                             // Use local wall clock as anchor reference
-                            // (PTP anchor_time_ns is in master clock domain which we
-                            // can't use without a synced PTP client)
                             s.anchor_local_ns = now_ns();
+                            // Discard stale frames from before the new anchor
+                            let stale: Vec<u32> = s.buffer.keys()
+                                .filter(|&&ts| {
+                                    let diff = s.anchor_rtp.wrapping_sub(ts) as i32;
+                                    diff > 0 // frame is before anchor
+                                })
+                                .copied().collect();
+                            if !stale.is_empty() {
+                                debug!(discarded = stale.len(), "Discarded stale frames on resume");
+                            }
+                            for k in stale { s.buffer.remove(&k); }
                             if was_paused {
                                 info!(anchor_rtp, "Playout started");
                             } else {
