@@ -43,6 +43,8 @@ pub struct PtpClock {
     info: Arc<RwLock<PtpClockInfo>>,
 }
 
+impl Default for PtpClock { fn default() -> Self { Self::new() } }
+
 impl PtpClock {
     pub fn new() -> Self {
         Self { info: Arc::new(RwLock::new(PtpClockInfo::default())) }
@@ -109,6 +111,8 @@ pub struct OffsetSmoother {
     mastership_start: u64,
     initialized: bool,
 }
+
+impl Default for OffsetSmoother { fn default() -> Self { Self::new() } }
 
 impl OffsetSmoother {
     pub fn new() -> Self {

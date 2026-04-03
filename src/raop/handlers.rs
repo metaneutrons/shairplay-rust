@@ -378,8 +378,8 @@ pub(crate) fn handle_get_info(
 ) -> Option<Vec<u8>> {
     use crate::net::mdns;
 
-    let features_lo = mdns::AP2_FEATURES & 0xFFFFFFFF;
-    let features_hi = (mdns::AP2_FEATURES >> 32) & 0xFFFFFFFF;
+    let _features_lo = mdns::AP2_FEATURES & 0xFFFFFFFF;
+    let _features_hi = (mdns::AP2_FEATURES >> 32) & 0xFFFFFFFF;
 
     let (_, vk) = crate::crypto::pairing_homekit::server_keypair(&conn.device_id);
     let pk_hex: String = vk.as_bytes().iter().map(|b| format!("{:02x}", b)).collect();
@@ -404,7 +404,7 @@ pub(crate) fn handle_get_info(
 
 #[cfg(feature = "airplay2")]
 pub(crate) fn handle_setup_2(
-    conn: &mut RaopConnection,
+    _conn: &mut RaopConnection,
     request: &HttpRequest,
     response: &mut HttpResponse,
 ) -> Option<Vec<u8>> {
@@ -507,7 +507,7 @@ pub(crate) fn handle_setrateanchorti(
     let rate = dict.get("rate").and_then(|v| v.as_unsigned_integer()).unwrap_or(0);
     let rtp_time = dict.get("rtpTime").and_then(|v| v.as_unsigned_integer()).unwrap_or(0);
     let net_secs = dict.get("networkTimeSecs").and_then(|v| v.as_unsigned_integer()).unwrap_or(0);
-    let net_frac = dict.get("networkTimeFrac").and_then(|v| v.as_unsigned_integer()).unwrap_or(0);
+    let _net_frac = dict.get("networkTimeFrac").and_then(|v| v.as_unsigned_integer()).unwrap_or(0);
     let clock_id = dict.get("networkTimeTimelineID").and_then(|v| v.as_unsigned_integer()).unwrap_or(0);
 
     if rate & 1 != 0 {

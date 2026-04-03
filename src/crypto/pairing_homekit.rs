@@ -8,7 +8,7 @@ use hkdf::Hkdf;
 use chacha20poly1305::{ChaCha20Poly1305, KeyInit, aead::Aead, Nonce};
 use ed25519_dalek::{SigningKey, VerifyingKey, Signer, Verifier, Signature};
 
-use crate::crypto::tlv::{TlvValues, TlvType, TlvError};
+use crate::crypto::tlv::{TlvValues, TlvType};
 use crate::error::CryptoError;
 
 const USERNAME: &str = "Pair-Setup";
