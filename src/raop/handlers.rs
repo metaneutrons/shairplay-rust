@@ -464,11 +464,14 @@ pub(crate) fn handle_setup_2(
                 let audio_format = stream0.get("audioFormat").and_then(|v| v.as_unsigned_integer()).unwrap_or(0);
                 tracing::info!(stream_type = 103, audio_format, "AP2 buffered audio stream setup");
 
-                // Get the shared key from the stream setup (for future use)
-                let shk = stream0.get("shk").and_then(|v| v.as_data());
-                if let Some(k) = shk {
-                    tracing::debug!(shk_len = k.len(), "Stream shared key received");
+                // Get the shared key from the stream setup
+                let shk = stream0.get("shk").and_then(|v| v.as_data()).unwrap_or(&[]);
+                if shk.len() != 32 {
+                    tracing::warn!(len = shk.len(), "Invalid shk length");
+                    return None;
                 }
+                let mut shk_arr = [0u8; 32];
+                shk_arr.copy_from_slice(shk);
 
                 let bind_addr = if conn.local_addr.len() == 16 { "[::]:0" } else { "0.0.0.0:0" };
                 let listener = tokio::task::block_in_place(|| {
@@ -487,7 +490,7 @@ pub(crate) fn handle_setup_2(
                         let mut session = handler.audio_init(format);
 
                         let proc = crate::raop::buffered_audio::BufferedAudioProcessor { listener, port: audio_port };
-                        proc.run(44100, 2, move |adts_data, _ts, _seq| {
+                        proc.run(shk_arr, 44100, 2, move |adts_data, _ts, _seq| {
                             session.audio_process(adts_data);
                         }).await;
                     })
