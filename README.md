@@ -133,6 +133,26 @@ Third-party AP2 receivers cannot send playback commands (play/pause/skip) to the
 
 AP1 DACP remote control is fully implemented and works. See [AP2-REMOTE.md](AP2-REMOTE.md) for the full research.
 
+## Example Player
+
+The included example plays AirPlay audio through the system's default output device:
+
+```bash
+# AirPlay 1
+cargo run --example player
+
+# AirPlay 2
+cargo run --example player --features ap2
+
+# With persistent device identity (stable MAC + paired keys across restarts)
+cargo run --example player --features ap2 -- --persist state.json
+
+# Custom name and interface binding
+cargo run --example player --features ap2 -- --name "Kitchen" --bind 192.168.1.100 --persist state.json
+```
+
+Without `--persist`, the device gets a random MAC each run and the iPhone treats it as a new device. With `--persist`, the MAC and paired keys are saved to a JSON file.
+
 ## Architecture
 
 ``` plain
