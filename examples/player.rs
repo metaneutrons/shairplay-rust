@@ -95,36 +95,51 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map(|i| args[i + 1].as_str())
         .unwrap_or("Shairplay Rust");
 
-    // Set up cpal audio output
+    // Set up cpal audio output (fallback to /dev/null if no device)
     let host = cpal::default_host();
-    let device = host.default_output_device().expect("no output device");
-    eprintln!("🔈 Output device: {}", device.name().unwrap_or_default());
+    let (ring, _stream) = match host.default_output_device() {
+        Some(device) => {
+            eprintln!("🔈 Output device: {}", device.name().unwrap_or_default());
 
-    let supported = device.default_output_config().expect("no supported output config");
-    eprintln!("🎛️  Device config: {} ch, {} Hz, {:?}",
-        supported.channels(), supported.sample_rate().0, supported.sample_format());
+            let config = cpal::StreamConfig {
+                channels: 2,
+                sample_rate: cpal::SampleRate(44100),
+                buffer_size: cpal::BufferSize::Default,
+            };
 
-    let config = cpal::StreamConfig {
-        channels: 2,
-        sample_rate: cpal::SampleRate(44100), // AirPlay always sends 44100 Hz
-        buffer_size: cpal::BufferSize::Default,
-    };
+            let ring = Arc::new(Mutex::new(AudioRing::new()));
+            let ring_for_cpal = ring.clone();
 
-    let ring = Arc::new(Mutex::new(AudioRing::new()));
-    let ring_for_cpal = ring.clone();
-
-    let stream = device.build_output_stream(
-        &config,
-        move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-            let mut ring = ring_for_cpal.lock().unwrap();
-            for sample in data.iter_mut() {
-                *sample = ring.pop_sample();
+            match device.build_output_stream(
+                &config,
+                move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
+                    let mut ring = ring_for_cpal.lock().unwrap();
+                    for sample in data.iter_mut() {
+                        *sample = ring.pop_sample();
+                    }
+                },
+                |err| eprintln!("⚠️  Audio error: {err}"),
+                None,
+            ) {
+                Ok(stream) => {
+                    if let Some(supported) = device.default_output_config().ok() {
+                        eprintln!("🎛️  Device config: {} ch, {} Hz, {:?}",
+                            supported.channels(), supported.sample_rate().0, supported.sample_format());
+                    }
+                    stream.play()?;
+                    (ring, Some(stream))
+                }
+                Err(e) => {
+                    eprintln!("⚠️  Cannot open audio device ({e}) — PCM data will be discarded");
+                    (ring, None)
+                }
             }
-        },
-        |err| eprintln!("⚠️  Audio error: {err}"),
-        None,
-    )?;
-    stream.play()?;
+        }
+        None => {
+            eprintln!("⚠️  No audio output device — PCM data will be discarded");
+            (Arc::new(Mutex::new(AudioRing::new())), None)
+        }
+    };
 
     // Start AirPlay server — key is baked into the library
     let handler = Arc::new(Handler { ring });
