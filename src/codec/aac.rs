@@ -166,7 +166,7 @@ impl AacDecoder {
         Ok(Self { decoder, sample_rate, channels })
     }
 
-    /// Decode a raw AAC frame (without ADTS header) to interleaved S16LE PCM.
+    /// Decode a raw AAC frame (without ADTS header) to interleaved F32 PCM.
     pub fn decode(&mut self, raw_aac: &[u8]) -> Option<Vec<u8>> {
         use symphonia::core::audio::SampleBuffer;
         use symphonia::core::formats::Packet;
@@ -175,10 +175,10 @@ impl AacDecoder {
         let decoded = self.decoder.decode(&packet).ok()?;
         let spec = *decoded.spec();
         let duration = decoded.capacity() as u64;
-        let mut sample_buf = SampleBuffer::<i16>::new(duration, spec);
+        let mut sample_buf = SampleBuffer::<f32>::new(duration, spec);
         sample_buf.copy_interleaved_ref(decoded);
         let samples = sample_buf.samples();
-        let mut pcm = Vec::with_capacity(samples.len() * 2);
+        let mut pcm = Vec::with_capacity(samples.len() * 4);
         for &s in samples {
             pcm.extend_from_slice(&s.to_le_bytes());
         }

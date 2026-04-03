@@ -14,24 +14,24 @@ use shairplay::{AudioFormat, AudioHandler, AudioSession, RaopServer};
 
 /// Ring buffer shared between the AirPlay audio callback and the cpal output callback.
 struct AudioRing {
-    buffer: VecDeque<i16>,
+    buffer: VecDeque<f32>,
 }
 
 impl AudioRing {
     fn new() -> Self {
-        Self { buffer: VecDeque::with_capacity(44100 * 2 * 2) } // ~2s buffer
+        Self { buffer: VecDeque::with_capacity(48000 * 8 * 2) } // ~2s buffer, up to 7.1
     }
 
     fn push_samples(&mut self, pcm: &[u8]) {
-        // PCM is 16-bit little-endian interleaved stereo
-        for chunk in pcm.chunks_exact(2) {
-            let sample = i16::from_le_bytes([chunk[0], chunk[1]]);
+        // PCM is F32LE interleaved
+        for chunk in pcm.chunks_exact(4) {
+            let sample = f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
             self.buffer.push_back(sample);
         }
     }
 
-    fn pop_sample(&mut self) -> i16 {
-        self.buffer.pop_front().unwrap_or(0) // silence if buffer empty
+    fn pop_sample(&mut self) -> f32 {
+        self.buffer.pop_front().unwrap_or(0.0)
     }
 }
 
@@ -118,7 +118,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
             let mut ring = ring_for_cpal.lock().unwrap();
             for sample in data.iter_mut() {
-                *sample = ring.pop_sample() as f32 / 32768.0;
+                *sample = ring.pop_sample();
             }
         },
         |err| eprintln!("⚠️  Audio error: {err}"),

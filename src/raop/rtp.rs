@@ -8,6 +8,17 @@ use crate::error::{NetworkError, ShairplayError};
 use crate::raop::buffer::{RaopBuffer, RAOP_PACKET_LEN};
 use crate::raop::{AudioHandler, AudioFormat, AudioCodec};
 
+/// Convert S16LE PCM bytes to F32LE PCM bytes.
+fn s16le_to_f32le(s16: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(s16.len() * 2); // 2 bytes per S16 → 4 bytes per F32
+    for chunk in s16.chunks_exact(2) {
+        let sample = i16::from_le_bytes([chunk[0], chunk[1]]);
+        let f = sample as f32 / 32768.0;
+        out.extend_from_slice(&f.to_le_bytes());
+    }
+    out
+}
+
 const NO_FLUSH: i32 = -42;
 
 /// Parse the SDP remote string to IP address bytes.
@@ -113,7 +124,7 @@ impl RaopRtp {
                 buf.config().clone()
             };
             let mut session = self.handler.audio_init(AudioFormat { codec: AudioCodec::Pcm,
-                bits: config.bit_depth, channels: config.num_channels,
+                bits: 32, channels: config.num_channels,
                 sample_rate: config.sample_rate,
             });
 
@@ -156,7 +167,7 @@ impl RaopRtp {
                                     let mut buf = buffer.lock().await;
                                     buf.queue(&data_packet[..len], true);
                                     while let Some(audio) = buf.dequeue(no_resend) {
-                                        session.audio_process(audio);
+                                        { let f32_pcm = s16le_to_f32le(audio); session.audio_process(&f32_pcm); }
                                     }
                                 }
                             }
@@ -184,7 +195,7 @@ impl RaopRtp {
                 buf.config().clone()
             };
             let mut session = self.handler.audio_init(AudioFormat { codec: AudioCodec::Pcm,
-                bits: config.bit_depth, channels: config.num_channels,
+                bits: 32, channels: config.num_channels,
                 sample_rate: config.sample_rate,
             });
 
@@ -234,7 +245,7 @@ impl RaopRtp {
                                 let mut buf = buffer.lock().await;
                                 buf.queue(&packet_buf[4..4 + rtp_len], false);
                                 if let Some(audio) = buf.dequeue(true) {
-                                    session.audio_process(audio);
+                                    { let f32_pcm = s16le_to_f32le(audio); session.audio_process(&f32_pcm); }
                                 }
                                 drop(buf);
                                 packet_buf.drain(..4 + rtp_len);
