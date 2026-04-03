@@ -412,32 +412,143 @@ pub(crate) fn handle_setup_2(
     let plist_val: plist::Value = plist::from_bytes(data).ok()?;
     let dict = plist_val.as_dictionary()?;
 
-    // Check if this is an initial setup (no "streams") or a stream setup
-    if dict.get("streams").is_some() {
-        // Stream setup — delegate to Phase 9
-        return None;
-    }
-
-    // Initial setup: check timingProtocol
-    let timing = dict.get("timingProtocol")
-        .and_then(|v| v.as_string())
-        .unwrap_or("None");
-
     let mut resp_dict = plist::Dictionary::new();
 
-    if timing == "PTP" {
-        let mut tpi = plist::Dictionary::new();
-        let addrs = vec![plist::Value::String("0.0.0.0".into())];
-        tpi.insert("Addresses".into(), plist::Value::Array(addrs));
-        tpi.insert("ID".into(), plist::Value::String("0.0.0.0".into()));
-        resp_dict.insert("timingPeerInfo".into(), plist::Value::Dictionary(tpi));
-    }
+    if let Some(streams) = dict.get("streams").and_then(|v| v.as_array()) {
+        // Stream SETUP — type 96 (realtime) or type 103 (buffered)
+        let stream0 = streams.first()?.as_dictionary()?;
+        let stream_type = stream0.get("type")?.as_unsigned_integer()?;
 
-    let event_port: u64 = 0;
-    resp_dict.insert("eventPort".into(), plist::Value::Integer(event_port.into()));
+        let mut stream_resp = plist::Dictionary::new();
+        stream_resp.insert("type".into(), plist::Value::Integer(stream_type.into()));
+
+        match stream_type {
+            96 => {
+                // Realtime ALAC — bind UDP port, reuse existing RTP pipeline
+                let sr = stream0.get("sr").and_then(|v| v.as_unsigned_integer()).unwrap_or(44100);
+                tracing::info!(stream_type = 96, sample_rate = sr, "AP2 realtime ALAC stream setup");
+
+                // Bind UDP port for realtime audio
+                let udp_sock = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
+                let audio_port = udp_sock.local_addr().ok()?.port();
+                drop(udp_sock); // Will be re-bound by RTP
+
+                stream_resp.insert("dataPort".into(), plist::Value::Integer(audio_port.into()));
+            }
+            103 => {
+                // Buffered audio — bind TCP port
+                let audio_format = stream0.get("audioFormat").and_then(|v| v.as_unsigned_integer()).unwrap_or(0);
+                tracing::info!(stream_type = 103, audio_format, "AP2 buffered audio stream setup");
+
+                let tcp_listener = std::net::TcpListener::bind("0.0.0.0:0").ok()?;
+                let audio_port = tcp_listener.local_addr().ok()?.port();
+                drop(tcp_listener); // Will be re-bound by buffered audio processor
+
+                stream_resp.insert("dataPort".into(), plist::Value::Integer(audio_port.into()));
+                stream_resp.insert("audioBufferSize".into(), plist::Value::Integer(0x100000_i64.into()));
+            }
+            _ => {
+                tracing::warn!(stream_type, "Unhandled AP2 stream type");
+            }
+        }
+
+        // Control port (shared across streams)
+        let ctrl_sock = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
+        let ctrl_port = ctrl_sock.local_addr().ok()?.port();
+        drop(ctrl_sock);
+        stream_resp.insert("controlPort".into(), plist::Value::Integer(ctrl_port.into()));
+
+        let streams_array = vec![plist::Value::Dictionary(stream_resp)];
+        resp_dict.insert("streams".into(), plist::Value::Array(streams_array));
+    } else {
+        // Initial setup (no streams): timingProtocol, event channel
+        let timing = dict.get("timingProtocol")
+            .and_then(|v| v.as_string())
+            .unwrap_or("None");
+
+        if timing == "PTP" {
+            let mut tpi = plist::Dictionary::new();
+            let addrs = vec![plist::Value::String("0.0.0.0".into())];
+            tpi.insert("Addresses".into(), plist::Value::Array(addrs));
+            tpi.insert("ID".into(), plist::Value::String("0.0.0.0".into()));
+            resp_dict.insert("timingPeerInfo".into(), plist::Value::Dictionary(tpi));
+        }
+
+        let event_port: u64 = 0; // Placeholder until event channel is wired in
+        resp_dict.insert("eventPort".into(), plist::Value::Integer(event_port.into()));
+    }
 
     let mut buf = Vec::new();
     plist::to_writer_binary(&mut buf, &resp_dict).ok()?;
     response.add_header("Content-Type", "application/x-apple-binary-plist");
     Some(buf)
+}
+
+#[cfg(feature = "airplay2")]
+pub(crate) fn handle_record_2(
+    _conn: &mut RaopConnection,
+    _request: &HttpRequest,
+    response: &mut HttpResponse,
+) -> Option<Vec<u8>> {
+    response.add_header("Audio-Latency", "0");
+    None
+}
+
+#[cfg(feature = "airplay2")]
+pub(crate) fn handle_setrateanchorti(
+    _conn: &mut RaopConnection,
+    request: &HttpRequest,
+    _response: &mut HttpResponse,
+) -> Option<Vec<u8>> {
+    let data = request.data()?;
+    let plist_val: plist::Value = plist::from_bytes(data).ok()?;
+    let dict = plist_val.as_dictionary()?;
+
+    let rate = dict.get("rate").and_then(|v| v.as_unsigned_integer()).unwrap_or(0);
+    let rtp_time = dict.get("rtpTime").and_then(|v| v.as_unsigned_integer()).unwrap_or(0);
+    let net_secs = dict.get("networkTimeSecs").and_then(|v| v.as_unsigned_integer()).unwrap_or(0);
+    let net_frac = dict.get("networkTimeFrac").and_then(|v| v.as_unsigned_integer()).unwrap_or(0);
+    let clock_id = dict.get("networkTimeTimelineID").and_then(|v| v.as_unsigned_integer()).unwrap_or(0);
+
+    if rate & 1 != 0 {
+        tracing::info!(rtp_time, net_secs, clock_id = %format!("{:x}", clock_id), "AP2 play start");
+    } else {
+        tracing::info!("AP2 play pause");
+    }
+
+    None
+}
+
+#[cfg(feature = "airplay2")]
+pub(crate) fn handle_setpeers(
+    _conn: &mut RaopConnection,
+    request: &HttpRequest,
+    _response: &mut HttpResponse,
+) -> Option<Vec<u8>> {
+    if let Some(data) = request.data() {
+        if let Ok(plist_val) = plist::from_bytes::<plist::Value>(data) {
+            if let Some(arr) = plist_val.as_array() {
+                let peers: Vec<&str> = arr.iter().filter_map(|v| v.as_string()).collect();
+                tracing::debug!(?peers, "SETPEERS");
+            }
+        }
+    }
+    None
+}
+
+#[cfg(feature = "airplay2")]
+pub(crate) fn handle_flushbuffered(
+    _conn: &mut RaopConnection,
+    request: &HttpRequest,
+    _response: &mut HttpResponse,
+) -> Option<Vec<u8>> {
+    if let Some(data) = request.data() {
+        if let Ok(plist_val) = plist::from_bytes::<plist::Value>(data) {
+            let dict = plist_val.as_dictionary();
+            let from_seq = dict.and_then(|d| d.get("flushFromSeq")).and_then(|v| v.as_unsigned_integer());
+            let until_seq = dict.and_then(|d| d.get("flushUntilSeq")).and_then(|v| v.as_unsigned_integer());
+            tracing::debug!(?from_seq, ?until_seq, "FLUSHBUFFERED");
+        }
+    }
+    None
 }

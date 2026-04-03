@@ -94,7 +94,22 @@ pub(crate) fn dispatch(conn: &mut RaopConnection, request: &HttpRequest) -> Http
         }
         None
     } else {
-        None
+        #[cfg(feature = "airplay2")]
+        {
+            if method == "RECORD" && conn.is_ap2 {
+                Some(handlers::handle_record_2 as Handler)
+            } else if method == "SETRATEANCHORTI" {
+                Some(handlers::handle_setrateanchorti as Handler)
+            } else if method == "SETPEERS" || method == "SETPEERSX" {
+                Some(handlers::handle_setpeers as Handler)
+            } else if method == "FLUSHBUFFERED" {
+                Some(handlers::handle_flushbuffered as Handler)
+            } else {
+                None
+            }
+        }
+        #[cfg(not(feature = "airplay2"))]
+        { None }
     };
 
     let response_data = handler.and_then(|h| h(conn, request, &mut response));
