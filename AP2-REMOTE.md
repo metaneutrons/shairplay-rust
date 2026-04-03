@@ -33,66 +33,36 @@ The iPhone advertises a `_dacp._tcp` mDNS service. When it connects via AirPlay,
 it sends `DACP-ID` and `Active-Remote` headers. Our library creates a `DacpClient`
 and delivers it as `Arc<dyn RemoteControl>` to the app.
 
-## AP2 Remote Control — MediaRemote (Research Needed)
+## AP2 Remote Control — Definitive Conclusion
 
-### What We Have
+**AP2 remote control from a third-party receiver is not possible** without being
+a real HomeKit accessory or sharing the same Apple ID.
 
-1. **Type 130 stream setup**: The iPhone opens an encrypted TCP data channel
-   during SETUP on the RC (Remote Control Only) connection. We accept the
-   connection and can read/write on it.
+### All Paths Investigated
 
-2. **`/command` POST**: The iPhone sends `mrSupportedCommandsFromSender` — a
-   binary plist containing an array of supported commands. Each command is a
-   nested binary plist with `kCommandInfoCommandKey` and `kCommandInfoEnabledKey`.
+| Path | Mechanism | Result |
+|------|-----------|--------|
+| DACP | `Active-Remote` RTSP header | Not sent in AP2 (iOS 18+) |
+| Type 130 MRP | Encrypted data channel with `seed` | Seed requires HomeKit trust |
+| Event channel | RTSP `POST /command` over encrypted TCP | One-way only (status updates). iPhone returns 200 OK but ignores commands |
+| Companion-link | `_companion-link._tcp` OPACK protocol | Requires same Apple ID (always-on `rapportd` connection) |
+| HAP pairing | `_hap._tcp` HomeKit accessory | Apple TV/HomePod don't use HAP for AirPlay — trust is from Home app setup |
 
-3. **Event channel**: The server sends `updateInfo` plists to the iPhone with
-   device state (via the event channel, not the data channel).
+### Why It Works for Apple Devices
 
-4. **Encryption**: The data channel uses ChaCha20-Poly1305 with a cipher derived
-   from the shared secret + a `seed` value from the SETUP plist:
-   ```
-   salt = "DataStream-Salt" + str(seed)
-   write_key = HKDF(shared_secret, salt, "DataStream-Output-Encryption-Key")
-   read_key  = HKDF(shared_secret, salt, "DataStream-Input-Encryption-Key")
-   ```
+- **Mac**: Uses `_companion-link._tcp` (Rapport daemon). iPhone connects because
+  they share the same Apple ID. This is an always-on connection, not AirPlay-specific.
+- **HomePod/Apple TV**: Added to Home app during initial setup. HomeKit trust stored
+  in iCloud. iPhone sends `seed` in type 130 SETUP because the device is in the
+  same Home. This trust cannot be established through AirPlay protocol alone.
 
-### What We Don't Know
+### Recommendation
 
-1. **Command format for sending**: The binary plist structure for sending a
-   playback command (e.g., "next track") from receiver to sender over the
-   type 130 data channel is undocumented.
-
-2. **Framing**: How commands are framed on the data channel TCP stream
-   (length-prefixed? RTSP-like? raw plist concatenation?).
-
-3. **Command identifiers**: The `kCommandInfoCommandKey` values map to
-   MediaRemote framework constants (e.g., `kMRMediaRemoteCommandPlay`).
-   The numeric values are known from Apple's private framework headers,
-   but the plist structure for invoking them is not.
-
-### Related Protocols (Not Directly Applicable)
-
-- **MRP (MediaRemote Protocol)**: Used between Apple TV Remote app and Apple TV.
-  Uses protobuf over TCP port 49152. Documented by pyatv project. Different
-  protocol from the AirPlay 2 data channel (which uses binary plists).
-
-- **DACP**: AP1 remote control. HTTP-based, well-documented, fully implemented.
-  Works alongside AP2 audio — the iPhone still runs a DACP service even during
-  AP2 streaming.
-
-### Research Approaches
-
-1. **Wireshark capture**: Set up a HomePod (or HomePod Mini) and capture traffic
-   while using Siri or the Home app to control playback. The HomePod is a real
-   AirPlay 2 receiver that sends commands back to the iPhone.
-
-2. **Apple framework headers**: `MediaRemote.framework` private headers contain
-   command constants. Combined with the `mrSupportedCommandsFromSender` plist
-   structure, the command format might be inferrable.
-
-3. **Hybrid approach**: Use AP1 DACP for remote control even during AP2 audio
-   sessions. The iPhone's DACP service is always available. This is the pragmatic
-   solution until the AP2 data channel protocol is reverse-engineered.
+For third-party AP2 receivers, remote control is not available. The library should:
+1. Document this limitation clearly
+2. Focus on receiving `updateMRSupportedCommands` for informational purposes
+3. Forward now-playing metadata (artwork, progress, track info) from SET_PARAMETER
+4. Consider AP1 DACP as fallback if the sender provides headers (older iOS versions)
 
 ### Known Command Constants (from MediaRemote.framework)
 
