@@ -9,7 +9,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::io::AsyncReadExt;
 use tracing::{debug, info, warn};
 
-use crate::codec::aac::{self, AudioSsrc, AacDecoder};
+use crate::codec::aac::{AudioSsrc, AacDecoder};
 use crate::error::NetworkError;
 use crate::raop::{AudioHandler, AudioFormat, AudioCodec};
 
@@ -131,7 +131,7 @@ impl BufferedAudioProcessor {
 
         // Receiver task
         let state4 = state.clone();
-        let port = self.port;
+
         tokio::spawn(async move {
             let (stream, addr) = match self.listener.accept().await {
                 Ok(s) => s,
@@ -280,7 +280,7 @@ async fn receive_loop(
 fn delivery_loop(
     state: Arc<(Mutex<PlayoutState>, Condvar)>,
     handler: Arc<dyn AudioHandler>,
-    output_config: OutputConfig,
+    _output_config: OutputConfig,
 ) {
     let (lock, cvar) = &*state;
     let mut session: Option<Box<dyn crate::raop::AudioSession>> = None;

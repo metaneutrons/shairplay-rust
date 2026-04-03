@@ -105,8 +105,8 @@ mod tests {
 pub struct StreamResampler {
     resampler: rubato::SincFixedIn<f32>,
     channels: usize,
-    from_rate: u32,
-    to_rate: u32,
+    _from_rate: u32,
+    _to_rate: u32,
 }
 
 impl StreamResampler {
@@ -122,7 +122,7 @@ impl StreamResampler {
         let ratio = to_rate as f64 / from_rate as f64;
         // Use a reasonable chunk size
         let resampler = rubato::SincFixedIn::<f32>::new(ratio, 1.0, params, 1024, channels).ok()?;
-        Some(Self { resampler, channels, from_rate, to_rate })
+        Some(Self { resampler, channels, _from_rate: from_rate, _to_rate: to_rate })
     }
 
     /// Resample interleaved F32 audio. Returns resampled interleaved F32.

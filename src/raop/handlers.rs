@@ -38,6 +38,7 @@ pub(crate) struct RaopConnection {
     #[cfg(feature = "airplay2")]
     pub is_ap2: bool,
     #[cfg(feature = "airplay2")]
+    #[allow(dead_code)]
     pub pairing_store: Arc<dyn crate::raop::PairingStore>,
     #[cfg(feature = "airplay2")]
     pub playout_cmd: Option<tokio::sync::mpsc::UnboundedSender<crate::raop::buffered_audio::PlayoutCommand>>,
@@ -683,7 +684,7 @@ pub(crate) fn handle_flushbuffered(
 
 #[cfg(feature = "airplay2")]
 pub(crate) fn handle_feedback(
-    conn: &mut RaopConnection,
+    _conn: &mut RaopConnection,
     _request: &HttpRequest,
     response: &mut HttpResponse,
 ) -> Option<Vec<u8>> {
