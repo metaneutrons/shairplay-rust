@@ -170,6 +170,7 @@ impl MdnsService {
         ).map_err(|e| NetworkError::Mdns(format!("{e}")))?;
         self.raop_fullname = Some(svc.get_fullname().to_string());
         self.daemon.register(svc).map_err(|e| NetworkError::Mdns(format!("{e}")))?;
+        tracing::info!(name = %info.raop_name, port = info.port, "mDNS: _raop._tcp registered");
         Ok(())
     }
 
@@ -184,6 +185,7 @@ impl MdnsService {
         ).map_err(|e| NetworkError::Mdns(format!("{e}")))?;
         self.airplay_fullname = Some(svc.get_fullname().to_string());
         self.daemon.register(svc).map_err(|e| NetworkError::Mdns(format!("{e}")))?;
+        tracing::info!(name = %info.airplay_name, port = info.port, "mDNS: _airplay._tcp registered");
         Ok(())
     }
 

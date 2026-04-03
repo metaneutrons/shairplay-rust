@@ -11,6 +11,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
 use crate::error::NetworkError;
+use tracing::debug;
 
 /// Client for sending DACP remote control commands to an Apple device.
 ///
@@ -65,16 +66,19 @@ impl DacpClient {
 
     /// Toggle play/pause.
     pub async fn play_pause(&self) -> Result<(), NetworkError> {
+        debug!("DACP: play_pause");
         self.command("/ctrl-int/1/playpause").await
     }
 
     /// Next track.
     pub async fn next(&self) -> Result<(), NetworkError> {
+        debug!("DACP: next");
         self.command("/ctrl-int/1/nextitem").await
     }
 
     /// Previous track.
     pub async fn prev(&self) -> Result<(), NetworkError> {
+        debug!("DACP: prev");
         self.command("/ctrl-int/1/previtem").await
     }
 
