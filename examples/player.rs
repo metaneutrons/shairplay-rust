@@ -3,6 +3,7 @@
 //! Usage:
 //!   cargo run --example player
 //!   cargo run --example player -- --name "My Speaker"
+//!   cargo run --example player -- --bind 192.168.1.100
 //!
 //! Then select "My Speaker" as AirPlay output on your iPhone/Mac.
 
@@ -10,7 +11,7 @@ use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use shairplay::{AudioFormat, AudioHandler, AudioSession, RaopServer};
+use shairplay::{AudioFormat, AudioHandler, AudioSession, BindConfig, RaopServer};
 
 /// Ring buffer shared between the AirPlay audio callback and the cpal output callback.
 struct AudioRing {
@@ -94,6 +95,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let name = args.iter().position(|a| a == "--name")
         .map(|i| args[i + 1].as_str())
         .unwrap_or("Shairplay Rust");
+    let bind_addr = args.iter().position(|a| a == "--bind")
+        .map(|i| args[i + 1].clone());
 
     // Set up cpal audio output (fallback to /dev/null if no device)
     let host = cpal::default_host();
@@ -143,18 +146,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Start AirPlay server — key is baked into the library
     let handler = Arc::new(Handler { ring });
-    let mut server = RaopServer::builder()
-        .name(name)
+    let mut builder = RaopServer::builder();
+    builder = builder.name(name)
         .hwaddr({
-            // Random MAC each run until we implement key persistence
             let mut mac = [0u8; 6];
-            mac[0] = 0x02; // locally administered
+            mac[0] = 0x02;
             rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut mac[1..]);
             eprintln!("🔑 Device MAC: {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x} (random, no key persistence yet)",
                 mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
             mac
-        })
-        .build(handler)?;
+        });
+    if let Some(addr) = &bind_addr {
+        eprintln!("🔗 Binding to {addr}");
+        builder = builder.bind(BindConfig { addr: Some(addr.parse()?), ..Default::default() });
+    }
+    let mut server = builder.build(handler)?;
 
     server.start().await?;
 
