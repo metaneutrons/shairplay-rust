@@ -117,3 +117,25 @@ kMRMediaRemoteCommandToggleRepeat   = ?
 | `src/raop/event_channel.rs` | Event channel (sends `updateInfo` to iPhone) |
 | `src/dacp/mod.rs` | DACP HTTP client |
 | `src/crypto/chacha_transport.rs` | Data channel encryption |
+
+
+## References
+
+- [AirPlay 2 Internals — Service Discovery](https://emanuelecozzi.net/docs/airplay2/discovery/) — mDNS TXT record format
+- [AirPlay 2 Internals — Features](https://emanuelecozzi.net/docs/airplay2/features/) — Feature bitmask documentation
+- [Unofficial AirPlay Specification](https://openairplay.github.io/airplay-spec/service_discovery.html) — Legacy AirPlay protocol
+- [MediaRemoteTV Protocol](https://jeanregisser.gitbooks.io/mediaremotetv-protocol/content/communication/) — MRP protobuf format (Apple TV, not AirPlay data channel)
+- [pyatv](https://github.com/postlund/pyatv) — Python Apple TV library (MRP implementation)
+- [shairport-sync](https://github.com/mikebrady/shairport-sync) — C AirPlay 2 reference implementation
+
+## Feature Flag Findings
+
+The `seed` for the type 130 encrypted data channel is gated by:
+
+- **Bit 58: `SupportsHangdogRemoteControl`** — must be set
+- **Condition**: `(isAppleTV || isAppleAudioAccessory) && bit58`
+- `isAppleAudioAccessory` = model starts with `AudioAccessory` (HomePod)
+- `isAppleTV` = model starts with `AppleTV`
+
+Our current config: `model=AppleTV2,1`, bit 58 NOT set → no seed.
+Fix: set bit 58 in features and keep model as `AppleTV*`.
