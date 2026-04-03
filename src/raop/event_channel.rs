@@ -45,7 +45,7 @@ impl EventChannel {
     }
 
     /// Run the event channel. Returns an EventSender for sending commands.
-    pub async fn run(self, mut channel: EncryptedChannel) -> EventSender {
+    pub async fn run(self, channel: EncryptedChannel) -> EventSender {
         let (tx, rx) = mpsc::unbounded_channel();
         let sender = EventSender { tx };
 
@@ -82,21 +82,12 @@ impl EventChannel {
                         Ok(0) => { debug!("Event channel closed by client"); break; }
                         Ok(n) => {
                             encrypted_buf.extend_from_slice(&buf[..n]);
-                            info!(n, total=encrypted_buf.len(), "Event channel raw bytes received");
+                            debug!(n, "Event channel data received");
                             match channel.decrypt_ctx.decrypt(&encrypted_buf) {
                                 Ok((plain, consumed)) => {
                                     if consumed > 0 { encrypted_buf.drain(..consumed); }
                                     if !plain.is_empty() {
-                                        debug!(len = plain.len(), "Event channel received");
-                                        if let Ok(s) = std::str::from_utf8(&plain) {
-                                            info!("Event channel text: {}", s);
-                                        } else if let Ok(val) = plist::from_bytes::<plist::Value>(&plain) {
-                                            info!("Event channel plist: {:?}", val);
-                                        } else {
-                                            info!("Event channel binary: {:02x?}", &plain[..plain.len().min(100)]);
-                                        }
-                                    } else {
-                                        info!(consumed, buf_remaining=encrypted_buf.len(), "Event channel: decrypted empty");
+                                        debug!(len = plain.len(), "Event channel message received");
                                     }
                                 }
                                 Err(e) => { warn!("Event channel decrypt error: {e}"); }

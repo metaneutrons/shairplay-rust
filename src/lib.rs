@@ -66,10 +66,4 @@ pub use raop::{AudioCodec, AudioFormat, AudioHandler, AudioSession, RaopServer, 
 #[cfg(feature = "airplay2")]
 pub use raop::{PairingStore, MemoryPairingStore};
 
-// AirPlay 2 re-exports
-#[cfg(feature = "airplay2")]
-pub use crypto::tlv;
-#[cfg(feature = "airplay2")]
-pub use crypto::pairing_homekit;
-#[cfg(feature = "airplay2")]
-pub use crypto::chacha_transport;
+// AirPlay 2 re-exports are internal — crypto modules not part of public API

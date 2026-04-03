@@ -39,7 +39,7 @@ impl CipherContext {
         }
 
         let cipher = ChaCha20Poly1305::new((&self.key).into());
-        let nblocks = (plaintext.len() + MAX_BLOCK_LEN - 1) / MAX_BLOCK_LEN;
+        let nblocks = plaintext.len().div_ceil(MAX_BLOCK_LEN);
         let mut out = Vec::with_capacity(nblocks * (2 + MAX_BLOCK_LEN + TAG_LEN));
 
         for chunk in plaintext.chunks(MAX_BLOCK_LEN) {

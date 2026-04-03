@@ -242,10 +242,8 @@ fn spawn_accept_loop(
                                 }
                                 let leftover = request.take_leftover();
                                 request = HttpRequest::new();
-                                if !leftover.is_empty() {
-                                    if request.add_data(&leftover).is_err() {
-                                        return;
-                                    }
+                                if !leftover.is_empty() && request.add_data(&leftover).is_err() {
+                                    return;
                                 }
                             }
 

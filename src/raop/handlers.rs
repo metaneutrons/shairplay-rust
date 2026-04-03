@@ -452,14 +452,6 @@ pub(crate) fn handle_setup_2(
     request: &HttpRequest,
     response: &mut HttpResponse,
 ) -> Option<Vec<u8>> {
-    // Capture DACP remote control headers (sent on AP2 requests too)
-    if let (Some(dacp_id), Some(active_remote)) = (
-        request.header("DACP-ID"),
-        request.header("Active-Remote"),
-    ) {
-        tracing::info!(dacp_id, active_remote, "DACP remote control headers found");
-    }
-
     let data = request.data()?;
     let plist_val: plist::Value = plist::from_bytes(data).ok()?;
     let dict = plist_val.as_dictionary()?;
@@ -744,7 +736,7 @@ pub(crate) fn handle_flushbuffered(
 
 #[cfg(feature = "airplay2")]
 pub(crate) fn handle_feedback(
-    conn: &mut RaopConnection,
+    _conn: &mut RaopConnection,
     _request: &HttpRequest,
     response: &mut HttpResponse,
 ) -> Option<Vec<u8>> {
@@ -765,7 +757,7 @@ pub(crate) fn handle_feedback(
 
 #[cfg(feature = "airplay2")]
 pub(crate) fn handle_command(
-    conn: &mut RaopConnection,
+    _conn: &mut RaopConnection,
     request: &HttpRequest,
     _response: &mut HttpResponse,
 ) -> Option<Vec<u8>> {
@@ -775,7 +767,7 @@ pub(crate) fn handle_command(
                 let cmd_type = dict.get("type").and_then(|v| v.as_string()).unwrap_or("unknown");
                 tracing::debug!(cmd_type, "POST /command");
                 if cmd_type == "updateMRSupportedCommands" {
-                    tracing::info!("MR supported commands received");
+                    tracing::debug!(cmd_type, "POST /command");
                 }
             }
         }

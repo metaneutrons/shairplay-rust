@@ -506,7 +506,7 @@ impl RemoteControl for DacpRemoteControl {
                 }
             })
         }).map_err(|e| crate::error::ShairplayError::Network(
-            crate::error::NetworkError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))
+            crate::error::NetworkError::Io(std::io::Error::other(e.to_string()))
         ))
     }
 

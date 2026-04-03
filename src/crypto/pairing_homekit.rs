@@ -253,11 +253,11 @@ fn calculate_m(
     let h_i = sha512(username.as_bytes());
 
     let mut hasher = Sha512::new();
-    hasher.update(&h_xor);
-    hasher.update(&h_i);
-    hasher.update(&to_bytes_be(salt));
-    hasher.update(&to_bytes_be(big_a));
-    hasher.update(&to_bytes_be(big_b));
+    hasher.update(h_xor);
+    hasher.update(h_i);
+    hasher.update(to_bytes_be(salt));
+    hasher.update(to_bytes_be(big_a));
+    hasher.update(to_bytes_be(big_b));
     hasher.update(session_key);
     hasher.finalize().into()
 }
@@ -265,7 +265,7 @@ fn calculate_m(
 /// H_AMK = H(A || M || K)
 fn calculate_h_amk(big_a: &BigUint, m: &[u8], session_key: &[u8]) -> [u8; 64] {
     let mut hasher = Sha512::new();
-    hasher.update(&to_bytes_be(big_a));
+    hasher.update(to_bytes_be(big_a));
     hasher.update(m);
     hasher.update(session_key);
     hasher.finalize().into()
@@ -400,6 +400,9 @@ impl SrpServer {
     }
 }
 
+/// Lookup function for resolving a client identifier to its stored Ed25519 public key.
+pub type PairingKeyLookup<'a> = Option<&'a dyn Fn(&str) -> Option<[u8; 32]>>;
+
 // --- Pair-Verify (server side) ---
 
 /// Server-side pair-verify using Curve25519 ECDH + Ed25519 signatures.
@@ -482,7 +485,7 @@ impl PairVerifyServer {
     pub fn process_m3_build_m4(
         &mut self,
         data: &[u8],
-        lookup: Option<&dyn Fn(&str) -> Option<[u8; 32]>>,
+        lookup: PairingKeyLookup<'_>,
     ) -> Result<Vec<u8>, CryptoError> {
         let tlv = TlvValues::decode(data).map_err(|e| CryptoError::PairingHandshake(e.to_string()))?;
         let enc = tlv.get_type(TlvType::EncryptedData)
