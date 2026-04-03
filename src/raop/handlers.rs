@@ -464,36 +464,32 @@ pub(crate) fn handle_setup_2(
                 let audio_format = stream0.get("audioFormat").and_then(|v| v.as_unsigned_integer()).unwrap_or(0);
                 tracing::info!(stream_type = 103, audio_format, "AP2 buffered audio stream setup");
 
+                // Get the shared key from the stream setup (for future use)
+                let shk = stream0.get("shk").and_then(|v| v.as_data());
+                if let Some(k) = shk {
+                    tracing::debug!(shk_len = k.len(), "Stream shared key received");
+                }
+
+                let bind_addr = if conn.local_addr.len() == 16 { "[::]:0" } else { "0.0.0.0:0" };
                 let listener = tokio::task::block_in_place(|| {
                     tokio::runtime::Handle::current().block_on(
-                        tokio::net::TcpListener::bind("0.0.0.0:0")
+                        tokio::net::TcpListener::bind(bind_addr)
                     )
                 }).ok()?;
                 let audio_port = listener.local_addr().ok()?.port();
+                tracing::info!(audio_port, "Buffered audio TCP port opened");
 
-                // Derive data channel cipher from shared secret
-                if let Some(secret) = &conn.ap2_shared_secret {
-                    let mut dec_key = [0u8; 32];
-                    use hkdf::Hkdf;
-                    use sha2::Sha512;
-                    let hk = Hkdf::<Sha512>::new(Some(b"DataStream-Salt"), secret);
-                    hk.expand(b"DataStream-Output-Encryption-Key", &mut dec_key).ok()?;
+                let handler = conn.handler.clone();
 
-                    let decrypt = crate::crypto::chacha_transport::CipherContext::new(dec_key);
-                    let handler = conn.handler.clone();
-
-                    tokio::task::block_in_place(|| {
-                        tokio::runtime::Handle::current().spawn(async move {
-                            let proc = crate::raop::buffered_audio::BufferedAudioProcessor { listener, port: audio_port };
-                            proc.run(decrypt, 44100, 2, move |adts_data, _ts, _seq| {
-                                // For now, pass raw ADTS to handler as-is
-                                // TODO: decode AAC to PCM with symphonia
-                                tracing::debug!(len = adts_data.len(), "Buffered audio frame received");
-                                let _ = &handler;
-                            }).await;
-                        })
-                    });
-                }
+                tokio::task::block_in_place(|| {
+                    tokio::runtime::Handle::current().spawn(async move {
+                        let proc = crate::raop::buffered_audio::BufferedAudioProcessor { listener, port: audio_port };
+                        proc.run(44100, 2, move |adts_data, _ts, _seq| {
+                            tracing::info!(len = adts_data.len(), "Buffered audio frame");
+                            let _ = &handler;
+                        }).await;
+                    })
+                });
 
                 stream_resp.insert("dataPort".into(), plist::Value::Integer(audio_port.into()));
                 stream_resp.insert("audioBufferSize".into(), plist::Value::Integer(0x100000_i64.into()));
