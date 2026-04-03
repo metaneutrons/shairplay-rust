@@ -36,6 +36,8 @@ Tested and ruled out:
 - Returning `dataPort` in type 130 stream response (no effect)
 - Adding `eventPort` + `updateInfo` to RC connection (no effect)
 - Empty vs populated `/feedback` response on RC connection (no effect)
+- Shairport-sync has the same feedback behavior (empty when not playing)
+  and likely the same delay — this appears to be iOS-side behavior
 
 ## Not Implemented
 
