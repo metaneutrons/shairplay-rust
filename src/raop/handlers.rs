@@ -506,7 +506,31 @@ pub(crate) fn handle_setup_2(
             resp_dict.insert("timingPeerInfo".into(), plist::Value::Dictionary(tpi));
         }
 
-        let event_port: u64 = 0; // Placeholder until event channel is wired in
+        // Bind event port
+        let event_listener = tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(
+                tokio::net::TcpListener::bind("0.0.0.0:0")
+            )
+        }).ok()?;
+        let event_port = event_listener.local_addr().ok()?.port() as u64;
+        tracing::info!(event_port, "Event channel opened");
+
+        // Spawn event receiver (just accept + log for now)
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().spawn(async move {
+                if let Ok((mut stream, addr)) = event_listener.accept().await {
+                    tracing::info!(%addr, "Event channel client connected");
+                    let mut buf = [0u8; 4096];
+                    loop {
+                        match tokio::io::AsyncReadExt::read(&mut stream, &mut buf).await {
+                            Ok(0) | Err(_) => break,
+                            Ok(n) => tracing::debug!(n, "Event channel data"),
+                        }
+                    }
+                }
+            })
+        });
+
         resp_dict.insert("eventPort".into(), plist::Value::Integer(event_port.into()));
     }
 
