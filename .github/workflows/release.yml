@@ -27,14 +27,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - name: Publish fairplay-garble
-        run: cargo publish -p fairplay-garble --allow-dirty || true
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-      - name: Wait for crates.io index
-        run: sleep 30
       - name: Publish shairplay
-        run: cargo publish -p shairplay --allow-dirty
+        run: cargo publish --allow-dirty
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
