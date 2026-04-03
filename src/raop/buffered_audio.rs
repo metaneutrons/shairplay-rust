@@ -204,9 +204,15 @@ where
         let elapsed_frames = (elapsed_ns as u128 * s.sample_rate as u128 / 1_000_000_000) as u32;
         let target_rtp = s.anchor_rtp.wrapping_add(elapsed_frames);
 
-        // Deliver all frames up to target_rtp
+        // Deliver all frames up to target_rtp (using wrapping comparison)
         let ready: Vec<(u32, Vec<u8>)> = s.buffer
-            .range(..=target_rtp)
+            .iter()
+            .filter(|(&ts, _)| {
+                // Frame is ready if it's at or before target_rtp
+                // Use signed wrapping diff to handle RTP timestamp wraparound
+                let diff = target_rtp.wrapping_sub(ts) as i32;
+                diff >= 0
+            })
             .map(|(&ts, data)| (ts, data.clone()))
             .collect();
 
