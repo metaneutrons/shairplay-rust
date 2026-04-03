@@ -502,15 +502,18 @@ pub(crate) fn handle_setup_2(
 
         match stream_type {
             96 => {
-                // Realtime ALAC — stub: bind UDP port but no receiver yet.
-                // iPhone prefers type 103 (buffered) for AP2 audio.
+                // Realtime ALAC over UDP. Uses ChaCha20-Poly1305 per-packet encryption
+                // (same shk key as type 103) but UDP framing and ALAC codec.
+                // iPhone rarely requests this for music (prefers type 103 buffered AAC).
+                // Used for low-latency audio (Siri, phone calls, system sounds).
+                // TODO: implement UDP receiver with ALAC decode pipeline
                 let sr = stream0.get("sr").and_then(|v| v.as_unsigned_integer()).unwrap_or(44100);
-                tracing::info!(stream_type = 96, sample_rate = sr, "AP2 realtime ALAC stream setup (stub)");
+                tracing::info!(stream_type = 96, sample_rate = sr, "AP2 realtime ALAC stream setup");
 
-                // Bind UDP port for realtime audio
-                let udp_sock = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
+                let bind_addr = if conn.local_addr.len() == 16 { "[::]:0" } else { "0.0.0.0:0" };
+                let udp_sock = std::net::UdpSocket::bind(bind_addr).ok()?;
                 let audio_port = udp_sock.local_addr().ok()?.port();
-                drop(udp_sock); // Will be re-bound by RTP
+                drop(udp_sock);
 
                 stream_resp.insert("dataPort".into(), plist::Value::Integer(audio_port.into()));
             }
