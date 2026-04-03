@@ -455,7 +455,7 @@ fn sap_hash(block_in: &[u8], key_out: &mut [u8; 16]) {
 
 #[allow(clippy::all, unused_assignments)]
 fn garble(buffer0: &mut [u8; 20], buffer1: &mut [u8; 210], buffer2: &mut [u8; 35], buffer3: &mut [u8; 132], buffer4: &[u8; 21]) {
-    fairplay_garble::garble(buffer0, buffer1, buffer2, buffer3, buffer4);
+    super::fairplay_garble::garble(buffer0, buffer1, buffer2, buffer3, buffer4);
 }
 
 // --- omg_hax.c: generate_session_key ---

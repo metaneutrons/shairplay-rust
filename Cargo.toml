@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "crates/fairplay-garble"]
+members = ["."]
 
 [package]
 name = "shairplay"
@@ -34,8 +34,6 @@ md-5 = "0.10"
 hmac = "0.12"
 rand = "0.8"
 
-# Internal
-fairplay-garble = { path = "crates/fairplay-garble" }
 
 # Encoding / parsing
 base64 = "0.22"

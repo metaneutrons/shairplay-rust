@@ -1,7 +1,0 @@
-[package]
-name = "fairplay-garble"
-version = "0.1.0"
-edition = "2021"
-license = "LGPL-3.0-or-later"
-description = "FairPlay DRM garbled circuit implementation"
-repository = "https://github.com/fabianlindfors/shairplay"
