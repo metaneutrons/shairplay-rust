@@ -188,25 +188,6 @@ async fn receive_loop(
         // Detect format change
         if ssrc != AudioSsrc::None && ssrc != current_ssrc {
             current_ssrc = ssrc;
-            let sr = ssrc.sample_rate();
-            let ch = ssrc.channels();
-            info!(ssrc = ?ssrc, sr, ch, "Audio format detected");
-
-            // Reinitialize decoder
-            decoder = AacDecoder::new(sr, ch).ok();
-            if decoder.is_none() {
-                warn!("Failed to create AAC decoder for {:?}", ssrc);
-            }
-
-            // Setup resampler if needed
-            let target_sr = output_config.sample_rate.unwrap_or(sr);
-            if target_sr != sr {
-                debug!(from = sr, to = target_sr, "Resampling needed");
-            }
-        }
-        // Detect format change
-        if ssrc != AudioSsrc::None && ssrc != current_ssrc {
-            current_ssrc = ssrc;
             let src_sr = ssrc.sample_rate();
             let src_ch = ssrc.channels();
             info!(ssrc = ?ssrc, src_sr, src_ch, "Audio format detected");
