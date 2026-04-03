@@ -10,6 +10,20 @@ use crate::raop::{AudioHandler, AudioFormat};
 
 const NO_FLUSH: i32 = -42;
 
+/// Parse the SDP remote string to IP address bytes.
+fn remote_addr_bytes(remote: &str) -> Vec<u8> {
+    // remote is like "192.168.1.5" or "IP6 ::1" or "::ffff:10.0.0.1"
+    let addr_str = remote.strip_prefix("IP6 ").unwrap_or(remote);
+    if let Ok(ip) = addr_str.parse::<IpAddr>() {
+        match ip {
+            IpAddr::V4(v4) => v4.octets().to_vec(),
+            IpAddr::V6(v6) => v6.octets().to_vec(),
+        }
+    } else {
+        vec![]
+    }
+}
+
 /// Determines the bind address based on the remote connection string from SDP.
 /// The C code parses "IN IP4 <addr>" or "IN IP6 <addr>" and uses the family
 /// to decide IPv4 vs IPv6 socket binding.
@@ -106,6 +120,7 @@ impl RaopRtp {
             let buffer = self.buffer.clone();
             let state = self.state.clone();
             let no_resend = control_rport == 0;
+            let remote_for_task = self.remote.clone();
 
             tokio::spawn(async move {
                 let mut shutdown_rx = shutdown_rx;
@@ -127,7 +142,7 @@ impl RaopRtp {
                         if let Some(m) = st.metadata.take() { session.audio_set_metadata(&m); }
                         if let Some(c) = st.coverart.take() { session.audio_set_coverart(&c); }
                         if let (Some(d), Some(a)) = (st.dacp_id.take(), st.active_remote.take()) {
-                            session.audio_remote_control_id(&d, &a);
+                            session.audio_remote_control_id(&d, &a, remote_addr_bytes(&remote_for_task).as_slice());
                         }
                         if let Some((s, c, e)) = st.progress.take() {
                             session.audio_set_progress(s, c, e);
@@ -175,6 +190,7 @@ impl RaopRtp {
 
             let buffer = self.buffer.clone();
             let state = self.state.clone();
+            let remote_for_tcp = self.remote.clone();
 
             tokio::spawn(async move {
                 use tokio::io::AsyncReadExt;
@@ -200,7 +216,7 @@ impl RaopRtp {
                         if st.flush != NO_FLUSH { buffer.lock().await.flush(st.flush); session.audio_flush(); st.flush = NO_FLUSH; }
                         if let Some(m) = st.metadata.take() { session.audio_set_metadata(&m); }
                         if let Some(c) = st.coverart.take() { session.audio_set_coverart(&c); }
-                        if let (Some(d), Some(a)) = (st.dacp_id.take(), st.active_remote.take()) { session.audio_remote_control_id(&d, &a); }
+                        if let (Some(d), Some(a)) = (st.dacp_id.take(), st.active_remote.take()) { session.audio_remote_control_id(&d, &a, remote_addr_bytes(&remote_for_tcp).as_slice()); }
                         if let Some((s, c, e)) = st.progress.take() { session.audio_set_progress(s, c, e); }
                     }
 

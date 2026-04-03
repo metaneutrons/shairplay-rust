@@ -26,6 +26,7 @@ use crate::error::NetworkError;
 /// // Then in an async context:
 /// // client.play_pause().await.ok();
 /// ```
+#[derive(Debug)]
 pub struct DacpClient {
     #[allow(dead_code)]
     dacp_id: String,

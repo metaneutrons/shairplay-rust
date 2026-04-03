@@ -46,7 +46,7 @@ pub trait AudioSession: Send + Sync {
     fn audio_set_volume(&mut self, _volume: f32) {}
     fn audio_set_metadata(&mut self, _metadata: &[u8]) {}
     fn audio_set_coverart(&mut self, _coverart: &[u8]) {}
-    fn audio_remote_control_id(&mut self, _dacp_id: &str, _active_remote: &str) {}
+    fn audio_remote_control_id(&mut self, _dacp_id: &str, _active_remote: &str, _remote_addr: &[u8]) {}
     fn audio_set_progress(&mut self, _start: u32, _current: u32, _end: u32) {}
 }
 

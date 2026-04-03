@@ -63,3 +63,11 @@ pub use error::ShairplayError;
 pub use net::mdns::AirPlayServiceInfo;
 pub use net::server::BindConfig;
 pub use raop::{AudioFormat, AudioHandler, AudioSession, RaopServer, RaopServerBuilder};
+
+// AirPlay 2 re-exports
+#[cfg(feature = "airplay2")]
+pub use crypto::tlv;
+#[cfg(feature = "airplay2")]
+pub use crypto::pairing_homekit;
+#[cfg(feature = "airplay2")]
+pub use crypto::chacha_transport;

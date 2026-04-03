@@ -41,11 +41,21 @@ fairplay-garble = { path = "crates/fairplay-garble" }
 base64 = "0.22"
 plist = "1"
 
+# AirPlay 2 (optional)
+chacha20poly1305 = { version = "0.10", optional = true }
+hkdf = { version = "0.12", optional = true }
+num-bigint = { version = "0.4", optional = true }
+uuid = { version = "1", features = ["v4"], optional = true }
+
 # Error handling
 thiserror = "2"
 
 # Logging
 tracing = "0.1"
+
+[features]
+default = []
+airplay2 = ["dep:chacha20poly1305", "dep:hkdf", "dep:num-bigint", "dep:uuid"]
 
 [dev-dependencies]
 tokio = { version = "1", features = ["test-util"] }
