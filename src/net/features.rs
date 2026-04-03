@@ -111,10 +111,49 @@ pub fn features_to_mdns(features: u64) -> String {
 /// Features for an audio-only AirPlay 2 receiver.
 ///
 /// Based on shairport-sync's proven AP2 features (0x1C340405D4A00)
-/// with mask applied for bits 15-17, 50 (same as shairport-sync default).
-/// These features are known to work for audio streaming from iPhone.
-pub fn audio_receiver_features() -> u64 {
-    0x1C340405D4A00
+/// Returns the feature bitmask for the receiver based on enabled compile-time features.
+pub fn receiver_features() -> u64 {
+    use AirPlayFeature::*;
+
+    let mut bits: Vec<AirPlayFeature> = vec![
+        // Core audio
+        SupportsAirPlayAudio,
+        AudioRedundant,
+        Authentication4,              // FairPlay
+        MetadataArtwork,
+        MetadataProgress,
+        MetadataNowPlayingDaap,
+        AudioFormats0,
+        AudioFormats1,
+        Authentication1,
+        SupportsLegacyPairing,
+        HasUnifiedAdvertiserInfo,
+        SupportsVolume,
+        SupportsUnifiedMediaControl,
+        SupportsBufferedAudio,
+        SupportsPtp,
+        SupportsHkPairingAndAccessControl,
+        SupportsCoreUtilsPairingAndEncryption,
+        MetadataNowPlayingBplist,
+        SupportsSetPeersExtendedMessage,
+        SupportsAirPlayVideoV2,       // needed for AP2 audio despite the name
+        SupportsAudioStreamConnectionSetup,
+        SupportsAudioMediaDataControl,
+        SupportsRfc2198Redundancy,
+    ];
+
+    #[cfg(feature = "video")]
+    {
+        bits.push(SupportsAirPlayVideoV1);
+        bits.push(SupportsAirPlayScreen);
+        bits.push(SupportsScreenMultiCodec);
+    }
+
+    let mut val: u64 = 0;
+    for bit in bits {
+        val |= 1 << (bit as u8);
+    }
+    val
 }
 
 #[cfg(test)]
@@ -145,7 +184,7 @@ mod tests {
 
     #[test]
     fn audio_receiver_has_required_bits() {
-        let f = audio_receiver_features();
+        let f = receiver_features();
         // Core AP2 requirements (from shairport-sync)
         assert!(f & (1 << 9) != 0, "SupportsAirPlayAudio");
         assert!(f & (1 << 11) != 0, "AudioRedundant");

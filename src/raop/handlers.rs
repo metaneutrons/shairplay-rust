@@ -460,8 +460,8 @@ pub(crate) fn handle_get_info(
 ) -> Option<Vec<u8>> {
     use crate::net::mdns;
 
-    let _features_lo = mdns::AP2_FEATURES & 0xFFFFFFFF;
-    let _features_hi = (mdns::AP2_FEATURES >> 32) & 0xFFFFFFFF;
+    let _features_lo = crate::net::features::receiver_features() & 0xFFFFFFFF;
+    let _features_hi = (crate::net::features::receiver_features() >> 32) & 0xFFFFFFFF;
 
     let (_, vk) = crate::crypto::pairing_homekit::server_keypair(&conn.device_id);
     let pk_hex: String = vk.as_bytes().iter().map(|b| format!("{:02x}", b)).collect();
@@ -470,7 +470,7 @@ pub(crate) fn handle_get_info(
 
     let mut dict = plist::Dictionary::new();
     dict.insert("deviceID".into(), plist::Value::String(hw));
-    dict.insert("features".into(), plist::Value::Integer((mdns::AP2_FEATURES as i64).into()));
+    dict.insert("features".into(), plist::Value::Integer((crate::net::features::receiver_features() as i64).into()));
     dict.insert("model".into(), plist::Value::String(mdns::GLOBAL_MODEL.into()));
     dict.insert("protocolVersion".into(), plist::Value::String(mdns::AP2_PROTOVERS.into()));
     dict.insert("sourceVersion".into(), plist::Value::String(mdns::AP2_SRCVERS.into()));
@@ -733,7 +733,7 @@ pub(crate) fn handle_setup_2(
             update_info.insert("type".into(), plist::Value::String("updateInfo".into()));
             let mut value = plist::Dictionary::new();
             value.insert("statusFlags".into(), plist::Value::Integer((crate::net::mdns::AP2_STATUS_FLAGS as i64).into()));
-            value.insert("features".into(), plist::Value::Integer((crate::net::mdns::AP2_FEATURES as i64).into()));
+            value.insert("features".into(), plist::Value::Integer((crate::net::features::receiver_features() as i64).into()));
             value.insert("model".into(), plist::Value::String(crate::net::mdns::GLOBAL_MODEL.into()));
             value.insert("sourceVersion".into(), plist::Value::String(crate::net::mdns::AP2_SRCVERS.into()));
             value.insert("protocolVersion".into(), plist::Value::String(crate::net::mdns::AP2_PROTOVERS.into()));

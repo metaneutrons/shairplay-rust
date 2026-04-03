@@ -21,7 +21,7 @@ pub const GLOBAL_VERSION: &str = "130.14";
 
 // AirPlay 2 defaults (from shairport-sync bonjour_strings.c)
 #[cfg(feature = "airplay2")]
-pub const AP2_FEATURES: u64 = 0x1C340405D4A00;
+
 #[cfg(feature = "airplay2")]
 pub const AP2_STATUS_FLAGS: u32 = 0x4;
 #[cfg(feature = "airplay2")]
@@ -87,8 +87,8 @@ impl AirPlayServiceInfo {
         let hw_airplay = util::hwaddr_airplay(hwaddr);
         let raop_name = format!("{}@{}", hw_raop, name);
 
-        let features_lo = AP2_FEATURES & 0xFFFFFFFF;
-        let features_hi = (AP2_FEATURES >> 32) & 0xFFFFFFFF;
+        let features_lo = super::features::receiver_features() & 0xFFFFFFFF;
+        let features_hi = (super::features::receiver_features() >> 32) & 0xFFFFFFFF;
         let ft = format!("0x{:X},0x{:X}", features_lo, features_hi);
 
         let raop_txt = vec![

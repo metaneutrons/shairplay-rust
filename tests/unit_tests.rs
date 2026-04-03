@@ -442,15 +442,15 @@ mod ap2_tests {
 
     #[test]
     fn ap2_features_hilo_split() {
-        use shairplay::net::mdns::AP2_FEATURES;
-        let lo = AP2_FEATURES & 0xFFFFFFFF;
-        let hi = (AP2_FEATURES >> 32) & 0xFFFFFFFF;
+        use shairplay::net::features::receiver_features;
+        let lo = receiver_features() & 0xFFFFFFFF;
+        let hi = (receiver_features() >> 32) & 0xFFFFFFFF;
         let formatted = format!("0x{:X},0x{:X}", lo, hi);
         // Must contain comma-separated hi,lo
         assert!(formatted.contains(","));
         // Recombine and verify
         let recombined = (hi << 32) | lo;
-        assert_eq!(recombined, AP2_FEATURES);
+        assert_eq!(recombined, receiver_features());
     }
 
     // --- SETRATEANCHORTI networkTimeFrac conversion ---
