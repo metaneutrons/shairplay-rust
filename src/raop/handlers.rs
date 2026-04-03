@@ -697,7 +697,7 @@ pub(crate) fn handle_record_2(
 }
 
 #[cfg(feature = "airplay2")]
-pub(crate) fn handle_setrateanchorti(
+pub(crate) fn handle_setrateanchortime(
     conn: &mut RaopConnection,
     request: &HttpRequest,
     _response: &mut HttpResponse,
