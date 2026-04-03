@@ -139,9 +139,7 @@ struct RaopShared {
     handler: Arc<dyn AudioHandler>,
     #[cfg(feature = "ap2")]
     pairing_store: Arc<dyn PairingStore>,
-    #[cfg(feature = "ap2")]
     output_sample_rate: Option<u32>,
-    #[cfg(feature = "ap2")]
     output_max_channels: Option<u8>,
     #[cfg(feature = "ap2")]
     pin: Option<String>,
@@ -186,9 +184,7 @@ impl HttpdCallbacks for RaopShared {
             pairing_store: self.pairing_store.clone(),
             #[cfg(feature = "ap2")]
             playout_cmd: None,
-            #[cfg(feature = "ap2")]
             output_sample_rate: self.output_sample_rate,
-            #[cfg(feature = "ap2")]
             output_max_channels: self.output_max_channels,
             #[cfg(feature = "ap2")]
             pin: self.pin.clone(),
@@ -302,9 +298,7 @@ pub struct RaopServerBuilder {
     bind: BindConfig,
     #[cfg(feature = "ap2")]
     pairing_store: Option<Arc<dyn PairingStore>>,
-    #[cfg(feature = "ap2")]
     output_sample_rate: Option<u32>,
-    #[cfg(feature = "ap2")]
     output_max_channels: Option<u8>,
     #[cfg(feature = "ap2")]
     pin: Option<String>,
@@ -328,9 +322,7 @@ impl RaopServerBuilder {
             bind: BindConfig::default(),
             #[cfg(feature = "ap2")]
             pairing_store: None,
-            #[cfg(feature = "ap2")]
             output_sample_rate: None,
-            #[cfg(feature = "ap2")]
             output_max_channels: None,
             #[cfg(feature = "ap2")]
             pin: None,
@@ -357,7 +349,6 @@ impl RaopServerBuilder {
 
     /// Set the desired output sample rate. The library resamples to this rate.
     /// Default: source native rate (no resampling).
-    #[cfg(feature = "ap2")]
     pub fn output_sample_rate(mut self, rate: u32) -> Self {
         self.output_sample_rate = Some(rate); self
     }
@@ -365,7 +356,6 @@ impl RaopServerBuilder {
     /// Set the maximum output channels. Sources with more channels are mixed down.
     /// Sources with fewer channels are passed through (no upmixing).
     /// Default: pass through native channel count.
-    #[cfg(feature = "ap2")]
     pub fn output_max_channels(mut self, channels: u8) -> Self {
         self.output_max_channels = Some(channels); self
     }
@@ -393,9 +383,7 @@ impl RaopServerBuilder {
             handler,
             #[cfg(feature = "ap2")]
             pairing_store: self.pairing_store.unwrap_or_else(|| Arc::new(MemoryPairingStore::default())),
-            #[cfg(feature = "ap2")]
             output_sample_rate: self.output_sample_rate,
-            #[cfg(feature = "ap2")]
             output_max_channels: self.output_max_channels,
             #[cfg(feature = "ap2")]
             pin: self.pin,

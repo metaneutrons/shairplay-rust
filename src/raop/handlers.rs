@@ -42,9 +42,7 @@ pub(crate) struct RaopConnection {
     pub pairing_store: Arc<dyn crate::raop::PairingStore>,
     #[cfg(feature = "ap2")]
     pub playout_cmd: Option<tokio::sync::mpsc::UnboundedSender<crate::raop::buffered_audio::PlayoutCommand>>,
-    #[cfg(feature = "ap2")]
     pub output_sample_rate: Option<u32>,
-    #[cfg(feature = "ap2")]
     pub output_max_channels: Option<u8>,
     #[cfg(feature = "ap2")]
     pub pin: Option<String>,
@@ -205,6 +203,7 @@ pub(crate) fn handle_announce(
 
     conn.raop_rtp = Some(RaopRtp::new(
         conn.handler.clone(), remote, local_ip_from(conn), rtpmap, fmtp, &aeskey, &aesiv,
+        conn.output_sample_rate,
     ));
 
     if conn.raop_rtp.is_none() {

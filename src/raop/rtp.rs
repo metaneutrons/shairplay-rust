@@ -46,6 +46,7 @@ pub struct RaopRtp {
     handler: Arc<dyn AudioHandler>,
     remote: String,
     local_addr: IpAddr,
+    output_sample_rate: Option<u32>,
     buffer: Arc<Mutex<RaopBuffer>>,
     state: Arc<Mutex<RtpState>>,
     shutdown_tx: Option<watch::Sender<bool>>,
@@ -64,12 +65,14 @@ impl RaopRtp {
         fmtp: &str,
         aes_key: &[u8; 16],
         aes_iv: &[u8; 16],
+        output_sample_rate: Option<u32>,
     ) -> Self {
         let buffer = RaopBuffer::new(rtpmap, fmtp, aes_key, aes_iv);
         Self {
             handler: callbacks,
             remote: remote.to_string(),
             local_addr,
+            output_sample_rate,
             buffer: Arc::new(Mutex::new(buffer)),
             state: Arc::new(Mutex::new(RtpState {
                 volume: 0.0, volume_changed: false,
@@ -114,6 +117,12 @@ impl RaopRtp {
                 sample_rate: config.sample_rate,
             });
 
+
+            let mut resampler = if let Some(target) = self.output_sample_rate {
+                if target != config.sample_rate {
+                    crate::codec::resample::StreamResampler::new(config.sample_rate, target, config.num_channels as usize)
+                } else { None }
+            } else { None };
             let buffer = self.buffer.clone();
             let state = self.state.clone();
             let no_resend = control_rport == 0;
@@ -156,7 +165,14 @@ impl RaopRtp {
                                     let mut buf = buffer.lock().await;
                                     buf.queue(&data_packet[..len], true);
                                     while let Some(audio) = buf.dequeue(no_resend) {
-                                        session.audio_process(audio);
+                                        if let Some(ref mut rs) = resampler {
+                                            let samples: Vec<f32> = audio.chunks_exact(4).map(|c| f32::from_le_bytes([c[0],c[1],c[2],c[3]])).collect();
+                                            let resampled = rs.process(&samples);
+                                            let bytes: Vec<u8> = resampled.iter().flat_map(|s| s.to_le_bytes()).collect();
+                                            session.audio_process(&bytes);
+                                        } else {
+                                            session.audio_process(audio);
+                                        }
                                     }
                                 }
                             }
@@ -185,8 +201,14 @@ impl RaopRtp {
             };
             let mut session = self.handler.audio_init(AudioFormat { codec: AudioCodec::Pcm,
                 bits: 32, channels: config.num_channels,
-                sample_rate: config.sample_rate,
+                sample_rate: self.output_sample_rate.unwrap_or(config.sample_rate),
             });
+
+            let mut resampler = if let Some(target) = self.output_sample_rate {
+                if target != config.sample_rate {
+                    crate::codec::resample::StreamResampler::new(config.sample_rate, target, config.num_channels as usize)
+                } else { None }
+            } else { None };
 
             let buffer = self.buffer.clone();
             let state = self.state.clone();
@@ -234,7 +256,14 @@ impl RaopRtp {
                                 let mut buf = buffer.lock().await;
                                 buf.queue(&packet_buf[4..4 + rtp_len], false);
                                 if let Some(audio) = buf.dequeue(true) {
-                                    session.audio_process(audio);
+                                    if let Some(ref mut rs) = resampler {
+                                            let samples: Vec<f32> = audio.chunks_exact(4).map(|c| f32::from_le_bytes([c[0],c[1],c[2],c[3]])).collect();
+                                            let resampled = rs.process(&samples);
+                                            let bytes: Vec<u8> = resampled.iter().flat_map(|s| s.to_le_bytes()).collect();
+                                            session.audio_process(&bytes);
+                                        } else {
+                                            session.audio_process(audio);
+                                        }
                                 }
                                 drop(buf);
                                 packet_buf.drain(..4 + rtp_len);
