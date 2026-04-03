@@ -32,6 +32,11 @@ regardless of:
 The cause is unknown. Shairport-sync may have the same behavior — needs
 investigation. The delay does not affect audio quality or playback once started.
 
+Tested and ruled out:
+- Returning `dataPort` in type 130 stream response (no effect)
+- Adding `eventPort` + `updateInfo` to RC connection (no effect)
+- Empty vs populated `/feedback` response on RC connection (no effect)
+
 ## Not Implemented
 
 ### Realtime ALAC (Stream Type 96)
