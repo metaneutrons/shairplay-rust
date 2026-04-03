@@ -123,6 +123,9 @@ pub(crate) fn handle_options(
     _request: &HttpRequest,
     response: &mut HttpResponse,
 ) -> Option<Vec<u8>> {
+    #[cfg(feature = "airplay2")]
+    response.add_header("Public", "ANNOUNCE, SETUP, RECORD, PAUSE, FLUSH, FLUSHBUFFERED, TEARDOWN, OPTIONS, POST, GET, PUT");
+    #[cfg(not(feature = "airplay2"))]
     response.add_header("Public", "ANNOUNCE, SETUP, RECORD, PAUSE, FLUSH, TEARDOWN, OPTIONS, GET_PARAMETER, SET_PARAMETER");
     None
 }
@@ -667,6 +670,64 @@ pub(crate) fn handle_flushbuffered(
             tracing::debug!(from_seq, until_seq, "FLUSHBUFFERED");
             if let Some(cmd) = &conn.playout_cmd {
                 let _ = cmd.send(crate::raop::buffered_audio::PlayoutCommand::Flush { from_seq, until_seq });
+            }
+        }
+    }
+    None
+}
+
+// --- AP2 POST sub-handlers ---
+
+#[cfg(feature = "airplay2")]
+pub(crate) fn handle_feedback(
+    conn: &mut RaopConnection,
+    _request: &HttpRequest,
+    response: &mut HttpResponse,
+) -> Option<Vec<u8>> {
+    // Return stream info so iPhone can estimate latency
+    let mut stream_dict = plist::Dictionary::new();
+    stream_dict.insert("type".into(), plist::Value::Integer(103_i64.into()));
+    stream_dict.insert("sr".into(), plist::Value::Real(44100.0));
+
+    let streams = vec![plist::Value::Dictionary(stream_dict)];
+    let mut resp_dict = plist::Dictionary::new();
+    resp_dict.insert("streams".into(), plist::Value::Array(streams));
+
+    let mut buf = Vec::new();
+    plist::to_writer_binary(&mut buf, &resp_dict).ok()?;
+    response.add_header("Content-Type", "application/x-apple-binary-plist");
+    Some(buf)
+}
+
+#[cfg(feature = "airplay2")]
+pub(crate) fn handle_command(
+    _conn: &mut RaopConnection,
+    request: &HttpRequest,
+    _response: &mut HttpResponse,
+) -> Option<Vec<u8>> {
+    // Log the command type for debugging
+    if let Some(data) = request.data() {
+        if let Ok(plist_val) = plist::from_bytes::<plist::Value>(data) {
+            if let Some(dict) = plist_val.as_dictionary() {
+                let cmd_type = dict.get("type").and_then(|v| v.as_string()).unwrap_or("unknown");
+                tracing::debug!(cmd_type, "POST /command");
+            }
+        }
+    }
+    None
+}
+
+#[cfg(feature = "airplay2")]
+pub(crate) fn handle_audiomode(
+    _conn: &mut RaopConnection,
+    request: &HttpRequest,
+    _response: &mut HttpResponse,
+) -> Option<Vec<u8>> {
+    if let Some(data) = request.data() {
+        if let Ok(plist_val) = plist::from_bytes::<plist::Value>(data) {
+            if let Some(dict) = plist_val.as_dictionary() {
+                let mode = dict.get("audioMode").and_then(|v| v.as_string()).unwrap_or("unknown");
+                tracing::debug!(mode, "POST /audioMode");
             }
         }
     }

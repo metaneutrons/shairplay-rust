@@ -51,6 +51,21 @@ pub(crate) fn dispatch(conn: &mut RaopConnection, request: &HttpRequest) -> Http
         { Some(handlers::handle_pair_verify) }
     } else if method == "POST" && url == "/fp-setup" {
         Some(handlers::handle_fp_setup)
+    } else if method == "POST" && url == "/feedback" {
+        #[cfg(feature = "airplay2")]
+        { Some(handlers::handle_feedback as Handler) }
+        #[cfg(not(feature = "airplay2"))]
+        { None }
+    } else if method == "POST" && url == "/command" {
+        #[cfg(feature = "airplay2")]
+        { Some(handlers::handle_command as Handler) }
+        #[cfg(not(feature = "airplay2"))]
+        { None }
+    } else if method == "POST" && url == "/audioMode" {
+        #[cfg(feature = "airplay2")]
+        { Some(handlers::handle_audiomode as Handler) }
+        #[cfg(not(feature = "airplay2"))]
+        { None }
     } else if method == "OPTIONS" {
         Some(handlers::handle_options)
     } else if method == "ANNOUNCE" {
@@ -91,6 +106,10 @@ pub(crate) fn dispatch(conn: &mut RaopConnection, request: &HttpRequest) -> Http
         response.set_disconnect(true);
         if let Some(mut rtp) = conn.raop_rtp.take() {
             tokio::task::block_in_place(|| tokio::runtime::Handle::current().block_on(rtp.stop()));
+        }
+        #[cfg(feature = "airplay2")]
+        if let Some(cmd) = &conn.playout_cmd {
+            let _ = cmd.send(crate::raop::buffered_audio::PlayoutCommand::Stop);
         }
         None
     } else {
