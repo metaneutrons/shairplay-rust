@@ -104,6 +104,12 @@ impl BufferedAudioProcessor {
                         if rate == 0 {
                             info!("Playout paused");
                         } else {
+                            // Set anchor so the earliest buffered frame is deliverable
+                            // with a small lead time for smooth playback
+                            if let Some(&first_ts) = s.buffer.keys().next() {
+                                let lead_frames = s.sample_rate / 10; // 100ms lead
+                                s.anchor_rtp = first_ts.wrapping_sub(lead_frames);
+                            }
                             s.anchor_local_ns = now_ns();
                             let stale: Vec<u32> = s.buffer.keys()
                                 .filter(|&&ts| (s.anchor_rtp.wrapping_sub(ts) as i32) > 0)
