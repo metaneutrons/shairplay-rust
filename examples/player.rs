@@ -82,6 +82,13 @@ impl Drop for Session {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Enable tracing output (set RUST_LOG=debug for verbose protocol logs)
+    tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env()
+            .add_directive("shairplay=info".parse().unwrap()))
+        .with_target(false)
+        .init();
+
     let args: Vec<String> = std::env::args().collect();
     let name = args.iter().position(|a| a == "--name")
         .map(|i| args[i + 1].as_str())
@@ -126,7 +133,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build(handler)?;
 
     server.start().await?;
-    eprintln!("✅ AirPlay server '{}' running on port {}", name, server.service_info().port);
+
+    let mode = if cfg!(feature = "airplay2") { "AirPlay 2" } else { "AirPlay 1 (Classic)" };
+    eprintln!("✅ {} server '{}' running on port {}", mode, name, server.service_info().port);
     eprintln!("   Select it as AirPlay output on your Apple device");
     eprintln!("   Press Ctrl+C to stop");
 
