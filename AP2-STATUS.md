@@ -18,6 +18,20 @@
 | Event channel | — | Bidirectional encrypted TCP, updateInfo |
 | Unified output | — | Always F32LE interleaved PCM to app |
 
+## Known Issues
+
+### RC Connection Delay (~10s)
+
+The iPhone opens a "Remote Control Only" RTSP connection ~10 seconds before
+the audio connection, even when a song is already playing. This delay persists
+regardless of:
+- Returning `dataPort` in type 130 stream response (tested, no effect)
+- Adding `eventPort` + `updateInfo` to RC connection (tested, no effect)
+- The delay is between the RC connection and the audio connection opening
+
+The cause is unknown. Shairport-sync may have the same behavior — needs
+investigation. The delay does not affect audio quality or playback once started.
+
 ## Not Implemented
 
 ### Realtime ALAC (Stream Type 96)
