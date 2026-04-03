@@ -41,6 +41,10 @@ pub(crate) struct RaopConnection {
     pub pairing_store: Arc<dyn crate::raop::PairingStore>,
     #[cfg(feature = "airplay2")]
     pub playout_cmd: Option<tokio::sync::mpsc::UnboundedSender<crate::raop::buffered_audio::PlayoutCommand>>,
+    #[cfg(feature = "airplay2")]
+    pub output_sample_rate: Option<u32>,
+    #[cfg(feature = "airplay2")]
+    pub output_max_channels: Option<u8>,
 }
 
 pub(crate) fn handle_none(
@@ -488,16 +492,15 @@ pub(crate) fn handle_setup_2(
                 tracing::info!(audio_port, "Buffered audio TCP port opened");
 
                 let handler = conn.handler.clone();
+                let output_config = crate::raop::buffered_audio::OutputConfig {
+                    sample_rate: conn.output_sample_rate,
+                    max_channels: conn.output_max_channels,
+                };
 
                 let cmd_tx = tokio::task::block_in_place(|| {
                     tokio::runtime::Handle::current().block_on(async {
-                        let format = crate::raop::AudioFormat { codec: crate::raop::AudioCodec::Pcm, channels: 2, bits: 32, sample_rate: 44100 };
                         let proc = crate::raop::buffered_audio::BufferedAudioProcessor { listener, port: audio_port };
-                        let session = handler.audio_init(format);
-                        let session = std::sync::Mutex::new(session);
-                        proc.start(shk_arr, 44100, 2, move |adts_data| {
-                            session.lock().unwrap().audio_process(adts_data);
-                        })
+                        proc.start(shk_arr, output_config, handler)
                     })
                 });
                 conn.playout_cmd = Some(cmd_tx);

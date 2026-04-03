@@ -105,6 +105,10 @@ struct RaopShared {
     handler: Arc<dyn AudioHandler>,
     #[cfg(feature = "airplay2")]
     pairing_store: Arc<dyn PairingStore>,
+    #[cfg(feature = "airplay2")]
+    output_sample_rate: Option<u32>,
+    #[cfg(feature = "airplay2")]
+    output_max_channels: Option<u8>,
 }
 
 impl HttpdCallbacks for RaopShared {
@@ -144,6 +148,10 @@ impl HttpdCallbacks for RaopShared {
             pairing_store: self.pairing_store.clone(),
             #[cfg(feature = "airplay2")]
             playout_cmd: None,
+            #[cfg(feature = "airplay2")]
+            output_sample_rate: self.output_sample_rate,
+            #[cfg(feature = "airplay2")]
+            output_max_channels: self.output_max_channels,
         };
         Some(Box::new(RaopConnectionHandler {
             conn,
@@ -246,6 +254,10 @@ pub struct RaopServerBuilder {
     bind: BindConfig,
     #[cfg(feature = "airplay2")]
     pairing_store: Option<Arc<dyn PairingStore>>,
+    #[cfg(feature = "airplay2")]
+    output_sample_rate: Option<u32>,
+    #[cfg(feature = "airplay2")]
+    output_max_channels: Option<u8>,
 }
 
 impl Default for RaopServerBuilder {
@@ -264,6 +276,10 @@ impl RaopServerBuilder {
             bind: BindConfig::default(),
             #[cfg(feature = "airplay2")]
             pairing_store: None,
+            #[cfg(feature = "airplay2")]
+            output_sample_rate: None,
+            #[cfg(feature = "airplay2")]
+            output_max_channels: None,
         }
     }
 
@@ -283,6 +299,21 @@ impl RaopServerBuilder {
         self.pairing_store = Some(store); self
     }
 
+    /// Set the desired output sample rate. The library resamples to this rate.
+    /// Default: source native rate (no resampling).
+    #[cfg(feature = "airplay2")]
+    pub fn output_sample_rate(mut self, rate: u32) -> Self {
+        self.output_sample_rate = Some(rate); self
+    }
+
+    /// Set the maximum output channels. Sources with more channels are mixed down.
+    /// Sources with fewer channels are passed through (no upmixing).
+    /// Default: pass through native channel count.
+    #[cfg(feature = "airplay2")]
+    pub fn output_max_channels(mut self, channels: u8) -> Self {
+        self.output_max_channels = Some(channels); self
+    }
+
     pub fn build(self, handler: Arc<dyn AudioHandler>) -> Result<RaopServer, ShairplayError> {
         let rsakey = airport_rsakey();
         let pairing = Arc::new(Pairing::generate()?);
@@ -296,6 +327,10 @@ impl RaopServerBuilder {
             handler,
             #[cfg(feature = "airplay2")]
             pairing_store: self.pairing_store.unwrap_or_else(|| Arc::new(MemoryPairingStore::default())),
+            #[cfg(feature = "airplay2")]
+            output_sample_rate: self.output_sample_rate,
+            #[cfg(feature = "airplay2")]
+            output_max_channels: self.output_max_channels,
         });
 
         let mut httpd = HttpServer::new(shared.clone(), self.max_clients);
