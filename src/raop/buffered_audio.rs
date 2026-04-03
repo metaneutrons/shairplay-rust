@@ -19,7 +19,7 @@ const BUFFERED_HEADER_LEN: usize = 12;
 /// Buffered audio processor that accepts a TCP connection and processes
 /// encrypted audio packets.
 pub struct BufferedAudioProcessor {
-    listener: TcpListener,
+    pub listener: TcpListener,
     pub port: u16,
 }
 
