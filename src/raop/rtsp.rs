@@ -40,9 +40,15 @@ pub(crate) fn dispatch(conn: &mut RaopConnection, request: &HttpRequest) -> Http
     let handler: Option<Handler> = if require_auth {
         Some(handlers::handle_none)
     } else if method == "POST" && url == "/pair-setup" {
-        Some(handlers::handle_pair_setup)
+        #[cfg(feature = "airplay2")]
+        { Some(handlers::handle_pair_setup_ap2) }
+        #[cfg(not(feature = "airplay2"))]
+        { Some(handlers::handle_pair_setup) }
     } else if method == "POST" && url == "/pair-verify" {
-        Some(handlers::handle_pair_verify)
+        #[cfg(feature = "airplay2")]
+        { Some(handlers::handle_pair_verify_ap2) }
+        #[cfg(not(feature = "airplay2"))]
+        { Some(handlers::handle_pair_verify) }
     } else if method == "POST" && url == "/fp-setup" {
         Some(handlers::handle_fp_setup)
     } else if method == "OPTIONS" {
@@ -50,11 +56,25 @@ pub(crate) fn dispatch(conn: &mut RaopConnection, request: &HttpRequest) -> Http
     } else if method == "ANNOUNCE" {
         Some(handlers::handle_announce)
     } else if method == "SETUP" {
-        Some(handlers::handle_setup)
+        #[cfg(feature = "airplay2")]
+        {
+            if conn.is_ap2 {
+                Some(handlers::handle_setup_2 as Handler)
+            } else {
+                Some(handlers::handle_setup as Handler)
+            }
+        }
+        #[cfg(not(feature = "airplay2"))]
+        { Some(handlers::handle_setup) }
     } else if method == "GET_PARAMETER" {
         Some(handlers::handle_get_parameter)
     } else if method == "SET_PARAMETER" {
         Some(handlers::handle_set_parameter)
+    } else if method == "GET" {
+        #[cfg(feature = "airplay2")]
+        { Some(handlers::handle_get_info as Handler) }
+        #[cfg(not(feature = "airplay2"))]
+        { None }
     } else if method == "FLUSH" {
         if let Some(rtp_info) = request.header("RTP-Info") {
             if let Some(seq_str) = rtp_info.strip_prefix("seq=") {

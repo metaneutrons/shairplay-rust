@@ -82,6 +82,16 @@ impl HttpdCallbacks for RaopShared {
             hwaddr: self.hwaddr.clone(),
             password: self.password.clone(),
             handler: self.handler.clone(),
+            #[cfg(feature = "airplay2")]
+            device_id: crate::util::hwaddr_airplay(&self.hwaddr),
+            #[cfg(feature = "airplay2")]
+            srp_server: None,
+            #[cfg(feature = "airplay2")]
+            pair_verify: None,
+            #[cfg(feature = "airplay2")]
+            ap2_shared_secret: None,
+            #[cfg(feature = "airplay2")]
+            is_ap2: false,
         };
         Some(Box::new(RaopConnectionHandler(conn)))
     }

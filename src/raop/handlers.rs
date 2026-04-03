@@ -8,6 +8,9 @@ use crate::proto::sdp::Sdp;
 use crate::raop::rtp::RaopRtp;
 use crate::raop::AudioHandler;
 
+#[cfg(feature = "airplay2")]
+use crate::crypto::pairing_homekit::{SrpServer, PairVerifyServer};
+
 /// Per-connection state for RTSP handler dispatch. Equivalent to raop_conn_t.
 pub(crate) struct RaopConnection {
     pub raop_rtp: Option<RaopRtp>,
@@ -23,6 +26,17 @@ pub(crate) struct RaopConnection {
     pub hwaddr: Vec<u8>,
     pub password: String,
     pub handler: Arc<dyn AudioHandler>,
+    // AirPlay 2 state
+    #[cfg(feature = "airplay2")]
+    pub device_id: String,
+    #[cfg(feature = "airplay2")]
+    pub srp_server: Option<SrpServer>,
+    #[cfg(feature = "airplay2")]
+    pub pair_verify: Option<PairVerifyServer>,
+    #[cfg(feature = "airplay2")]
+    pub ap2_shared_secret: Option<Vec<u8>>,
+    #[cfg(feature = "airplay2")]
+    pub is_ap2: bool,
 }
 
 pub(crate) fn handle_none(
@@ -270,4 +284,160 @@ pub(crate) fn handle_set_parameter(
         _ => {}
     }
     None
+}
+
+// --- AirPlay 2 handlers ---
+
+#[cfg(feature = "airplay2")]
+pub(crate) fn handle_pair_setup_ap2(
+    conn: &mut RaopConnection,
+    request: &HttpRequest,
+    response: &mut HttpResponse,
+) -> Option<Vec<u8>> {
+    let data = request.data()?;
+    response.add_header("Content-Type", "application/octet-stream");
+
+    // Try AP2 TLV-based pairing first; fall back to AP1 if not valid TLV
+    let tlv = match crate::crypto::tlv::TlvValues::decode(data) {
+        Ok(t) if t.get(6).is_some() => t, // Must have State field
+        _ => return handle_pair_setup(conn, request, response),
+    };
+    let state = *tlv.get(6)?.first()?;
+
+    match state {
+        1 => {
+            // M1: client initiates pair-setup
+            let mut srp = SrpServer::new(None).ok()?;
+            srp.process_m1(data).ok()?;
+            let m2 = srp.build_m2();
+            conn.srp_server = Some(srp);
+            Some(m2)
+        }
+        3 => {
+            // M3: client sends A + proof
+            let srp = conn.srp_server.as_mut()?;
+            let ok = srp.process_m3(data).ok()?;
+            let m4 = srp.build_m4().ok()?;
+            if ok && srp.is_transient() {
+                conn.ap2_shared_secret = srp.shared_secret().map(|s| s.to_vec());
+                conn.is_ap2 = true;
+            }
+            Some(m4)
+        }
+        5 => {
+            // M5: non-transient, client sends encrypted device info
+            let srp = conn.srp_server.as_mut()?;
+            srp.process_m5(data).ok()?;
+            let m6 = srp.build_m6(&conn.device_id).ok()?;
+            conn.ap2_shared_secret = Some(srp.session_key().to_vec());
+            conn.is_ap2 = true;
+            Some(m6)
+        }
+        _ => None,
+    }
+}
+
+#[cfg(feature = "airplay2")]
+pub(crate) fn handle_pair_verify_ap2(
+    conn: &mut RaopConnection,
+    request: &HttpRequest,
+    response: &mut HttpResponse,
+) -> Option<Vec<u8>> {
+    let data = request.data()?;
+    response.add_header("Content-Type", "application/octet-stream");
+
+    let tlv = match crate::crypto::tlv::TlvValues::decode(data) {
+        Ok(t) if t.get(6).is_some() => t,
+        _ => return handle_pair_verify(conn, request, response),
+    };
+    let state = *tlv.get(6)?.first()?;
+
+    match state {
+        1 => {
+            let mut pv = PairVerifyServer::new(&conn.device_id);
+            let m2 = pv.process_m1_build_m2(data).ok()?;
+            conn.pair_verify = Some(pv);
+            Some(m2)
+        }
+        3 => {
+            let pv = conn.pair_verify.as_mut()?;
+            let m4 = pv.process_m3_build_m4(data).ok()?;
+            conn.ap2_shared_secret = pv.shared_secret().map(|s| s.to_vec());
+            conn.is_ap2 = true;
+            Some(m4)
+        }
+        _ => None,
+    }
+}
+
+#[cfg(feature = "airplay2")]
+pub(crate) fn handle_get_info(
+    conn: &mut RaopConnection,
+    _request: &HttpRequest,
+    response: &mut HttpResponse,
+) -> Option<Vec<u8>> {
+    use crate::net::mdns;
+
+    let features_lo = mdns::AP2_FEATURES & 0xFFFFFFFF;
+    let features_hi = (mdns::AP2_FEATURES >> 32) & 0xFFFFFFFF;
+
+    let (_, vk) = crate::crypto::pairing_homekit::server_keypair(&conn.device_id);
+    let pk_hex: String = vk.as_bytes().iter().map(|b| format!("{:02x}", b)).collect();
+
+    let hw = crate::util::hwaddr_airplay(&conn.hwaddr);
+
+    let mut dict = plist::Dictionary::new();
+    dict.insert("deviceID".into(), plist::Value::String(hw));
+    dict.insert("features".into(), plist::Value::Integer((mdns::AP2_FEATURES as i64).into()));
+    dict.insert("model".into(), plist::Value::String(mdns::GLOBAL_MODEL.into()));
+    dict.insert("protocolVersion".into(), plist::Value::String(mdns::AP2_PROTOVERS.into()));
+    dict.insert("sourceVersion".into(), plist::Value::String(mdns::AP2_SRCVERS.into()));
+    dict.insert("statusFlags".into(), plist::Value::Integer((mdns::AP2_STATUS_FLAGS as i64).into()));
+    dict.insert("pk".into(), plist::Value::String(pk_hex));
+
+    let mut buf = Vec::new();
+    plist::to_writer_binary(&mut buf, &dict).ok()?;
+
+    response.add_header("Content-Type", "application/x-apple-binary-plist");
+    Some(buf)
+}
+
+#[cfg(feature = "airplay2")]
+pub(crate) fn handle_setup_2(
+    conn: &mut RaopConnection,
+    request: &HttpRequest,
+    response: &mut HttpResponse,
+) -> Option<Vec<u8>> {
+    let data = request.data()?;
+    let plist_val: plist::Value = plist::from_bytes(data).ok()?;
+    let dict = plist_val.as_dictionary()?;
+
+    // Check if this is an initial setup (no "streams") or a stream setup
+    if dict.get("streams").is_some() {
+        // Stream setup — delegate to Phase 9
+        return None;
+    }
+
+    // Initial setup: check timingProtocol
+    let timing = dict.get("timingProtocol")
+        .and_then(|v| v.as_string())
+        .unwrap_or("None");
+
+    let mut resp_dict = plist::Dictionary::new();
+
+    if timing == "PTP" {
+        let mut tpi = plist::Dictionary::new();
+        let addrs = vec![plist::Value::String("0.0.0.0".into())];
+        tpi.insert("Addresses".into(), plist::Value::Array(addrs));
+        tpi.insert("ID".into(), plist::Value::String("0.0.0.0".into()));
+        resp_dict.insert("timingPeerInfo".into(), plist::Value::Dictionary(tpi));
+    }
+
+    let event_port: u64 = 0;
+    resp_dict.insert("eventPort".into(), plist::Value::Integer(event_port.into()));
+
+    let mut buf = Vec::new();
+    plist::to_writer_binary(&mut buf, &resp_dict).ok()?;
+    response.add_header("Content-Type", "application/x-apple-binary-plist");
+    Some(buf)
 }
