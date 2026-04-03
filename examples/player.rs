@@ -42,17 +42,24 @@ struct Handler {
 impl AudioHandler for Handler {
     fn audio_init(&self, format: AudioFormat) -> Box<dyn AudioSession> {
         eprintln!("🎵 New stream: {}ch {}bit {}Hz", format.channels, format.bits, format.sample_rate);
-        Box::new(Session { ring: self.ring.clone() })
+        Box::new(Session { ring: self.ring.clone(), aac_decoder: None })
     }
 }
 
 struct Session {
     ring: Arc<Mutex<AudioRing>>,
+    aac_decoder: Option<Box<dyn symphonia::core::codecs::Decoder>>,
 }
 
 impl AudioSession for Session {
     fn audio_process(&mut self, buffer: &[u8]) {
-        self.ring.lock().unwrap().push_samples(buffer);
+        // Detect ADTS: sync word 0xFFF
+        if buffer.len() > 7 && buffer[0] == 0xFF && (buffer[1] & 0xF0) == 0xF0 {
+            self.decode_aac(buffer);
+        } else {
+            // Raw PCM (AirPlay 1 / ALAC)
+            self.ring.lock().unwrap().push_samples(buffer);
+        }
     }
 
     fn audio_set_volume(&mut self, volume: f32) {
@@ -77,6 +84,52 @@ impl AudioSession for Session {
 impl Drop for Session {
     fn drop(&mut self) {
         eprintln!("🔇 Stream ended");
+    }
+}
+
+impl Session {
+    fn decode_aac(&mut self, adts_frame: &[u8]) {
+        use symphonia::core::audio::SampleBuffer;
+        use symphonia::core::codecs::{DecoderOptions, CODEC_TYPE_AAC, CodecParameters};
+        use symphonia::core::formats::Packet;
+
+        // Lazy init decoder
+        if self.aac_decoder.is_none() {
+            let mut params = CodecParameters::new();
+            params.for_codec(CODEC_TYPE_AAC)
+                .with_sample_rate(44100)
+                .with_channels(
+                    symphonia::core::audio::Channels::FRONT_LEFT
+                    | symphonia::core::audio::Channels::FRONT_RIGHT
+                );
+            match symphonia::default::get_codecs().make(&params, &DecoderOptions::default()) {
+                Ok(d) => { self.aac_decoder = Some(d); eprintln!("🎧 AAC decoder initialized"); }
+                Err(e) => { eprintln!("⚠️  AAC decoder failed: {e}"); return; }
+            }
+        }
+
+        let decoder = self.aac_decoder.as_mut().unwrap();
+
+        // Strip ADTS header (7 bytes), feed raw AAC
+        if adts_frame.len() <= 7 { return; }
+        let raw = &adts_frame[7..];
+        let packet = Packet::new_from_slice(0, 0, 1024, raw);
+
+        match decoder.decode(&packet) {
+            Ok(decoded) => {
+                let spec = *decoded.spec();
+                let dur = decoded.capacity() as u64;
+                let mut sbuf = SampleBuffer::<i16>::new(dur, spec);
+                sbuf.copy_interleaved_ref(decoded);
+                let samples = sbuf.samples();
+                let mut pcm = Vec::with_capacity(samples.len() * 2);
+                for &s in samples {
+                    pcm.extend_from_slice(&s.to_le_bytes());
+                }
+                self.ring.lock().unwrap().push_samples(&pcm);
+            }
+            Err(_) => {} // skip decode errors silently
+        }
     }
 }
 
