@@ -146,6 +146,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mode = if cfg!(feature = "airplay2") { "AirPlay 2" } else { "AirPlay 1 (Classic)" };
     eprintln!("✅ {} server '{}' running on port {}", mode, name, server.service_info().port);
     eprintln!("   Select it as AirPlay output on your Apple device");
+    #[cfg(feature = "airplay2")]
+    eprintln!("🔐 PIN: 3939 (enter on iPhone when prompted)");
     eprintln!("   Press Ctrl+C to stop");
 
     tokio::signal::ctrl_c().await?;

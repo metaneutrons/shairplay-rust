@@ -313,46 +313,48 @@ fn make_nonce(tag: &[u8]) -> [u8; 12] {
 
 impl SrpServer {
     /// Process M5 from client: encrypted TLV with device identifier, Ed25519 signature, public key.
-    pub fn process_m5(&mut self, data: &[u8]) -> Result<(), CryptoError> {
+    /// Returns (identifier, Ed25519 public key) for persistent storage.
+    pub fn process_m5(&mut self, data: &[u8]) -> Result<(String, [u8; 32]), CryptoError> {
         let tlv = TlvValues::decode(data).map_err(|e| CryptoError::PairingHandshake(e.to_string()))?;
 
         let enc = tlv.get_type(TlvType::EncryptedData)
             .ok_or_else(|| CryptoError::PairingHandshake("M5: missing encrypted data".into()))?;
 
-        // Derive decryption key
         let mut derived_key = [0u8; 32];
         hkdf_derive(&self.session_key, "Pair-Setup-Encrypt-Salt", "Pair-Setup-Encrypt-Info", &mut derived_key)?;
 
         let nonce = make_nonce(b"PS-Msg05");
         let decrypted = decrypt_chacha(&derived_key, &nonce, enc)?;
 
-        // Parse inner TLV: Identifier, Signature, PublicKey
         let inner = TlvValues::decode(&decrypted).map_err(|e| CryptoError::PairingHandshake(e.to_string()))?;
-        let _identifier = inner.get_type(TlvType::Identifier)
+        let identifier = inner.get_type(TlvType::Identifier)
             .ok_or_else(|| CryptoError::PairingHandshake("M5: missing identifier".into()))?;
         let signature = inner.get_type(TlvType::Signature)
             .ok_or_else(|| CryptoError::PairingHandshake("M5: missing signature".into()))?;
         let client_pk = inner.get_type(TlvType::PublicKey)
             .ok_or_else(|| CryptoError::PairingHandshake("M5: missing public key".into()))?;
 
-        // Verify signature: sign(device_x || identifier || client_pk)
         let mut device_x = [0u8; 32];
         hkdf_derive(&self.session_key, "Pair-Setup-Controller-Sign-Salt", "Pair-Setup-Controller-Sign-Info", &mut device_x)?;
 
         let mut info = Vec::new();
         info.extend_from_slice(&device_x);
-        info.extend_from_slice(_identifier);
+        info.extend_from_slice(identifier);
         info.extend_from_slice(client_pk);
 
-        let vk = VerifyingKey::from_bytes(client_pk.try_into()
-            .map_err(|_| CryptoError::PairingHandshake("M5: invalid public key length".into()))?)
+        let pk_array: [u8; 32] = client_pk.try_into()
+            .map_err(|_| CryptoError::PairingHandshake("M5: invalid public key length".into()))?;
+        let vk = VerifyingKey::from_bytes(&pk_array)
             .map_err(|_| CryptoError::PairingHandshake("M5: invalid public key".into()))?;
         let sig = Signature::from_bytes(signature.try_into()
             .map_err(|_| CryptoError::PairingHandshake("M5: invalid signature length".into()))?);
         vk.verify(&info, &sig)
             .map_err(|_| CryptoError::PairingVerify)?;
 
-        Ok(())
+        let id_str = String::from_utf8(identifier.to_vec())
+            .map_err(|_| CryptoError::PairingHandshake("M5: invalid identifier encoding".into()))?;
+
+        Ok((id_str, pk_array))
     }
 
     /// Build M6 response: encrypted TLV with server identifier, signature, public key.
@@ -467,7 +469,13 @@ impl PairVerifyServer {
     }
 
     /// Process verify M3 from client. Returns M4 response and shared secret.
-    pub fn process_m3_build_m4(&mut self, data: &[u8]) -> Result<Vec<u8>, CryptoError> {
+    /// `lookup` resolves a client identifier to its stored Ed25519 public key.
+    /// If `lookup` is `None` or returns `None`, signature verification is skipped (transient).
+    pub fn process_m3_build_m4(
+        &mut self,
+        data: &[u8],
+        lookup: Option<&dyn Fn(&str) -> Option<[u8; 32]>>,
+    ) -> Result<Vec<u8>, CryptoError> {
         let tlv = TlvValues::decode(data).map_err(|e| CryptoError::PairingHandshake(e.to_string()))?;
         let enc = tlv.get_type(TlvType::EncryptedData)
             .ok_or_else(|| CryptoError::PairingHandshake("Verify M3: missing encrypted data".into()))?;
@@ -475,10 +483,28 @@ impl PairVerifyServer {
         let mut derived_key = [0u8; 32];
         hkdf_derive(&self.shared_secret, "Pair-Verify-Encrypt-Salt", "Pair-Verify-Encrypt-Info", &mut derived_key)?;
         let nonce = make_nonce(b"PV-Msg03");
-        let _decrypted = decrypt_chacha(&derived_key, &nonce, enc)?;
+        let decrypted = decrypt_chacha(&derived_key, &nonce, enc)?;
 
-        // In transient mode (no get_cb), we skip signature verification
-        // For normal mode, we'd verify the client's Ed25519 signature here
+        let inner = TlvValues::decode(&decrypted).map_err(|e| CryptoError::PairingHandshake(e.to_string()))?;
+        let identifier = inner.get_type(TlvType::Identifier)
+            .ok_or_else(|| CryptoError::PairingHandshake("Verify M3: missing identifier".into()))?;
+        let signature = inner.get_type(TlvType::Signature)
+            .ok_or_else(|| CryptoError::PairingHandshake("Verify M3: missing signature".into()))?;
+
+        if let Some(ltpk) = lookup.and_then(|f| f(std::str::from_utf8(identifier).unwrap_or(""))) {
+            let mut info = Vec::new();
+            info.extend_from_slice(&self.client_eph_pk);
+            info.extend_from_slice(identifier);
+            info.extend_from_slice(&self.server_eph_pk);
+
+            let vk = VerifyingKey::from_bytes(&ltpk)
+                .map_err(|_| CryptoError::PairingHandshake("Verify M3: invalid stored key".into()))?;
+            let sig = Signature::from_bytes(signature.try_into()
+                .map_err(|_| CryptoError::PairingHandshake("Verify M3: invalid signature length".into()))?);
+            vk.verify(&info, &sig)
+                .map_err(|_| CryptoError::PairingVerify)?;
+            tracing::info!("Pair-verify: client signature verified");
+        }
 
         self.completed = true;
 
@@ -765,7 +791,7 @@ mod tests {
         m3.add(TlvType::State as u8, &[3]);
         m3.add(TlvType::EncryptedData as u8, &encrypted);
 
-        let m4_data = server.process_m3_build_m4(&m3.encode()).unwrap();
+        let m4_data = server.process_m3_build_m4(&m3.encode(), None).unwrap();
         let m4 = TlvValues::decode(&m4_data).unwrap();
         assert_eq!(m4.get_type(TlvType::State), Some(&[4u8][..]));
 

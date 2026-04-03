@@ -46,6 +46,8 @@ pub(crate) struct RaopConnection {
     pub output_sample_rate: Option<u32>,
     #[cfg(feature = "airplay2")]
     pub output_max_channels: Option<u8>,
+    #[cfg(feature = "airplay2")]
+    pub pin: Option<String>,
 }
 
 pub(crate) fn handle_none(
@@ -320,7 +322,7 @@ pub(crate) fn handle_pair_setup_ap2(
         1 => {
             // M1: client initiates pair-setup
             tracing::info!("AP2 pair-setup M1 received");
-            let mut srp = SrpServer::new(None).ok()?;
+            let mut srp = SrpServer::new(conn.pin.as_deref()).ok()?;
             srp.process_m1(data).ok()?;
             let m2 = srp.build_m2();
             conn.srp_server = Some(srp);
@@ -341,8 +343,10 @@ pub(crate) fn handle_pair_setup_ap2(
         5 => {
             // M5: non-transient, client sends encrypted device info
             let srp = conn.srp_server.as_mut()?;
-            srp.process_m5(data).ok()?;
+            let (client_id, client_pk) = srp.process_m5(data).ok()?;
             let m6 = srp.build_m6(&conn.device_id).ok()?;
+            conn.pairing_store.put(&client_id, client_pk);
+            tracing::info!(client_id, "AP2 normal pair-setup complete, client key stored");
             conn.ap2_shared_secret = Some(srp.session_key().to_vec());
             conn.is_ap2 = true;
             Some(m6)
@@ -383,7 +387,8 @@ pub(crate) fn handle_pair_verify_ap2(
         }
         3 => {
             let pv = conn.pair_verify.as_mut()?;
-            match pv.process_m3_build_m4(data) {
+            let store = conn.pairing_store.clone();
+            match pv.process_m3_build_m4(data, Some(&|id| store.get(id))) {
                 Ok(m4) => {
                     conn.ap2_shared_secret = pv.shared_secret().map(|s| s.to_vec());
                     conn.is_ap2 = true;

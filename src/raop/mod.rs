@@ -133,6 +133,8 @@ struct RaopShared {
     output_sample_rate: Option<u32>,
     #[cfg(feature = "airplay2")]
     output_max_channels: Option<u8>,
+    #[cfg(feature = "airplay2")]
+    pin: Option<String>,
 }
 
 impl HttpdCallbacks for RaopShared {
@@ -176,6 +178,8 @@ impl HttpdCallbacks for RaopShared {
             output_sample_rate: self.output_sample_rate,
             #[cfg(feature = "airplay2")]
             output_max_channels: self.output_max_channels,
+            #[cfg(feature = "airplay2")]
+            pin: self.pin.clone(),
         };
         Some(Box::new(RaopConnectionHandler {
             conn,
@@ -282,6 +286,8 @@ pub struct RaopServerBuilder {
     output_sample_rate: Option<u32>,
     #[cfg(feature = "airplay2")]
     output_max_channels: Option<u8>,
+    #[cfg(feature = "airplay2")]
+    pin: Option<String>,
 }
 
 impl Default for RaopServerBuilder {
@@ -304,6 +310,8 @@ impl RaopServerBuilder {
             output_sample_rate: None,
             #[cfg(feature = "airplay2")]
             output_max_channels: None,
+            #[cfg(feature = "airplay2")]
+            pin: None,
         }
     }
 
@@ -338,6 +346,11 @@ impl RaopServerBuilder {
         self.output_max_channels = Some(channels); self
     }
 
+    #[cfg(feature = "airplay2")]
+    pub fn pin(mut self, pin: impl Into<String>) -> Self {
+        self.pin = Some(pin.into()); self
+    }
+
     pub fn build(self, handler: Arc<dyn AudioHandler>) -> Result<RaopServer, ShairplayError> {
         let rsakey = airport_rsakey();
         let pairing = Arc::new(Pairing::generate()?);
@@ -355,6 +368,8 @@ impl RaopServerBuilder {
             output_sample_rate: self.output_sample_rate,
             #[cfg(feature = "airplay2")]
             output_max_channels: self.output_max_channels,
+            #[cfg(feature = "airplay2")]
+            pin: self.pin,
         });
 
         let mut httpd = HttpServer::new(shared.clone(), self.max_clients);
