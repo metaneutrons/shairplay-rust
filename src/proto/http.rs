@@ -107,6 +107,17 @@ impl HttpRequest {
         }
     }
 
+    /// Return any bytes in the buffer beyond the complete request.
+    pub fn take_leftover(&mut self) -> Vec<u8> {
+        if !self.complete { return Vec::new(); }
+        let needed = self.content_length.unwrap_or(0);
+        if self.buffer.len() > needed {
+            self.buffer[needed..].to_vec()
+        } else {
+            Vec::new()
+        }
+    }
+
     pub fn is_complete(&self) -> bool {
         self.complete
     }

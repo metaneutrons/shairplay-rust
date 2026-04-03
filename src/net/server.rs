@@ -187,34 +187,55 @@ fn spawn_accept_loop(
                         let mut stream = stream;
                         let mut buf = [0u8; 4096];
                         let mut request = HttpRequest::new();
+                        let mut pending = Vec::new(); // leftover data from previous read
 
                         loop {
+                            // First, try to parse any pending data
+                            if !pending.is_empty() {
+                                if request.add_data(&pending).is_err() {
+                                    tracing::warn!("HTTP parse error on pending data, first bytes: {:02x?}", &pending[..pending.len().min(32)]);
+                                    break;
+                                }
+                                pending.clear();
+                            }
+
+                            // If request is complete, handle it
+                            while request.is_complete() {
+                                let method = request.method().unwrap_or("?").to_string();
+                                let url = request.url().unwrap_or("?").to_string();
+                                tracing::debug!(%method, %url, body_len = request.data().map(|d| d.len()).unwrap_or(0), "RTSP request");
+                                let response = handler.conn_request(&request);
+                                let status = response.status_code();
+                                tracing::debug!(%method, %url, status, "RTSP response");
+                                let disconnect = response.get_disconnect();
+                                let data = response.get_data();
+                                if stream.write_all(data).await.is_err() {
+                                    return;
+                                }
+                                if disconnect {
+                                    let _ = stream.shutdown().await;
+                                    return;
+                                }
+                                // Grab any leftover bytes beyond the complete request
+                                let leftover = request.take_leftover();
+                                request = HttpRequest::new();
+                                if !leftover.is_empty() {
+                                    if request.add_data(&leftover).is_err() {
+                                        tracing::warn!("HTTP parse error on leftover");
+                                        return;
+                                    }
+                                }
+                            }
+
+                            // Read more data from the network
                             let n = match stream.read(&mut buf).await {
                                 Ok(0) | Err(_) => break,
                                 Ok(n) => n,
                             };
                             if request.add_data(&buf[..n]).is_err() {
+                                tracing::warn!("HTTP parse error, first bytes: {:02x?}", &buf[..n.min(32)]);
                                 break;
                             }
-                            if !request.is_complete() {
-                                continue;
-                            }
-                            let method = request.method().unwrap_or("?").to_string();
-                            let url = request.url().unwrap_or("?").to_string();
-                            tracing::debug!(%method, %url, body_len = request.data().map(|d| d.len()).unwrap_or(0), "RTSP request");
-                            let response = handler.conn_request(&request);
-                            let status = response.status_code();
-                            tracing::debug!(%method, %url, status, "RTSP response");
-                            let disconnect = response.get_disconnect();
-                            let data = response.get_data();
-                            if stream.write_all(data).await.is_err() {
-                                break;
-                            }
-                            if disconnect {
-                                let _ = stream.shutdown().await;
-                                break;
-                            }
-                            request = HttpRequest::new();
                         }
                         tracing::info!(%remote, "Connection closed");
                     });
