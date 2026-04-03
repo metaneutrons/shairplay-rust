@@ -89,10 +89,10 @@ let mut server = RaopServer::builder()
 | `.password()` | none | | HTTP Digest auth password |
 | `.max_clients()` | `10` | | Maximum concurrent connections |
 | `.bind()` | all interfaces | | Bind to specific IPs (multi-interface) |
-| `.output_sample_rate()` | source rate | `airplay2` | Resample all audio to this rate |
-| `.output_max_channels()` | source channels | `airplay2` | Mix down to this channel count |
-| `.pin()` | `"3939"` | `airplay2` | PIN for HomeKit pairing |
-| `.pairing_store()` | `MemoryPairingStore` | `airplay2` | Persistent key storage |
+| `.output_sample_rate()` | source rate | `ap2` | Resample all audio to this rate |
+| `.output_max_channels()` | source channels | `ap2` | Mix down to this channel count |
+| `.pin()` | `"3939"` | `ap2` | PIN for HomeKit pairing |
+| `.pairing_store()` | `MemoryPairingStore` | `ap2` | Persistent key storage |
 | `.video_handler()` | none | `video` | Video session factory |
 
 ## Feature Flags
@@ -100,8 +100,8 @@ let mut server = RaopServer::builder()
 | Flag | Dependencies | Description |
 |------|-------------|-------------|
 | *(default)* | — | AirPlay 1 only |
-| `airplay2` | chacha20poly1305, hkdf, symphonia, rubato, … | Full AirPlay 2 audio |
-| `video` | (implies `airplay2`) | Screen mirroring (experimental) |
+| `ap2` | chacha20poly1305, hkdf, symphonia, rubato, … | Full AirPlay 2 audio |
+| `video` | (implies `ap2`) | Screen mirroring (experimental) |
 
 ## Implementation Status
 
@@ -159,7 +159,7 @@ src/
 
 ```
 cargo test                    # AP1 tests
-cargo test --features airplay2  # AP1 + AP2 tests
+cargo test --features ap2  # AP1 + AP2 tests
 cargo test --features video     # All tests
 ```
 

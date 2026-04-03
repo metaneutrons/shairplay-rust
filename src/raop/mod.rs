@@ -1,7 +1,7 @@
 pub mod buffer;
-#[cfg(feature = "airplay2")]
+#[cfg(feature = "ap2")]
 pub mod buffered_audio;
-#[cfg(feature = "airplay2")]
+#[cfg(feature = "ap2")]
 pub mod event_channel;
 pub mod handlers;
 pub mod rtp;
@@ -56,7 +56,7 @@ pub trait AudioHandler: Send + Sync + 'static {
 ///
 /// Without persistence, iPhones that previously paired will send encrypted data
 /// on connect and fail because the server has no cached keys.
-#[cfg(feature = "airplay2")]
+#[cfg(feature = "ap2")]
 pub trait PairingStore: Send + Sync + 'static {
     /// Look up a paired device's Ed25519 public key by device ID.
     fn get(&self, device_id: &str) -> Option<[u8; 32]>;
@@ -67,13 +67,13 @@ pub trait PairingStore: Send + Sync + 'static {
 }
 
 /// In-memory pairing store (lost on restart). Use for testing or wrap with file I/O.
-#[cfg(feature = "airplay2")]
+#[cfg(feature = "ap2")]
 #[derive(Default)]
 pub struct MemoryPairingStore {
     keys: std::sync::Mutex<std::collections::HashMap<String, [u8; 32]>>,
 }
 
-#[cfg(feature = "airplay2")]
+#[cfg(feature = "ap2")]
 impl PairingStore for MemoryPairingStore {
     fn get(&self, device_id: &str) -> Option<[u8; 32]> {
         self.keys.lock().ok()?.get(device_id).copied()
@@ -135,13 +135,13 @@ struct RaopShared {
     hwaddr: Vec<u8>,
     password: String,
     handler: Arc<dyn AudioHandler>,
-    #[cfg(feature = "airplay2")]
+    #[cfg(feature = "ap2")]
     pairing_store: Arc<dyn PairingStore>,
-    #[cfg(feature = "airplay2")]
+    #[cfg(feature = "ap2")]
     output_sample_rate: Option<u32>,
-    #[cfg(feature = "airplay2")]
+    #[cfg(feature = "ap2")]
     output_max_channels: Option<u8>,
-    #[cfg(feature = "airplay2")]
+    #[cfg(feature = "ap2")]
     pin: Option<String>,
     #[cfg(feature = "video")]
     video_handler: Option<Arc<dyn crate::raop::video::VideoHandler>>,
@@ -170,27 +170,27 @@ impl HttpdCallbacks for RaopShared {
             hwaddr: self.hwaddr.clone(),
             password: self.password.clone(),
             handler: self.handler.clone(),
-            #[cfg(feature = "airplay2")]
+            #[cfg(feature = "ap2")]
             device_id: crate::util::hwaddr_airplay(&self.hwaddr),
-            #[cfg(feature = "airplay2")]
+            #[cfg(feature = "ap2")]
             srp_server: None,
-            #[cfg(feature = "airplay2")]
+            #[cfg(feature = "ap2")]
             pair_verify: None,
-            #[cfg(feature = "airplay2")]
+            #[cfg(feature = "ap2")]
             ap2_shared_secret: None,
-            #[cfg(feature = "airplay2")]
+            #[cfg(feature = "ap2")]
             is_ap2: false,
-            #[cfg(feature = "airplay2")]
+            #[cfg(feature = "ap2")]
             pairing_store: self.pairing_store.clone(),
-            #[cfg(feature = "airplay2")]
+            #[cfg(feature = "ap2")]
             playout_cmd: None,
-            #[cfg(feature = "airplay2")]
+            #[cfg(feature = "ap2")]
             output_sample_rate: self.output_sample_rate,
-            #[cfg(feature = "airplay2")]
+            #[cfg(feature = "ap2")]
             output_max_channels: self.output_max_channels,
-            #[cfg(feature = "airplay2")]
+            #[cfg(feature = "ap2")]
             pin: self.pin.clone(),
-            #[cfg(feature = "airplay2")]
+            #[cfg(feature = "ap2")]
             event_sender: None,
             #[cfg(feature = "video")]
             video_handler: self.video_handler.clone(),
@@ -201,9 +201,9 @@ impl HttpdCallbacks for RaopShared {
         };
         Some(Box::new(RaopConnectionHandler {
             conn,
-            #[cfg(feature = "airplay2")]
+            #[cfg(feature = "ap2")]
             cipher: None,
-            #[cfg(feature = "airplay2")]
+            #[cfg(feature = "ap2")]
             pending_secret: None,
         }))
     }
@@ -211,9 +211,9 @@ impl HttpdCallbacks for RaopShared {
 
 struct RaopConnectionHandler {
     conn: handlers::RaopConnection,
-    #[cfg(feature = "airplay2")]
+    #[cfg(feature = "ap2")]
     cipher: Option<crate::crypto::chacha_transport::EncryptedChannel>,
-    #[cfg(feature = "airplay2")]
+    #[cfg(feature = "ap2")]
     pending_secret: Option<Vec<u8>>, // activate encryption AFTER current response is sent
 }
 
@@ -222,7 +222,7 @@ impl ConnectionHandler for RaopConnectionHandler {
         let resp = rtsp::dispatch(&mut self.conn, request);
 
         // Queue encryption activation for AFTER this response is sent
-        #[cfg(feature = "airplay2")]
+        #[cfg(feature = "ap2")]
         if self.cipher.is_none() {
             if let Some(secret) = &self.conn.ap2_shared_secret {
                 self.pending_secret = Some(secret.clone());
@@ -233,14 +233,14 @@ impl ConnectionHandler for RaopConnectionHandler {
     }
 
     fn is_encrypted(&self) -> bool {
-        #[cfg(feature = "airplay2")]
+        #[cfg(feature = "ap2")]
         { self.cipher.is_some() }
-        #[cfg(not(feature = "airplay2"))]
+        #[cfg(not(feature = "ap2"))]
         { false }
     }
 
     fn after_response(&mut self) {
-        #[cfg(feature = "airplay2")]
+        #[cfg(feature = "ap2")]
         if self.cipher.is_none() {
             if let Some(secret) = self.pending_secret.take() {
                 tracing::debug!(secret_len = secret.len(), "Activating cipher from pending_secret");
@@ -256,7 +256,7 @@ impl ConnectionHandler for RaopConnectionHandler {
     }
 
     fn decrypt_incoming(&mut self, data: &[u8]) -> Option<(Vec<u8>, usize)> {
-        #[cfg(feature = "airplay2")]
+        #[cfg(feature = "ap2")]
         if let Some(ch) = &mut self.cipher {
             return ch.decrypt_ctx.decrypt(data).ok();
         }
@@ -264,7 +264,7 @@ impl ConnectionHandler for RaopConnectionHandler {
     }
 
     fn encrypt_outgoing(&mut self, data: &[u8]) -> Vec<u8> {
-        #[cfg(feature = "airplay2")]
+        #[cfg(feature = "ap2")]
         if let Some(ch) = &mut self.cipher {
             return ch.encrypt_ctx.encrypt(data).unwrap_or_else(|_| data.to_vec());
         }
@@ -298,13 +298,13 @@ pub struct RaopServerBuilder {
     password: Option<String>,
     name: String,
     bind: BindConfig,
-    #[cfg(feature = "airplay2")]
+    #[cfg(feature = "ap2")]
     pairing_store: Option<Arc<dyn PairingStore>>,
-    #[cfg(feature = "airplay2")]
+    #[cfg(feature = "ap2")]
     output_sample_rate: Option<u32>,
-    #[cfg(feature = "airplay2")]
+    #[cfg(feature = "ap2")]
     output_max_channels: Option<u8>,
-    #[cfg(feature = "airplay2")]
+    #[cfg(feature = "ap2")]
     pin: Option<String>,
     #[cfg(feature = "video")]
     video_handler: Option<Arc<dyn crate::raop::video::VideoHandler>>,
@@ -324,13 +324,13 @@ impl RaopServerBuilder {
             password: None,
             name: "Shairplay".to_string(),
             bind: BindConfig::default(),
-            #[cfg(feature = "airplay2")]
+            #[cfg(feature = "ap2")]
             pairing_store: None,
-            #[cfg(feature = "airplay2")]
+            #[cfg(feature = "ap2")]
             output_sample_rate: None,
-            #[cfg(feature = "airplay2")]
+            #[cfg(feature = "ap2")]
             output_max_channels: None,
-            #[cfg(feature = "airplay2")]
+            #[cfg(feature = "ap2")]
             pin: None,
             #[cfg(feature = "video")]
             video_handler: None,
@@ -348,14 +348,14 @@ impl RaopServerBuilder {
 
     /// Set a pairing store for persisting device keys across restarts.
     /// Without this, iPhones must re-pair on every server restart.
-    #[cfg(feature = "airplay2")]
+    #[cfg(feature = "ap2")]
     pub fn pairing_store(mut self, store: Arc<dyn PairingStore>) -> Self {
         self.pairing_store = Some(store); self
     }
 
     /// Set the desired output sample rate. The library resamples to this rate.
     /// Default: source native rate (no resampling).
-    #[cfg(feature = "airplay2")]
+    #[cfg(feature = "ap2")]
     pub fn output_sample_rate(mut self, rate: u32) -> Self {
         self.output_sample_rate = Some(rate); self
     }
@@ -363,12 +363,12 @@ impl RaopServerBuilder {
     /// Set the maximum output channels. Sources with more channels are mixed down.
     /// Sources with fewer channels are passed through (no upmixing).
     /// Default: pass through native channel count.
-    #[cfg(feature = "airplay2")]
+    #[cfg(feature = "ap2")]
     pub fn output_max_channels(mut self, channels: u8) -> Self {
         self.output_max_channels = Some(channels); self
     }
 
-    #[cfg(feature = "airplay2")]
+    #[cfg(feature = "ap2")]
     pub fn pin(mut self, pin: impl Into<String>) -> Self {
         self.pin = Some(pin.into()); self
     }
@@ -389,13 +389,13 @@ impl RaopServerBuilder {
             hwaddr: hwaddr.clone(),
             password: self.password.unwrap_or_default(),
             handler,
-            #[cfg(feature = "airplay2")]
+            #[cfg(feature = "ap2")]
             pairing_store: self.pairing_store.unwrap_or_else(|| Arc::new(MemoryPairingStore::default())),
-            #[cfg(feature = "airplay2")]
+            #[cfg(feature = "ap2")]
             output_sample_rate: self.output_sample_rate,
-            #[cfg(feature = "airplay2")]
+            #[cfg(feature = "ap2")]
             output_max_channels: self.output_max_channels,
-            #[cfg(feature = "airplay2")]
+            #[cfg(feature = "ap2")]
             pin: self.pin,
             #[cfg(feature = "video")]
             video_handler: self.video_handler,
@@ -443,8 +443,8 @@ impl RaopServer {
         let info = self.service_info();
         let mut mdns = MdnsService::new()?;
         mdns.register_raop(&info)?;
-        #[cfg(feature = "airplay2")]
-        #[cfg(feature = "airplay2")]
+        #[cfg(feature = "ap2")]
+        #[cfg(feature = "ap2")]
         mdns.register_airplay(&info)?;
         self.mdns = Some(mdns);
 
@@ -464,7 +464,7 @@ impl RaopServer {
     }
 
     pub fn service_info(&self) -> AirPlayServiceInfo {
-        #[cfg(feature = "airplay2")]
+        #[cfg(feature = "ap2")]
         {
             let device_id = crate::util::hwaddr_airplay(&self.hwaddr);
             let (_, vk) = crate::crypto::pairing_homekit::server_keypair(&device_id);
@@ -479,7 +479,7 @@ impl RaopServer {
                 &pi,
             )
         }
-        #[cfg(not(feature = "airplay2"))]
+        #[cfg(not(feature = "ap2"))]
         {
             AirPlayServiceInfo::new(
                 &self.name,

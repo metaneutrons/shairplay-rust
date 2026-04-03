@@ -1,6 +1,6 @@
 pub mod alac;
 
-#[cfg(feature = "airplay2")]
+#[cfg(feature = "ap2")]
 pub mod aac;
-#[cfg(feature = "airplay2")]
+#[cfg(feature = "ap2")]
 pub mod resample;

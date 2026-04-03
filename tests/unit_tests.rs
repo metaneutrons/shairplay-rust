@@ -372,7 +372,7 @@ mod hex {
     }
 }
 
-#[cfg(all(test, feature = "airplay2"))]
+#[cfg(all(test, feature = "ap2"))]
 mod ap2_tests {
     use super::*;
 
@@ -539,7 +539,7 @@ mod ap2_tests {
 
 // --- Channel mixdown tests ---
 
-#[cfg(all(test, feature = "airplay2"))]
+#[cfg(all(test, feature = "ap2"))]
 mod mixdown_tests {
     use shairplay::codec::resample::mixdown;
 
@@ -585,7 +585,7 @@ mod mixdown_tests {
 
 // --- AudioSsrc mapping tests ---
 
-#[cfg(all(test, feature = "airplay2"))]
+#[cfg(all(test, feature = "ap2"))]
 mod ssrc_tests {
     use shairplay::codec::aac::AudioSsrc;
 
@@ -624,7 +624,7 @@ mod ssrc_tests {
 
 // --- ADTS header for all channel/rate configs ---
 
-#[cfg(all(test, feature = "airplay2"))]
+#[cfg(all(test, feature = "ap2"))]
 mod adts_multi_tests {
     use shairplay::codec::aac::adts_header;
 
@@ -658,7 +658,7 @@ mod adts_multi_tests {
 
 // --- NetworkTimeFrac edge cases ---
 
-#[cfg(all(test, feature = "airplay2"))]
+#[cfg(all(test, feature = "ap2"))]
 mod frac_edge_tests {
     #[test]
     fn frac_zero() {
@@ -686,7 +686,7 @@ mod frac_edge_tests {
 
 // --- Playout buffer logic ---
 
-#[cfg(all(test, feature = "airplay2"))]
+#[cfg(all(test, feature = "ap2"))]
 mod playout_tests {
     use shairplay::raop::buffered_audio::PlayoutCommand;
 

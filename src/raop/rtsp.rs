@@ -40,38 +40,38 @@ pub(crate) fn dispatch(conn: &mut RaopConnection, request: &HttpRequest) -> Http
     let handler: Option<Handler> = if require_auth {
         Some(handlers::handle_none)
     } else if method == "POST" && url == "/pair-setup" {
-        #[cfg(feature = "airplay2")]
+        #[cfg(feature = "ap2")]
         { Some(handlers::handle_pair_setup_ap2) }
-        #[cfg(not(feature = "airplay2"))]
+        #[cfg(not(feature = "ap2"))]
         { Some(handlers::handle_pair_setup) }
     } else if method == "POST" && url == "/pair-verify" {
-        #[cfg(feature = "airplay2")]
+        #[cfg(feature = "ap2")]
         { Some(handlers::handle_pair_verify_ap2) }
-        #[cfg(not(feature = "airplay2"))]
+        #[cfg(not(feature = "ap2"))]
         { Some(handlers::handle_pair_verify) }
     } else if method == "POST" && url == "/fp-setup" {
         Some(handlers::handle_fp_setup)
     } else if method == "POST" && url == "/feedback" {
-        #[cfg(feature = "airplay2")]
+        #[cfg(feature = "ap2")]
         { Some(handlers::handle_feedback as Handler) }
-        #[cfg(not(feature = "airplay2"))]
+        #[cfg(not(feature = "ap2"))]
         { None }
     } else if method == "POST" && url == "/command" {
-        #[cfg(feature = "airplay2")]
+        #[cfg(feature = "ap2")]
         { Some(handlers::handle_command as Handler) }
-        #[cfg(not(feature = "airplay2"))]
+        #[cfg(not(feature = "ap2"))]
         { None }
     } else if method == "POST" && url == "/audioMode" {
-        #[cfg(feature = "airplay2")]
+        #[cfg(feature = "ap2")]
         { Some(handlers::handle_audiomode as Handler) }
-        #[cfg(not(feature = "airplay2"))]
+        #[cfg(not(feature = "ap2"))]
         { None }
     } else if method == "OPTIONS" {
         Some(handlers::handle_options)
     } else if method == "ANNOUNCE" {
         Some(handlers::handle_announce)
     } else if method == "SETUP" {
-        #[cfg(feature = "airplay2")]
+        #[cfg(feature = "ap2")]
         {
             if conn.is_ap2 {
                 Some(handlers::handle_setup_2 as Handler)
@@ -79,16 +79,16 @@ pub(crate) fn dispatch(conn: &mut RaopConnection, request: &HttpRequest) -> Http
                 Some(handlers::handle_setup as Handler)
             }
         }
-        #[cfg(not(feature = "airplay2"))]
+        #[cfg(not(feature = "ap2"))]
         { Some(handlers::handle_setup) }
     } else if method == "GET_PARAMETER" {
         Some(handlers::handle_get_parameter)
     } else if method == "SET_PARAMETER" {
         Some(handlers::handle_set_parameter)
     } else if method == "GET" {
-        #[cfg(feature = "airplay2")]
+        #[cfg(feature = "ap2")]
         { Some(handlers::handle_get_info as Handler) }
-        #[cfg(not(feature = "airplay2"))]
+        #[cfg(not(feature = "ap2"))]
         { None }
     } else if method == "FLUSH" {
         if let Some(rtp_info) = request.header("RTP-Info") {
@@ -107,13 +107,13 @@ pub(crate) fn dispatch(conn: &mut RaopConnection, request: &HttpRequest) -> Http
         if let Some(mut rtp) = conn.raop_rtp.take() {
             tokio::task::block_in_place(|| tokio::runtime::Handle::current().block_on(rtp.stop()));
         }
-        #[cfg(feature = "airplay2")]
+        #[cfg(feature = "ap2")]
         if let Some(cmd) = &conn.playout_cmd {
             let _ = cmd.send(crate::raop::buffered_audio::PlayoutCommand::Stop);
         }
         None
     } else {
-        #[cfg(feature = "airplay2")]
+        #[cfg(feature = "ap2")]
         {
             if method == "RECORD" && conn.is_ap2 {
                 Some(handlers::handle_record_2 as Handler)
@@ -127,7 +127,7 @@ pub(crate) fn dispatch(conn: &mut RaopConnection, request: &HttpRequest) -> Http
                 None
             }
         }
-        #[cfg(not(feature = "airplay2"))]
+        #[cfg(not(feature = "ap2"))]
         { None }
     };
 

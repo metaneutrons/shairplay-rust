@@ -20,17 +20,17 @@ pub const GLOBAL_MODEL: &str = "AppleTV2,1";
 pub const GLOBAL_VERSION: &str = "130.14";
 
 // AirPlay 2 defaults (from shairport-sync bonjour_strings.c)
-#[cfg(feature = "airplay2")]
+#[cfg(feature = "ap2")]
 
-#[cfg(feature = "airplay2")]
+#[cfg(feature = "ap2")]
 pub const AP2_STATUS_FLAGS: u32 = 0x4;
-#[cfg(feature = "airplay2")]
+#[cfg(feature = "ap2")]
 pub const AP2_SRCVERS: &str = "377.40.00";
-#[cfg(feature = "airplay2")]
+#[cfg(feature = "ap2")]
 pub const AP2_OSVERS: &str = "15.6";
-#[cfg(feature = "airplay2")]
+#[cfg(feature = "ap2")]
 pub const AP2_FW_VERSION: &str = "77.40.00";
-#[cfg(feature = "airplay2")]
+#[cfg(feature = "ap2")]
 pub const AP2_PROTOVERS: &str = "1.1";
 
 /// mDNS service information for AirPlay network discovery.
@@ -78,7 +78,7 @@ impl AirPlayServiceInfo {
 
     /// Create AP2 service info with full AirPlay 2 feature flags.
     /// `pk_hex` is the hex-encoded Ed25519 public key, `pi` is the pairing identifier (UUID).
-    #[cfg(feature = "airplay2")]
+    #[cfg(feature = "ap2")]
     pub fn new_airplay2(
         name: &str, port: u16, hwaddr: &[u8], password: bool,
         pk_hex: &str, pi: &str,
@@ -258,7 +258,7 @@ impl Drop for MdnsService {
     }
 }
 
-#[cfg(all(test, feature = "airplay2"))]
+#[cfg(all(test, feature = "ap2"))]
 mod tests {
     use super::*;
 

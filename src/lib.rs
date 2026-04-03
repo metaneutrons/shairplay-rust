@@ -63,7 +63,7 @@ pub use error::ShairplayError;
 pub use net::mdns::AirPlayServiceInfo;
 pub use net::server::BindConfig;
 pub use raop::{AudioCodec, AudioFormat, AudioHandler, AudioSession, RaopServer, RaopServerBuilder, RemoteCommand, RemoteControl};
-#[cfg(feature = "airplay2")]
+#[cfg(feature = "ap2")]
 pub use raop::{PairingStore, MemoryPairingStore};
 
 // AirPlay 2 re-exports are internal — crypto modules not part of public API

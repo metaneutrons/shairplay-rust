@@ -204,7 +204,7 @@ async fn teardown_closes_connection() {
 
 // --- AirPlay 2 integration tests ---
 
-#[cfg(feature = "airplay2")]
+#[cfg(feature = "ap2")]
 mod ap2_tests {
     use super::*;
     use shairplay::crypto::tlv::{TlvValues, TlvType};

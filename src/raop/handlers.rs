@@ -8,7 +8,7 @@ use crate::proto::sdp::Sdp;
 use crate::raop::rtp::RaopRtp;
 use crate::raop::AudioHandler;
 
-#[cfg(feature = "airplay2")]
+#[cfg(feature = "ap2")]
 use crate::crypto::pairing_homekit::{SrpServer, PairVerifyServer};
 
 /// Per-connection state for RTSP handler dispatch. Equivalent to raop_conn_t.
@@ -27,28 +27,28 @@ pub(crate) struct RaopConnection {
     pub password: String,
     pub handler: Arc<dyn AudioHandler>,
     // AirPlay 2 state
-    #[cfg(feature = "airplay2")]
+    #[cfg(feature = "ap2")]
     pub device_id: String,
-    #[cfg(feature = "airplay2")]
+    #[cfg(feature = "ap2")]
     pub srp_server: Option<SrpServer>,
-    #[cfg(feature = "airplay2")]
+    #[cfg(feature = "ap2")]
     pub pair_verify: Option<PairVerifyServer>,
-    #[cfg(feature = "airplay2")]
+    #[cfg(feature = "ap2")]
     pub ap2_shared_secret: Option<Vec<u8>>,
-    #[cfg(feature = "airplay2")]
+    #[cfg(feature = "ap2")]
     pub is_ap2: bool,
-    #[cfg(feature = "airplay2")]
+    #[cfg(feature = "ap2")]
     #[allow(dead_code)]
     pub pairing_store: Arc<dyn crate::raop::PairingStore>,
-    #[cfg(feature = "airplay2")]
+    #[cfg(feature = "ap2")]
     pub playout_cmd: Option<tokio::sync::mpsc::UnboundedSender<crate::raop::buffered_audio::PlayoutCommand>>,
-    #[cfg(feature = "airplay2")]
+    #[cfg(feature = "ap2")]
     pub output_sample_rate: Option<u32>,
-    #[cfg(feature = "airplay2")]
+    #[cfg(feature = "ap2")]
     pub output_max_channels: Option<u8>,
-    #[cfg(feature = "airplay2")]
+    #[cfg(feature = "ap2")]
     pub pin: Option<String>,
-    #[cfg(feature = "airplay2")]
+    #[cfg(feature = "ap2")]
     pub event_sender: Option<crate::raop::event_channel::EventSender>,
     #[cfg(feature = "video")]
     pub video_handler: Option<Arc<dyn crate::raop::video::VideoHandler>>,
@@ -151,9 +151,9 @@ pub(crate) fn handle_options(
     _request: &HttpRequest,
     response: &mut HttpResponse,
 ) -> Option<Vec<u8>> {
-    #[cfg(feature = "airplay2")]
+    #[cfg(feature = "ap2")]
     response.add_header("Public", "ANNOUNCE, SETUP, RECORD, PAUSE, FLUSH, FLUSHBUFFERED, TEARDOWN, OPTIONS, POST, GET, PUT");
-    #[cfg(not(feature = "airplay2"))]
+    #[cfg(not(feature = "ap2"))]
     response.add_header("Public", "ANNOUNCE, SETUP, RECORD, PAUSE, FLUSH, TEARDOWN, OPTIONS, GET_PARAMETER, SET_PARAMETER");
     None
 }
@@ -295,7 +295,7 @@ pub(crate) fn handle_set_parameter(
     tracing::debug!(content_type, len = data.len(), "SET_PARAMETER");
 
     // AP2: forward via playout command channel
-    #[cfg(feature = "airplay2")]
+    #[cfg(feature = "ap2")]
     if let Some(tx) = &conn.playout_cmd {
         let cmd = match content_type {
             "text/parameters" => {
@@ -355,7 +355,7 @@ pub(crate) fn handle_set_parameter(
 
 // --- AirPlay 2 handlers ---
 
-#[cfg(feature = "airplay2")]
+#[cfg(feature = "ap2")]
 pub(crate) fn handle_pair_setup_ap2(
     conn: &mut RaopConnection,
     request: &HttpRequest,
@@ -415,7 +415,7 @@ pub(crate) fn handle_pair_setup_ap2(
     }
 }
 
-#[cfg(feature = "airplay2")]
+#[cfg(feature = "ap2")]
 pub(crate) fn handle_pair_verify_ap2(
     conn: &mut RaopConnection,
     request: &HttpRequest,
@@ -465,7 +465,7 @@ pub(crate) fn handle_pair_verify_ap2(
     }
 }
 
-#[cfg(feature = "airplay2")]
+#[cfg(feature = "ap2")]
 pub(crate) fn handle_get_info(
     conn: &mut RaopConnection,
     _request: &HttpRequest,
@@ -497,7 +497,7 @@ pub(crate) fn handle_get_info(
     Some(buf)
 }
 
-#[cfg(feature = "airplay2")]
+#[cfg(feature = "ap2")]
 pub(crate) fn handle_setup_2(
     conn: &mut RaopConnection,
     request: &HttpRequest,
@@ -786,7 +786,7 @@ pub(crate) fn handle_setup_2(
     Some(buf)
 }
 
-#[cfg(feature = "airplay2")]
+#[cfg(feature = "ap2")]
 pub(crate) fn handle_record_2(
     _conn: &mut RaopConnection,
     _request: &HttpRequest,
@@ -797,7 +797,7 @@ pub(crate) fn handle_record_2(
     None
 }
 
-#[cfg(feature = "airplay2")]
+#[cfg(feature = "ap2")]
 pub(crate) fn handle_setrateanchortime(
     conn: &mut RaopConnection,
     request: &HttpRequest,
@@ -833,7 +833,7 @@ pub(crate) fn handle_setrateanchortime(
     None
 }
 
-#[cfg(feature = "airplay2")]
+#[cfg(feature = "ap2")]
 pub(crate) fn handle_setpeers(
     _conn: &mut RaopConnection,
     request: &HttpRequest,
@@ -850,7 +850,7 @@ pub(crate) fn handle_setpeers(
     None
 }
 
-#[cfg(feature = "airplay2")]
+#[cfg(feature = "ap2")]
 pub(crate) fn handle_flushbuffered(
     conn: &mut RaopConnection,
     request: &HttpRequest,
@@ -872,14 +872,14 @@ pub(crate) fn handle_flushbuffered(
 
 // --- AP2 POST sub-handlers ---
 
-#[cfg(feature = "airplay2")]
+#[cfg(feature = "ap2")]
 pub(crate) fn handle_feedback(
     conn: &mut RaopConnection,
     _request: &HttpRequest,
     response: &mut HttpResponse,
 ) -> Option<Vec<u8>> {
     // Only return stream info when audio is actually playing (matches shairport-sync)
-    #[cfg(feature = "airplay2")]
+    #[cfg(feature = "ap2")]
     if conn.playout_cmd.is_some() {
         let mut stream_dict = plist::Dictionary::new();
         stream_dict.insert("type".into(), plist::Value::Integer(103_i64.into()));
@@ -895,7 +895,7 @@ pub(crate) fn handle_feedback(
     None
 }
 
-#[cfg(feature = "airplay2")]
+#[cfg(feature = "ap2")]
 pub(crate) fn handle_command(
     _conn: &mut RaopConnection,
     request: &HttpRequest,
@@ -914,7 +914,7 @@ pub(crate) fn handle_command(
     None
 }
 
-#[cfg(feature = "airplay2")]
+#[cfg(feature = "ap2")]
 pub(crate) fn handle_audiomode(
     _conn: &mut RaopConnection,
     request: &HttpRequest,
