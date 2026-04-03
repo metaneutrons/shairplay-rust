@@ -58,6 +58,19 @@ pub(crate) struct RaopConnection {
     pub eiv: Option<[u8; 16]>,
 }
 
+/// Returns a bind address matching the connection's address family.
+/// Uses the connection's local IP so sub-listeners bind to the same interface.
+fn bind_addr_for(conn: &RaopConnection) -> String {
+    if conn.local_addr.len() == 16 {
+        let ip: [u8; 16] = conn.local_addr[..16].try_into().unwrap_or([0; 16]);
+        let addr = std::net::Ipv6Addr::from(ip);
+        format!("[{addr}]:0")
+    } else {
+        let ip: [u8; 4] = conn.local_addr[..4].try_into().unwrap_or([0; 4]);
+        let addr = std::net::Ipv4Addr::from(ip);
+        format!("{addr}:0")
+    }
+}
 pub(crate) fn handle_none(
     _conn: &mut RaopConnection,
     _request: &HttpRequest,
@@ -518,7 +531,7 @@ pub(crate) fn handle_setup_2(
                 let sr = stream0.get("sr").and_then(|v| v.as_unsigned_integer()).unwrap_or(44100);
                 tracing::info!(stream_type = 96, sample_rate = sr, "AP2 realtime ALAC stream setup");
 
-                let bind_addr = if conn.local_addr.len() == 16 { "[::]:0" } else { "0.0.0.0:0" };
+                let bind_addr = bind_addr_for(conn);
                 let udp_sock = std::net::UdpSocket::bind(bind_addr).ok()?;
                 let audio_port = udp_sock.local_addr().ok()?.port();
                 drop(udp_sock);
@@ -539,7 +552,7 @@ pub(crate) fn handle_setup_2(
                 let mut shk_arr = [0u8; 32];
                 shk_arr.copy_from_slice(shk);
 
-                let bind_addr = if conn.local_addr.len() == 16 { "[::]:0" } else { "0.0.0.0:0" };
+                let bind_addr = bind_addr_for(conn);
                 let listener = tokio::task::block_in_place(|| {
                     tokio::runtime::Handle::current().block_on(
                         tokio::net::TcpListener::bind(bind_addr)
@@ -572,7 +585,7 @@ pub(crate) fn handle_setup_2(
                 // On PTP connections, type 130 is just acknowledged
                 // On RC connections, it sets up an encrypted data channel
                 if let Some(_seed) = stream0.get("seed").and_then(|v| v.as_unsigned_integer()) {
-                    let bind_addr = if conn.local_addr.len() == 16 { "[::]:0" } else { "0.0.0.0:0" };
+                    let bind_addr = bind_addr_for(conn);
                     let data_listener = tokio::task::block_in_place(|| {
                         tokio::runtime::Handle::current().block_on(
                             tokio::net::TcpListener::bind(bind_addr)
@@ -616,7 +629,7 @@ pub(crate) fn handle_setup_2(
 
                 let cipher = crate::crypto::video_cipher::VideoCipher::new(&ekey, &eiv);
 
-                let bind_addr = if conn.local_addr.len() == 16 { "[::]:0" } else { "0.0.0.0:0" };
+                let bind_addr = bind_addr_for(conn);
                 let listener = tokio::task::block_in_place(|| {
                     tokio::runtime::Handle::current().block_on(
                         tokio::net::TcpListener::bind(bind_addr)
@@ -642,7 +655,7 @@ pub(crate) fn handle_setup_2(
         }
 
         // Control port (shared across streams)
-        let ctrl_sock = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
+        let ctrl_sock = std::net::UdpSocket::bind(&bind_addr_for(conn)).ok()?;
         let ctrl_port = ctrl_sock.local_addr().ok()?.port();
         drop(ctrl_sock);
         stream_resp.insert("controlPort".into(), plist::Value::Integer(ctrl_port.into()));
@@ -708,7 +721,7 @@ pub(crate) fn handle_setup_2(
         }
 
         // Bind event port on same address family as the client connection
-        let bind_addr = if conn.local_addr.len() == 16 { "[::]:0" } else { "0.0.0.0:0" };
+        let bind_addr = bind_addr_for(conn);
         let event_ch = tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(async {
                 let listener = tokio::net::TcpListener::bind(bind_addr).await?;

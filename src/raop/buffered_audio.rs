@@ -51,8 +51,8 @@ pub struct BufferedAudioProcessor {
 }
 
 impl BufferedAudioProcessor {
-    pub async fn bind() -> Result<Self, NetworkError> {
-        let listener = TcpListener::bind("0.0.0.0:0").await?;
+    pub async fn bind(addr: &str) -> Result<Self, NetworkError> {
+        let listener = TcpListener::bind(addr).await?;
         let port = listener.local_addr()?.port();
         Ok(Self { listener, port })
     }

@@ -36,9 +36,9 @@ pub struct EventChannel {
 }
 
 impl EventChannel {
-    /// Bind a TCP listener on any available port.
-    pub async fn bind() -> Result<Self, NetworkError> {
-        let listener = TcpListener::bind("0.0.0.0:0").await?;
+    /// Bind a TCP listener on any available port at the given address.
+    pub async fn bind(addr: &str) -> Result<Self, NetworkError> {
+        let listener = TcpListener::bind(addr).await?;
         let port = listener.local_addr()?.port();
         debug!(port, "Event channel listening");
         Ok(Self { listener, port })
@@ -118,13 +118,13 @@ mod tests {
 
     #[tokio::test]
     async fn event_channel_binds() {
-        let ch = EventChannel::bind().await.unwrap();
+        let ch = EventChannel::bind("0.0.0.0:0").await.unwrap();
         assert!(ch.port > 0);
     }
 
     #[tokio::test]
     async fn event_channel_roundtrip() {
-        let ch = EventChannel::bind().await.unwrap();
+        let ch = EventChannel::bind("0.0.0.0:0").await.unwrap();
         let port = ch.port;
 
         let key = [0x42u8; 32];
