@@ -431,6 +431,9 @@ pub(crate) fn handle_setup_2(
     let data = request.data()?;
     let plist_val: plist::Value = plist::from_bytes(data).ok()?;
     let dict = plist_val.as_dictionary()?;
+    let keys: Vec<_> = dict.keys().collect();
+    let has_streams = dict.get("streams").is_some();
+    tracing::debug!(?keys, has_streams, "SETUP plist");
 
     let mut resp_dict = plist::Dictionary::new();
 
@@ -438,6 +441,7 @@ pub(crate) fn handle_setup_2(
         // Stream SETUP — type 96 (realtime) or type 103 (buffered)
         let stream0 = streams.first()?.as_dictionary()?;
         let stream_type = stream0.get("type")?.as_unsigned_integer()?;
+        tracing::debug!(?stream0, "Stream SETUP plist");
 
         let mut stream_resp = plist::Dictionary::new();
         stream_resp.insert("type".into(), plist::Value::Integer(stream_type.into()));
@@ -513,11 +517,36 @@ pub(crate) fn handle_setup_2(
             .and_then(|v| v.as_string())
             .unwrap_or("None");
 
+        let is_rc_only = dict.get("isRemoteControlOnly")
+            .and_then(|v| v.as_boolean())
+            .unwrap_or(false);
+
+        if is_rc_only {
+            tracing::info!("Remote Control Only connection");
+            // RC connections don't need timingPeerInfo or eventPort
+            let mut buf = Vec::new();
+            plist::to_writer_binary(&mut buf, &resp_dict).ok()?;
+            response.add_header("Content-Type", "application/x-apple-binary-plist");
+            return Some(buf);
+        }
+
         if timing == "PTP" {
             let mut tpi = plist::Dictionary::new();
-            let addrs = vec![plist::Value::String("0.0.0.0".into())];
+            let self_ip = match conn.local_addr.len() {
+                4 => {
+                    let ip: [u8; 4] = conn.local_addr[..4].try_into().unwrap_or([0;4]);
+                    std::net::Ipv4Addr::from(ip).to_string()
+                }
+                16 => {
+                    let ip: [u8; 16] = conn.local_addr[..16].try_into().unwrap_or([0;16]);
+                    std::net::Ipv6Addr::from(ip).to_string()
+                }
+                _ => "0.0.0.0".to_string(),
+            };
+            tracing::debug!(self_ip, "timingPeerInfo address");
+            let addrs = vec![plist::Value::String(self_ip.clone())];
             tpi.insert("Addresses".into(), plist::Value::Array(addrs));
-            tpi.insert("ID".into(), plist::Value::String("0.0.0.0".into()));
+            tpi.insert("ID".into(), plist::Value::String(self_ip));
             resp_dict.insert("timingPeerInfo".into(), plist::Value::Dictionary(tpi));
         }
 
@@ -547,6 +576,7 @@ pub(crate) fn handle_setup_2(
         });
 
         resp_dict.insert("eventPort".into(), plist::Value::Integer(event_port.into()));
+        resp_dict.insert("timingPort".into(), plist::Value::Integer(0_i64.into()));
     }
 
     let mut buf = Vec::new();
