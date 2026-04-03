@@ -32,7 +32,7 @@ pub enum PlayoutCommand {
 struct PlayoutState {
     buffer: BTreeMap<u32, Vec<u8>>, // rtp_timestamp → ADTS frame
     anchor_rtp: u32,
-    anchor_time_ns: u64,
+    anchor_local_ns: u64, // local wall clock when anchor was set
     rate: u32, // 0 = paused, 1 = playing
     sample_rate: u32,
     stopped: bool,
@@ -67,7 +67,7 @@ impl BufferedAudioProcessor {
             Mutex::new(PlayoutState {
                 buffer: BTreeMap::new(),
                 anchor_rtp: 0,
-                anchor_time_ns: 0,
+                anchor_local_ns: 0,
                 rate: 0,
                 sample_rate,
                 stopped: false,
@@ -90,16 +90,23 @@ impl BufferedAudioProcessor {
                 let (lock, cvar) = &*state3;
                 let mut s = lock.lock().unwrap();
                 match cmd {
-                    PlayoutCommand::SetRate { anchor_rtp, anchor_time_ns, rate } => {
+                    PlayoutCommand::SetRate { anchor_rtp, anchor_time_ns: _, rate } => {
                         s.anchor_rtp = anchor_rtp;
-                        s.anchor_time_ns = anchor_time_ns;
                         let was_paused = s.rate == 0;
                         s.rate = rate;
                         if rate == 0 {
-                            s.buffer.clear(); // flush on pause
+                            s.buffer.clear();
                             info!("Playout paused, buffer cleared");
-                        } else if was_paused {
-                            info!(anchor_rtp, "Playout started");
+                        } else {
+                            // Use local wall clock as anchor reference
+                            // (PTP anchor_time_ns is in master clock domain which we
+                            // can't use without a synced PTP client)
+                            s.anchor_local_ns = now_ns();
+                            if was_paused {
+                                info!(anchor_rtp, "Playout started");
+                            } else {
+                                info!(anchor_rtp, "Playout anchor updated");
+                            }
                         }
                         cvar.notify_all();
                     }
@@ -190,14 +197,10 @@ where
         }
         if s.stopped { break; }
 
-        // Find the next frame to deliver
-        let now_ns = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos() as u64;
+        let now_ns = now_ns();
 
         // Calculate which RTP timestamp should play now
-        let elapsed_ns = now_ns.saturating_sub(s.anchor_time_ns);
+        let elapsed_ns = now_ns.saturating_sub(s.anchor_local_ns);
         let elapsed_frames = (elapsed_ns as u128 * s.sample_rate as u128 / 1_000_000_000) as u32;
         let target_rtp = s.anchor_rtp.wrapping_add(elapsed_frames);
 
@@ -223,4 +226,11 @@ where
         }
     }
     debug!("Delivery loop ended");
+}
+
+fn now_ns() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos() as u64
 }
