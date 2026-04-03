@@ -1,4 +1,6 @@
 pub mod buffer;
+#[cfg(feature = "airplay2")]
+pub mod event_channel;
 pub mod handlers;
 pub mod rtp;
 mod rtsp;
