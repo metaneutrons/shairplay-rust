@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use tokio::net::UdpSocket;
 use tokio::sync::{Mutex, watch};
+use tracing::info;
 
 use crate::error::{NetworkError, ShairplayError};
 use crate::raop::buffer::{RaopBuffer, RAOP_PACKET_LEN};
@@ -107,6 +108,7 @@ impl RaopRtp {
         _timing_rport: u16,
     ) -> Result<(u16, u16, u16), ShairplayError> {
         self.control_rport = control_rport;
+        info!(use_udp, control_rport, "AP1 RTP starting");
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
         self.shutdown_tx = Some(shutdown_tx);
 
@@ -286,6 +288,7 @@ impl RaopRtp {
     }
 
     pub fn set_remote_control_id(&self, dacp_id: &str, active_remote: &str) {
+        info!(dacp_id, "DACP remote control available");
         let d = dacp_id.to_string();
         let a = active_remote.to_string();
         let state = self.state.clone();
