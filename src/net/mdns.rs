@@ -19,6 +19,20 @@ pub const GLOBAL_FEATURES: u32 = 0x7;
 pub const GLOBAL_MODEL: &str = "AppleTV2,1";
 pub const GLOBAL_VERSION: &str = "130.14";
 
+// AirPlay 2 defaults (from shairport-sync bonjour_strings.c)
+#[cfg(feature = "airplay2")]
+pub const AP2_FEATURES: u64 = 0x1C340405D4A00;
+#[cfg(feature = "airplay2")]
+pub const AP2_STATUS_FLAGS: u32 = 0x4;
+#[cfg(feature = "airplay2")]
+pub const AP2_SRCVERS: &str = "377.40.00";
+#[cfg(feature = "airplay2")]
+pub const AP2_OSVERS: &str = "15.6";
+#[cfg(feature = "airplay2")]
+pub const AP2_FW_VERSION: &str = "77.40.00";
+#[cfg(feature = "airplay2")]
+pub const AP2_PROTOVERS: &str = "1.1";
+
 /// mDNS service information for AirPlay network discovery.
 #[derive(Debug, Clone)]
 pub struct AirPlayServiceInfo {
@@ -57,6 +71,60 @@ impl AirPlayServiceInfo {
             ("deviceid".into(), hw_airplay),
             ("features".into(), format!("0x{:x}", GLOBAL_FEATURES)),
             ("model".into(), GLOBAL_MODEL.into()),
+        ];
+
+        Self { raop_name, airplay_name: name.to_string(), port, raop_txt, airplay_txt }
+    }
+
+    /// Create AP2 service info with full AirPlay 2 feature flags.
+    /// `pk_hex` is the hex-encoded Ed25519 public key, `pi` is the pairing identifier (UUID).
+    #[cfg(feature = "airplay2")]
+    pub fn new_airplay2(
+        name: &str, port: u16, hwaddr: &[u8], password: bool,
+        pk_hex: &str, pi: &str,
+    ) -> Self {
+        let hw_raop = util::hwaddr_raop(hwaddr);
+        let hw_airplay = util::hwaddr_airplay(hwaddr);
+        let raop_name = format!("{}@{}", hw_raop, name);
+
+        let features_lo = AP2_FEATURES & 0xFFFFFFFF;
+        let features_hi = (AP2_FEATURES >> 32) & 0xFFFFFFFF;
+        let ft = format!("0x{:X},0x{:X}", features_lo, features_hi);
+
+        let raop_txt = vec![
+            ("cn".into(), "0,1".into()),
+            ("da".into(), "true".into()),
+            ("et".into(), "0,1".into()),
+            ("pw".into(), (if password { "true" } else { "false" }).into()),
+            ("ft".into(), ft.clone()),
+            ("fv".into(), AP2_FW_VERSION.into()),
+            ("sf".into(), format!("0x{:X}", AP2_STATUS_FLAGS)),
+            ("md".into(), "0,1,2".into()),
+            ("am".into(), GLOBAL_MODEL.into()),
+            ("pk".into(), pk_hex.into()),
+            ("tp".into(), "UDP".into()),
+            ("vn".into(), "65537".into()),
+            ("vs".into(), AP2_SRCVERS.into()),
+            ("ov".into(), AP2_OSVERS.into()),
+        ];
+
+        let airplay_txt = vec![
+            ("acl".into(), "0".into()),
+            ("btaddr".into(), "00:00:00:00:00:00".into()),
+            ("deviceid".into(), hw_airplay),
+            ("features".into(), ft),
+            ("flags".into(), format!("0x{:X}", AP2_STATUS_FLAGS)),
+            ("gid".into(), pi.into()),
+            ("igl".into(), "0".into()),
+            ("gcgl".into(), "0".into()),
+            ("model".into(), GLOBAL_MODEL.into()),
+            ("protovers".into(), AP2_PROTOVERS.into()),
+            ("pi".into(), pi.into()),
+            ("pk".into(), pk_hex.into()),
+            ("srcvers".into(), AP2_SRCVERS.into()),
+            ("osvers".into(), AP2_OSVERS.into()),
+            ("vv".into(), "2".into()),
+            ("fv".into(), AP2_FW_VERSION.into()),
         ];
 
         Self { raop_name, airplay_name: name.to_string(), port, raop_txt, airplay_txt }
@@ -102,5 +170,63 @@ impl Drop for MdnsService {
     fn drop(&mut self) {
         self.unregister_raop();
         self.unregister_airplay();
+    }
+}
+
+#[cfg(all(test, feature = "airplay2"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ap2_raop_txt_has_required_fields() {
+        let info = AirPlayServiceInfo::new_airplay2(
+            "Test Speaker", 7000, &[0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF],
+            false, "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+            "12345678-1234-1234-1234-123456789abc",
+        );
+
+        let find = |key: &str| info.raop_txt.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str());
+
+        // AP2 _raop._tcp must have these fields (matching shairport-sync)
+        assert_eq!(find("vn"), Some("65537")); // AP2 version, not "3"
+        assert_eq!(find("tp"), Some("UDP"));   // AP2 uses UDP only, not "TCP,UDP"
+        assert!(find("ft").unwrap().contains(","));  // features has hi,lo
+        assert!(find("pk").is_some());         // Ed25519 public key
+        assert!(find("sf").is_some());         // status flags
+        assert_eq!(find("cn"), Some("0,1"));
+        assert_eq!(find("da"), Some("true"));
+        assert_eq!(find("pw"), Some("false"));
+    }
+
+    #[test]
+    fn ap2_airplay_txt_has_required_fields() {
+        let info = AirPlayServiceInfo::new_airplay2(
+            "Test Speaker", 7000, &[0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF],
+            false, "abcd1234", "my-uuid-here",
+        );
+
+        let find = |key: &str| info.airplay_txt.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str());
+
+        // AP2 _airplay._tcp required fields
+        assert_eq!(find("acl"), Some("0"));
+        assert!(find("deviceid").is_some());
+        assert!(find("features").is_some());
+        assert!(find("flags").is_some());
+        assert!(find("gid").is_some());
+        assert_eq!(find("model"), Some("AppleTV2,1"));
+        assert_eq!(find("protovers"), Some("1.1"));
+        assert!(find("pi").is_some());
+        assert!(find("pk").is_some());
+        assert_eq!(find("vv"), Some("2"));
+    }
+
+    #[test]
+    fn ap2_raop_name_format() {
+        let info = AirPlayServiceInfo::new_airplay2(
+            "My Speaker", 5000, &[0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC],
+            false, "pk", "pi",
+        );
+        assert_eq!(info.raop_name, "123456789ABC@My Speaker");
+        assert_eq!(info.airplay_name, "My Speaker");
     }
 }
