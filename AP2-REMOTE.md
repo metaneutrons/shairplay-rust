@@ -123,19 +123,63 @@ kMRMediaRemoteCommandToggleRepeat   = ?
 
 - [AirPlay 2 Internals — Service Discovery](https://emanuelecozzi.net/docs/airplay2/discovery/) — mDNS TXT record format
 - [AirPlay 2 Internals — Features](https://emanuelecozzi.net/docs/airplay2/features/) — Feature bitmask documentation
+- [AirPlay 2 Internals — RTSP](https://emanuelecozzi.net/docs/airplay2/rtsp/) — RTSP headers and endpoints (note: shows DACP-ID on AP2 requests, but modern iOS 18+ no longer sends them)
 - [Unofficial AirPlay Specification](https://openairplay.github.io/airplay-spec/service_discovery.html) — Legacy AirPlay protocol
 - [MediaRemoteTV Protocol](https://jeanregisser.gitbooks.io/mediaremotetv-protocol/content/communication/) — MRP protobuf format (Apple TV, not AirPlay data channel)
+- [Dissecting the Media Remote Protocol](https://edc.me/posts/dissecting-the-media-remote-protocol/) — Evan Coleman's reverse engineering of Apple TV MRP (length-prefixed protobuf over TCP, SRP-encrypted)
 - [pyatv](https://github.com/postlund/pyatv) — Python Apple TV library (MRP implementation)
 - [shairport-sync](https://github.com/mikebrady/shairport-sync) — C AirPlay 2 reference implementation
+- [pair_ap](https://github.com/ejurgensen/pair_ap) — C HomeKit pairing library (SRP-6a, TLV, HKDF, pair-verify, MFi-SAP). Primary reference for our pairing implementation. 17 C-verified test vectors generated from this codebase.
+- [SteeBono/airplayreceiver](https://github.com/SteeBono/airplayreceiver/wiki/AirPlay2-Protocol) — AirPlay 2 protocol overview wiki
 
 ## Feature Flag Findings
 
-The `seed` for the type 130 encrypted data channel is gated by:
+The `seed` for the type 130 encrypted data channel is **definitively** gated by
+HomeKit pairing (device added to Apple Home app), not by features or model.
 
-- **Bit 58: `SupportsHangdogRemoteControl`** — must be set
-- **Condition**: `(isAppleTV || isAppleAudioAccessory) && bit58`
-- `isAppleAudioAccessory` = model starts with `AudioAccessory` (HomePod)
-- `isAppleTV` = model starts with `AppleTV`
+### Tested Combinations (all produce type 130 without seed)
 
-Our current config: `model=AppleTV2,1`, bit 58 NOT set → no seed.
-Fix: set bit 58 in features and keep model as `AppleTV*`.
+| Features | Model | et | Result |
+|----------|-------|----|--------|
+| `0x1C340405D4A00` (shairport-sync) | AppleTV2,1 | 0,1 | ✅ audio, no seed |
+| `0x1C340405D4A00` (shairport-sync) | AppleTV2,1 | 0,3,5 | ✅ audio, no seed |
+| `0x38174FDE4A7FCFD5` (Mac) | Mac15,6 | 0,3,5 | ✅ audio, no seed |
+| `0x1C340405D4A00` + bit 58 | AudioAccessory5,1 | 0,1 | ✅ audio, no seed |
+
+### Mac Emulation Research
+
+Full Mac mDNS emulation was tested (features, model, srcvers, flags, act, fex,
+rsf, at, psi — all matching real Mac byte-for-byte). Key finding: `et=0,3,5`
+is required for discovery with Mac features. Without it (et=0,1), the iPhone
+rejects the device entirely. With correct `et`, Mac emulation works for both
+discovery and audio.
+
+### DACP Headers in AP2
+
+Emanuelecozzi's docs (AirPlay/409.16, ~2019) show `DACP-ID` and `Active-Remote`
+headers on AP2 RTSP requests. Modern iOS (AirPlay/935.7.1, iOS 18) does NOT send
+these headers during AP2 sessions. DACP remote control is AP1-only.
+
+### AP2 Remote Control Path: Event Channel
+
+The iPhone sends `updateMRSupportedCommands` via `POST /command` with 31 MR
+commands as nested binary plists. Each contains `kCommandInfoCommandKey` (integer
+command ID) and `kCommandInfoEnabledKey` (boolean). The event channel is
+bidirectional encrypted TCP — the path for sending commands back to the iPhone.
+
+### Known MR Command IDs (from iPhone updateMRSupportedCommands)
+
+```
+0  = Play                    10 = StartForwardSeek
+1  = Pause                   11 = StartBackwardSeek
+2  = TogglePlayPause         17 = SkipForward (disabled)
+3  = Stop                    18 = SkipBackward (disabled)
+4  = NextTrack               19 = ChangePlaybackRate (disabled)
+5  = PreviousTrack           21 = RateTrack
+8  = ToggleShuffle           22 = LikeTrack
+9  = ToggleRepeat            24 = DislikeTrack
+121 = SetPlaybackPosition    127 = PrepareForSetQueue
+122 = SetPlaybackQueue       128-135 = Queue/session management
+125 = PlayItemInQueue        143 = SetVolume
+149 = ChangePlaybackMode
+```
