@@ -483,10 +483,60 @@ pub(crate) fn handle_setup_2(
 
                 tokio::task::block_in_place(|| {
                     tokio::runtime::Handle::current().spawn(async move {
+                        use symphonia::core::audio::SampleBuffer;
+                        use symphonia::core::codecs::DecoderOptions;
+                        use symphonia::core::formats::FormatOptions;
+                        use symphonia::core::io::MediaSourceStream;
+                        use symphonia::core::meta::MetadataOptions;
+                        use symphonia::core::probe::Hint;
+
+                        // Create audio session
+                        let format = crate::raop::AudioFormat { channels: 2, bits: 16, sample_rate: 44100 };
+                        let mut session = handler.audio_init(format);
+
                         let proc = crate::raop::buffered_audio::BufferedAudioProcessor { listener, port: audio_port };
                         proc.run(44100, 2, move |adts_data, _ts, _seq| {
-                            tracing::info!(len = adts_data.len(), "Buffered audio frame");
-                            let _ = &handler;
+                            // Decode AAC frame using symphonia
+                            let cursor = std::io::Cursor::new(adts_data.to_vec());
+                            let mss = MediaSourceStream::new(Box::new(cursor), Default::default());
+                            let mut hint = Hint::new();
+                            hint.with_extension("aac");
+
+                            let probe = match symphonia::default::get_probe().format(
+                                &hint, mss, &FormatOptions::default(), &MetadataOptions::default()
+                            ) {
+                                Ok(p) => p,
+                                Err(_) => return,
+                            };
+
+                            let mut format_reader = probe.format;
+                            let track = match format_reader.default_track() {
+                                Some(t) => t.clone(),
+                                None => return,
+                            };
+
+                            let mut decoder = match symphonia::default::get_codecs().make(
+                                &track.codec_params, &DecoderOptions::default()
+                            ) {
+                                Ok(d) => d,
+                                Err(_) => return,
+                            };
+
+                            while let Ok(packet) = format_reader.next_packet() {
+                                if let Ok(decoded) = decoder.decode(&packet) {
+                                    let spec = *decoded.spec();
+                                    let duration = decoded.capacity() as u64;
+                                    let mut sample_buf = SampleBuffer::<i16>::new(duration, spec);
+                                    sample_buf.copy_interleaved_ref(decoded);
+                                    let samples = sample_buf.samples();
+                                    // Convert i16 samples to bytes (S16LE)
+                                    let mut pcm = Vec::with_capacity(samples.len() * 2);
+                                    for &s in samples {
+                                        pcm.extend_from_slice(&s.to_le_bytes());
+                                    }
+                                    session.audio_process(&pcm);
+                                }
+                            }
                         }).await;
                     })
                 });
