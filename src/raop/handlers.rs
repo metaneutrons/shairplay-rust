@@ -58,18 +58,21 @@ pub(crate) struct RaopConnection {
     pub eiv: Option<[u8; 16]>,
 }
 
-/// Returns a bind address matching the connection's address family.
-/// Uses the connection's local IP so sub-listeners bind to the same interface.
-fn bind_addr_for(conn: &RaopConnection) -> String {
+/// Returns the connection's local IP address.
+fn local_ip_from(conn: &RaopConnection) -> std::net::IpAddr {
     if conn.local_addr.len() == 16 {
         let ip: [u8; 16] = conn.local_addr[..16].try_into().unwrap_or([0; 16]);
-        let addr = std::net::Ipv6Addr::from(ip);
-        format!("[{addr}]:0")
+        std::net::IpAddr::V6(std::net::Ipv6Addr::from(ip))
     } else {
         let ip: [u8; 4] = conn.local_addr[..4].try_into().unwrap_or([0; 4]);
-        let addr = std::net::Ipv4Addr::from(ip);
-        format!("{addr}:0")
+        std::net::IpAddr::V4(std::net::Ipv4Addr::from(ip))
     }
+}
+
+/// Returns a bind address string matching the connection's local interface.
+#[cfg(feature = "ap2")]
+fn bind_addr_for(conn: &RaopConnection) -> String {
+    format!("{}:0", local_ip_from(conn))
 }
 pub(crate) fn handle_none(
     _conn: &mut RaopConnection,
@@ -201,7 +204,7 @@ pub(crate) fn handle_announce(
     conn.raop_rtp = None;
 
     conn.raop_rtp = Some(RaopRtp::new(
-        conn.handler.clone(), remote, rtpmap, fmtp, &aeskey, &aesiv,
+        conn.handler.clone(), remote, local_ip_from(conn), rtpmap, fmtp, &aeskey, &aesiv,
     ));
 
     if conn.raop_rtp.is_none() {
@@ -655,7 +658,7 @@ pub(crate) fn handle_setup_2(
         }
 
         // Control port (shared across streams)
-        let ctrl_sock = std::net::UdpSocket::bind(&bind_addr_for(conn)).ok()?;
+        let ctrl_sock = std::net::UdpSocket::bind(bind_addr_for(conn)).ok()?;
         let ctrl_port = ctrl_sock.local_addr().ok()?.port();
         drop(ctrl_sock);
         stream_resp.insert("controlPort".into(), plist::Value::Integer(ctrl_port.into()));

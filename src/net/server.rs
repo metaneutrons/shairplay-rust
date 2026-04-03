@@ -30,7 +30,7 @@ use crate::proto::http::{HttpRequest, HttpResponse};
 /// ```
 #[derive(Debug, Clone)]
 pub struct BindConfig {
-    /// IP addresses to bind to. Empty = bind to all interfaces (0.0.0.0 + [::]).
+    /// IP addresses to bind to. Empty = bind to all interfaces (0.0.0.0 + \[::\]).
     pub bind_addrs: Vec<IpAddr>,
     /// Port number. Used as starting port for auto-sensing, or exact port if `auto_port` is false.
     pub port: u16,

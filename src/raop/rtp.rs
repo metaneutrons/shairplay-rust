@@ -1,4 +1,4 @@
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 
 use tokio::net::UdpSocket;
@@ -39,15 +39,6 @@ fn remote_addr_bytes(remote: &str) -> Vec<u8> {
 /// Determines the bind address based on the remote connection string from SDP.
 /// The C code parses "IN IP4 <addr>" or "IN IP6 <addr>" and uses the family
 /// to decide IPv4 vs IPv6 socket binding.
-fn bind_addr_from_remote(remote: &str) -> SocketAddr {
-    let use_ipv6 = remote.contains("IP6") || remote.contains(':');
-    if use_ipv6 {
-        SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), 0)
-    } else {
-        SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0)
-    }
-}
-
 
 struct RtpState {
     volume: f32,
@@ -64,6 +55,7 @@ struct RtpState {
 pub struct RaopRtp {
     handler: Arc<dyn AudioHandler>,
     remote: String,
+    local_addr: IpAddr,
     buffer: Arc<Mutex<RaopBuffer>>,
     state: Arc<Mutex<RtpState>>,
     shutdown_tx: Option<watch::Sender<bool>>,
@@ -77,6 +69,7 @@ impl RaopRtp {
     pub fn new(
         callbacks: Arc<dyn AudioHandler>,
         remote: &str,
+        local_addr: IpAddr,
         rtpmap: &str,
         fmtp: &str,
         aes_key: &[u8; 16],
@@ -86,6 +79,7 @@ impl RaopRtp {
         Self {
             handler: callbacks,
             remote: remote.to_string(),
+            local_addr,
             buffer: Arc::new(Mutex::new(buffer)),
             state: Arc::new(Mutex::new(RtpState {
                 volume: 0.0, volume_changed: false,
@@ -113,7 +107,7 @@ impl RaopRtp {
         self.shutdown_tx = Some(shutdown_tx);
 
         if use_udp {
-            let bind_addr = bind_addr_from_remote(&self.remote);
+            let bind_addr = SocketAddr::new(self.local_addr, 0);
             let csock = UdpSocket::bind(bind_addr).await.map_err(NetworkError::Io)?;
             let tsock = UdpSocket::bind(bind_addr).await.map_err(NetworkError::Io)?;
             let dsock = UdpSocket::bind(bind_addr).await.map_err(NetworkError::Io)?;
@@ -192,7 +186,7 @@ impl RaopRtp {
             });
         } else {
             // TCP mode
-            let listener = tokio::net::TcpListener::bind(bind_addr_from_remote(&self.remote)).await.map_err(NetworkError::Io)?;
+            let listener = tokio::net::TcpListener::bind(SocketAddr::new(self.local_addr, 0)).await.map_err(NetworkError::Io)?;
             self.data_lport = listener.local_addr().map_err(NetworkError::Io)?.port();
 
             let config = {

@@ -48,7 +48,7 @@ impl DacpClient {
     /// Discover the Apple device's DACP service.
     ///
     /// Uses the remote IP from the AirPlay TCP connection and the conventional
-    /// DACP port (3689). If the device uses a non-standard port, use [`set_addr`]
+    /// DACP port (3689). If the device uses a non-standard port, use `set_addr()`
     /// instead.
     ///
     /// Note: port 3689 is the standard DACP port. Reliable across tested Apple devices.

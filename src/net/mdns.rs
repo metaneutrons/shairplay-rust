@@ -21,7 +21,6 @@ pub const GLOBAL_VERSION: &str = "130.14";
 
 // AirPlay 2 defaults (from shairport-sync bonjour_strings.c)
 #[cfg(feature = "ap2")]
-
 #[cfg(feature = "ap2")]
 pub const AP2_STATUS_FLAGS: u32 = 0x4;
 #[cfg(feature = "ap2")]
