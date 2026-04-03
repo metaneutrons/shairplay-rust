@@ -550,10 +550,11 @@ pub(crate) fn handle_setup_2(
             resp_dict.insert("timingPeerInfo".into(), plist::Value::Dictionary(tpi));
         }
 
-        // Bind event port
+        // Bind event port on same address family as the client connection
+        let bind_addr = if conn.local_addr.len() == 16 { "[::]:0" } else { "0.0.0.0:0" };
         let event_listener = tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(
-                tokio::net::TcpListener::bind("0.0.0.0:0")
+                tokio::net::TcpListener::bind(bind_addr)
             )
         }).ok()?;
         let event_port = event_listener.local_addr().ok()?.port() as u64;
