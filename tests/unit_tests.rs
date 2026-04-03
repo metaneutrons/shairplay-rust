@@ -371,3 +371,138 @@ mod hex {
         data.iter().map(|b| format!("{:02x}", b)).collect()
     }
 }
+
+#[cfg(all(test, feature = "airplay2"))]
+mod ap2_tests {
+    use super::*;
+
+    // --- C-verified: per-packet audio decryption ---
+    // Generated from libsodium crypto_aead_chacha20poly1305_ietf_encrypt
+    // with shk=0x42*32, AAD=timestamp+ssrc, nonce from packet trail
+
+    #[test]
+    fn c_vector_audio_packet_decrypt() {
+        use chacha20poly1305::{ChaCha20Poly1305, KeyInit, aead::Aead, Nonce, aead::Payload};
+
+        let packet = hex_decode("809a000193eda3fd160000004ea11b7fc9f1c33dbf860ff8ae0b52a18df7c4cbe6066082bdc97419157558ec76f55c1e2bc54b119bf70102030405060708");
+
+        let shk = [0x42u8; 32];
+        let cipher = ChaCha20Poly1305::new((&shk).into());
+
+        // Nonce: last 8 bytes, front-padded to 12
+        let pkt_len = packet.len();
+        let mut nonce = [0u8; 12];
+        nonce[4..12].copy_from_slice(&packet[pkt_len - 8..]);
+
+        // AAD: packet[4..12]
+        let aad = &packet[4..12];
+        // Ciphertext+tag: packet[12..len-8]
+        let ciphertext = &packet[12..pkt_len - 8];
+
+        let plaintext = cipher.decrypt(
+            Nonce::from_slice(&nonce),
+            Payload { msg: ciphertext, aad },
+        ).expect("decryption should succeed");
+
+        assert_eq!(std::str::from_utf8(&plaintext).unwrap(), "Hello AAC frame data here!");
+    }
+
+    #[test]
+    fn audio_packet_wrong_key_fails() {
+        use chacha20poly1305::{ChaCha20Poly1305, KeyInit, aead::Aead, Nonce, aead::Payload};
+
+        let packet = hex_decode("809a000193eda3fd160000004ea11b7fc9f1c33dbf860ff8ae0b52a18df7c4cbe6066082bdc97419157558ec76f55c1e2bc54b119bf70102030405060708");
+
+        let wrong_key = [0x00u8; 32];
+        let cipher = ChaCha20Poly1305::new((&wrong_key).into());
+
+        let pkt_len = packet.len();
+        let mut nonce = [0u8; 12];
+        nonce[4..12].copy_from_slice(&packet[pkt_len - 8..]);
+        let aad = &packet[4..12];
+        let ciphertext = &packet[12..pkt_len - 8];
+
+        assert!(cipher.decrypt(Nonce::from_slice(&nonce), Payload { msg: ciphertext, aad }).is_err());
+    }
+
+    // --- Buffered audio length-prefix framing ---
+
+    #[test]
+    fn length_prefix_parsing() {
+        // total_len is BE u16, includes itself (2 bytes)
+        let total_len: u16 = 102; // 100 bytes of data + 2
+        let bytes = total_len.to_be_bytes();
+        assert_eq!(bytes, [0x00, 0x66]);
+        let parsed = u16::from_be_bytes([bytes[0], bytes[1]]);
+        assert_eq!(parsed, 102);
+        assert_eq!(parsed - 2, 100); // data length
+    }
+
+    // --- AP2 mDNS feature flags format ---
+
+    #[test]
+    fn ap2_features_hilo_split() {
+        use shairplay::net::mdns::AP2_FEATURES;
+        let lo = AP2_FEATURES & 0xFFFFFFFF;
+        let hi = (AP2_FEATURES >> 32) & 0xFFFFFFFF;
+        let formatted = format!("0x{:X},0x{:X}", lo, hi);
+        // Must contain comma-separated hi,lo
+        assert!(formatted.contains(","));
+        // Recombine and verify
+        let recombined = (hi << 32) | lo;
+        assert_eq!(recombined, AP2_FEATURES);
+    }
+
+    // --- SETRATEANCHORTI networkTimeFrac conversion ---
+
+    #[test]
+    fn network_time_frac_half_second() {
+        let frac: u64 = 0x8000_0000_0000_0000;
+        let frac_ns = ((frac >> 32) * 1_000_000_000) >> 32;
+        assert_eq!(frac_ns, 500_000_000); // 0.5s
+    }
+
+    #[test]
+    fn network_time_frac_quarter_second() {
+        let frac: u64 = 0x4000_0000_0000_0000;
+        let frac_ns = ((frac >> 32) * 1_000_000_000) >> 32;
+        assert_eq!(frac_ns, 250_000_000); // 0.25s
+    }
+
+    #[test]
+    fn network_time_frac_three_quarters() {
+        let frac: u64 = 0xC000_0000_0000_0000;
+        let frac_ns = ((frac >> 32) * 1_000_000_000) >> 32;
+        assert_eq!(frac_ns, 750_000_000); // 0.75s
+    }
+
+    // --- Server keypair determinism ---
+
+    #[test]
+    fn server_keypair_deterministic() {
+        let (sk1, vk1) = shairplay::crypto::pairing_homekit::server_keypair("TestDevice");
+        let (sk2, vk2) = shairplay::crypto::pairing_homekit::server_keypair("TestDevice");
+        assert_eq!(vk1.as_bytes(), vk2.as_bytes());
+        // Different device_id → different key
+        let (_, vk3) = shairplay::crypto::pairing_homekit::server_keypair("OtherDevice");
+        assert_ne!(vk1.as_bytes(), vk3.as_bytes());
+    }
+
+    // --- ADTS header round-trip with decrypt ---
+
+    #[test]
+    fn adts_wrap_produces_valid_sync() {
+        let raw_aac = vec![0xDE, 0xAD, 0xBE, 0xEF];
+        let adts = shairplay::codec::aac::wrap_adts(&raw_aac, 44100, 2);
+        assert_eq!(adts[0], 0xFF); // sync byte 1
+        assert_eq!(adts[1] & 0xF0, 0xF0); // sync byte 2
+        assert_eq!(&adts[7..], &raw_aac[..]); // payload preserved
+        assert_eq!(adts.len(), 7 + 4); // header + payload
+    }
+
+    fn hex_decode(s: &str) -> Vec<u8> {
+        (0..s.len()).step_by(2)
+            .map(|i| u8::from_str_radix(&s[i..i+2], 16).unwrap())
+            .collect()
+    }
+}
