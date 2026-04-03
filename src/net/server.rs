@@ -260,8 +260,9 @@ fn spawn_accept_loop(
                                             raw_buf.drain(..consumed);
                                         }
                                         if !plain.is_empty() {
+                                            tracing::debug!(plain_len = plain.len(), "Decrypted data: {:?}", String::from_utf8_lossy(&plain[..plain.len().min(200)]));
                                             if request.add_data(&plain).is_err() {
-                                                tracing::warn!("HTTP parse error on decrypted data");
+                                                tracing::warn!("HTTP parse error on decrypted data: {:?}", String::from_utf8_lossy(&plain[..plain.len().min(100)]));
                                                 break;
                                             }
                                         }

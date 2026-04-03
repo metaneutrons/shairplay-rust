@@ -139,6 +139,8 @@ impl HttpdCallbacks for RaopShared {
             conn,
             #[cfg(feature = "airplay2")]
             cipher: None,
+            #[cfg(feature = "airplay2")]
+            pending_secret: None,
         }))
     }
 }
@@ -147,23 +149,31 @@ struct RaopConnectionHandler {
     conn: handlers::RaopConnection,
     #[cfg(feature = "airplay2")]
     cipher: Option<crate::crypto::chacha_transport::EncryptedChannel>,
+    #[cfg(feature = "airplay2")]
+    pending_secret: Option<Vec<u8>>, // activate encryption AFTER current response is sent
 }
 
 impl ConnectionHandler for RaopConnectionHandler {
     fn conn_request(&mut self, request: &HttpRequest) -> HttpResponse {
+        // Activate pending encryption from previous request
+        #[cfg(feature = "airplay2")]
+        if let Some(secret) = self.pending_secret.take() {
+            match crate::crypto::chacha_transport::EncryptedChannel::control(&secret) {
+                Ok(ch) => {
+                    tracing::info!("Encrypted RTSP transport activated");
+                    self.cipher = Some(ch);
+                }
+                Err(e) => tracing::warn!("Failed to create cipher: {e}"),
+            }
+        }
+
         let resp = rtsp::dispatch(&mut self.conn, request);
 
-        // After pair-setup/verify completes, activate encryption
+        // Queue encryption activation for AFTER this response is sent
         #[cfg(feature = "airplay2")]
         if self.cipher.is_none() {
             if let Some(secret) = &self.conn.ap2_shared_secret {
-                match crate::crypto::chacha_transport::EncryptedChannel::control(secret) {
-                    Ok(ch) => {
-                        tracing::info!("Encrypted RTSP transport activated");
-                        self.cipher = Some(ch);
-                    }
-                    Err(e) => tracing::warn!("Failed to create cipher: {e}"),
-                }
+                self.pending_secret = Some(secret.clone());
             }
         }
 
