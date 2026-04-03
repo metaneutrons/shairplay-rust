@@ -36,8 +36,13 @@ Tested and ruled out:
 - Returning `dataPort` in type 130 stream response (no effect)
 - Adding `eventPort` + `updateInfo` to RC connection (no effect)
 - Empty vs populated `/feedback` response on RC connection (no effect)
+- Returning `eventPort: 0, timingPort: 0` in RC SETUP response (no effect)
 - Shairport-sync has the same feedback behavior (empty when not playing)
-  and likely the same delay — this appears to be iOS-side behavior
+
+The Mac's built-in AirPlay receiver has no delay. The Mac uses `rapportd`
+(companion-link) which provides an always-on trust relationship with the iPhone.
+The delay may be the iPhone waiting for companion-link integration that
+third-party receivers cannot provide.
 
 ## Not Implemented
 
