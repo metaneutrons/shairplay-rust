@@ -15,9 +15,6 @@ bytes = "1"
 # HTTP/RTSP parsing
 httparse = "1"
 
-# mDNS
-astro-dnssd = "0.3"
-
 # Crypto
 ed25519-dalek = { version = "2", features = ["rand_core"] }
 x25519-dalek = { version = "2", features = ["static_secrets"] }
@@ -30,7 +27,6 @@ sha2 = "0.10"
 md-5 = "0.10"
 hmac = "0.12"
 rand = "0.8"
-
 
 # Encoding / parsing
 base64 = "0.22"
@@ -50,6 +46,13 @@ thiserror = "2"
 # Logging
 tracing = "0.1"
 
+[target.'cfg(target_os = "macos")'.dependencies]
+astro-dnssd = "0.3"
+
+[target.'cfg(not(target_os = "macos"))'.dependencies]
+mdns-sd = "0.12"
+gethostname = "0.5"
+
 [features]
 default = []
 airplay2 = ["dep:chacha20poly1305", "dep:hkdf", "dep:num-bigint", "dep:uuid", "dep:rubato", "dep:symphonia"]
@@ -59,8 +62,6 @@ tokio = { version = "1", features = ["test-util"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 serial_test = "3"
 cpal = "0.15"
-
-# Disable overflow checks only for the FairPlay garble crate (C-style wrapping arithmetic)
 
 [[example]]
 name = "player"

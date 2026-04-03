@@ -133,12 +133,15 @@ impl AirPlayServiceInfo {
     }
 }
 
-/// mDNS service registrar using native DNS-SD (Bonjour/Avahi).
+// --- macOS: native Bonjour via astro-dnssd ---
+
+#[cfg(target_os = "macos")]
 pub struct MdnsService {
     _raop_reg: Option<astro_dnssd::RegisteredDnsService>,
     _airplay_reg: Option<astro_dnssd::RegisteredDnsService>,
 }
 
+#[cfg(target_os = "macos")]
 impl MdnsService {
     pub fn new() -> Result<Self, NetworkError> {
         Ok(Self { _raop_reg: None, _airplay_reg: None })
@@ -174,10 +177,84 @@ impl MdnsService {
     pub fn unregister_airplay(&mut self) { self._airplay_reg = None; }
 }
 
+#[cfg(target_os = "macos")]
 impl Drop for MdnsService {
     fn drop(&mut self) {
         self.unregister_raop();
         self.unregister_airplay();
+    }
+}
+
+// --- Linux/other: pure Rust mdns-sd ---
+
+#[cfg(not(target_os = "macos"))]
+pub struct MdnsService {
+    daemon: mdns_sd::ServiceDaemon,
+    raop_fullname: Option<String>,
+    airplay_fullname: Option<String>,
+}
+
+#[cfg(not(target_os = "macos"))]
+impl MdnsService {
+    pub fn new() -> Result<Self, NetworkError> {
+        let daemon = mdns_sd::ServiceDaemon::new()
+            .map_err(|e| NetworkError::Mdns(format!("{e}")))?;
+        Ok(Self { daemon, raop_fullname: None, airplay_fullname: None })
+    }
+
+    fn txt_map(txt: &[(String, String)]) -> std::collections::HashMap<String, String> {
+        txt.iter().cloned().collect()
+    }
+
+    pub fn register_raop(&mut self, info: &AirPlayServiceInfo) -> Result<(), NetworkError> {
+        let svc = mdns_sd::ServiceInfo::new(
+            "_raop._tcp.local.",
+            &info.raop_name,
+            &format!("{}.local.", gethostname::gethostname().to_string_lossy()),
+            "",
+            info.port,
+            Self::txt_map(&info.raop_txt),
+        ).map_err(|e| NetworkError::Mdns(format!("{e}")))?;
+        self.raop_fullname = Some(svc.get_fullname().to_string());
+        self.daemon.register(svc).map_err(|e| NetworkError::Mdns(format!("{e}")))?;
+        tracing::info!(name = %info.raop_name, port = info.port, "mDNS: _raop._tcp registered");
+        Ok(())
+    }
+
+    pub fn register_airplay(&mut self, info: &AirPlayServiceInfo) -> Result<(), NetworkError> {
+        let svc = mdns_sd::ServiceInfo::new(
+            "_airplay._tcp.local.",
+            &info.airplay_name,
+            &format!("{}.local.", gethostname::gethostname().to_string_lossy()),
+            "",
+            info.port,
+            Self::txt_map(&info.airplay_txt),
+        ).map_err(|e| NetworkError::Mdns(format!("{e}")))?;
+        self.airplay_fullname = Some(svc.get_fullname().to_string());
+        self.daemon.register(svc).map_err(|e| NetworkError::Mdns(format!("{e}")))?;
+        tracing::info!(name = %info.airplay_name, port = info.port, "mDNS: _airplay._tcp registered");
+        Ok(())
+    }
+
+    pub fn unregister_raop(&mut self) {
+        if let Some(name) = self.raop_fullname.take() {
+            let _ = self.daemon.unregister(&name);
+        }
+    }
+
+    pub fn unregister_airplay(&mut self) {
+        if let Some(name) = self.airplay_fullname.take() {
+            let _ = self.daemon.unregister(&name);
+        }
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+impl Drop for MdnsService {
+    fn drop(&mut self) {
+        self.unregister_raop();
+        self.unregister_airplay();
+        let _ = self.daemon.shutdown();
     }
 }
 

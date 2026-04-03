@@ -11,8 +11,11 @@ env:
 
 jobs:
   test:
-    name: Test
-    runs-on: macos-latest
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -21,8 +24,6 @@ jobs:
         run: cargo build
       - name: Build (airplay2)
         run: cargo build --features airplay2
-      - name: Build example
-        run: cargo build --example player --features airplay2
       - name: Test (default)
         run: cargo test
       - name: Test (airplay2)
@@ -41,7 +42,7 @@ jobs:
 
   fmt:
     name: Format
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
