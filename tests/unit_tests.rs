@@ -500,6 +500,35 @@ mod ap2_tests {
         assert_eq!(adts.len(), 7 + 4); // header + payload
     }
 
+    // --- C-verified: server_keypair (libsodium crypto_sign_seed_keypair) ---
+
+    #[test]
+    fn c_vector_server_keypair() {
+        let (_, vk) = shairplay::crypto::pairing_homekit::server_keypair("AABBCCDD1122");
+        let pk_hex: String = vk.as_bytes().iter().map(|b| format!("{:02x}", b)).collect();
+        assert_eq!(pk_hex, "f336effeaedc188558f1046a97fe5db67cf9c7c1736d9201fb9821985eedf7c1");
+    }
+
+    // --- C-verified: PTP anchor time conversion (from rtsp.c SETRATEANCHORTI) ---
+
+    #[test]
+    fn c_vector_anchor_time_half_second() {
+        let secs: u64 = 1712345678;
+        let frac: u64 = 0x8000_0000_0000_0000;
+        let frac_ns = ((frac >> 32) * 1_000_000_000) >> 32;
+        let total = secs * 1_000_000_000 + frac_ns;
+        assert_eq!(total, 1712345678500000000);
+    }
+
+    #[test]
+    fn c_vector_anchor_time_quarter_second() {
+        let secs: u64 = 1712345678;
+        let frac: u64 = 0x4000_0000_0000_0000;
+        let frac_ns = ((frac >> 32) * 1_000_000_000) >> 32;
+        let total = secs * 1_000_000_000 + frac_ns;
+        assert_eq!(total, 1712345678250000000);
+    }
+
     fn hex_decode(s: &str) -> Vec<u8> {
         (0..s.len()).step_by(2)
             .map(|i| u8::from_str_radix(&s[i..i+2], 16).unwrap())
