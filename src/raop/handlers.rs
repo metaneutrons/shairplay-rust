@@ -662,6 +662,24 @@ pub(crate) fn handle_setup_2(
         // Spawn bidirectional event channel
         let event_sender = tokio::task::block_in_place(|| {
             let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+
+            // Queue updateInfo so it's sent immediately when client connects
+            let mut update_info = plist::Dictionary::new();
+            update_info.insert("type".into(), plist::Value::String("updateInfo".into()));
+            let mut value = plist::Dictionary::new();
+            value.insert("statusFlags".into(), plist::Value::Integer(0_i64.into()));
+            update_info.insert("value".into(), plist::Value::Dictionary(value));
+            let mut body = Vec::new();
+            if plist::to_writer_binary(&mut body, &update_info).is_ok() {
+                let rtsp = format!(
+                    "POST /command RTSP/1.0\r\nContent-Length: {}\r\nContent-Type: application/x-apple-binary-plist\r\nCSeq: 0\r\n\r\n",
+                    body.len()
+                );
+                let mut msg = rtsp.into_bytes();
+                msg.extend_from_slice(&body);
+                let _ = tx.send(msg);
+            }
+
             let sender = crate::raop::event_channel::EventSender::from_tx(tx);
             tokio::runtime::Handle::current().spawn(async move {
                 if let Ok((stream, addr)) = event_listener.accept().await {
