@@ -320,7 +320,6 @@ pub(crate) fn handle_pair_setup_ap2(
 
     match state {
         1 => {
-            // M1: client initiates pair-setup
             tracing::info!("AP2 pair-setup M1 received");
             let mut srp = SrpServer::new(conn.pin.as_deref()).ok()?;
             srp.process_m1(data).ok()?;
@@ -329,7 +328,6 @@ pub(crate) fn handle_pair_setup_ap2(
             Some(m2)
         }
         3 => {
-            // M3: client sends A + proof
             let srp = conn.srp_server.as_mut()?;
             let ok = srp.process_m3(data).ok()?;
             let m4 = srp.build_m4().ok()?;
@@ -341,15 +339,24 @@ pub(crate) fn handle_pair_setup_ap2(
             Some(m4)
         }
         5 => {
-            // M5: non-transient, client sends encrypted device info
             let srp = conn.srp_server.as_mut()?;
-            let (client_id, client_pk) = srp.process_m5(data).ok()?;
-            let m6 = srp.build_m6(&conn.device_id).ok()?;
-            conn.pairing_store.put(&client_id, client_pk);
-            tracing::info!(client_id, "AP2 normal pair-setup complete, client key stored");
-            conn.ap2_shared_secret = Some(srp.session_key().to_vec());
-            conn.is_ap2 = true;
-            Some(m6)
+            match srp.process_m5(data) {
+                Ok((client_id, client_pk)) => {
+                    let m6 = srp.build_m6(&conn.device_id).ok()?;
+                    conn.pairing_store.put(&client_id, client_pk);
+                    tracing::info!(client_id, "AP2 normal pair-setup complete, client key stored");
+                    conn.ap2_shared_secret = srp.session_key().map(|s| s.to_vec());
+                    conn.is_ap2 = true;
+                    Some(m6)
+                }
+                Err(e) => {
+                    tracing::warn!("pair-setup M5 failed: {e}");
+                    let mut tlv = crate::crypto::tlv::TlvValues::new();
+                    tlv.add(6, &[6]); // State=6
+                    tlv.add(7, &[2]); // Error=Authentication
+                    Some(tlv.encode())
+                }
+            }
         }
         _ => None,
     }

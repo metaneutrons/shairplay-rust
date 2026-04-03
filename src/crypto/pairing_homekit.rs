@@ -187,7 +187,9 @@ impl SrpServer {
 
     pub fn is_transient(&self) -> bool { self.is_transient }
     pub fn is_verified(&self) -> bool { self.verified }
-    pub fn session_key(&self) -> &[u8] { &self.session_key }
+    pub fn session_key(&self) -> Option<&[u8]> {
+        if self.verified { Some(&self.session_key) } else { None }
+    }
 }
 
 // --- SRP helper functions ---
@@ -315,6 +317,12 @@ impl SrpServer {
     /// Process M5 from client: encrypted TLV with device identifier, Ed25519 signature, public key.
     /// Returns (identifier, Ed25519 public key) for persistent storage.
     pub fn process_m5(&mut self, data: &[u8]) -> Result<(String, [u8; 32]), CryptoError> {
+        if !self.verified {
+            return Err(CryptoError::PairingHandshake("M5: pair-setup not verified (M3 must succeed first)".into()));
+        }
+        if self.is_transient {
+            return Err(CryptoError::PairingHandshake("M5: not allowed for transient pairing".into()));
+        }
         let tlv = TlvValues::decode(data).map_err(|e| CryptoError::PairingHandshake(e.to_string()))?;
 
         let enc = tlv.get_type(TlvType::EncryptedData)

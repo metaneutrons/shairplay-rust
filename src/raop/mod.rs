@@ -72,13 +72,17 @@ pub struct MemoryPairingStore {
 #[cfg(feature = "airplay2")]
 impl PairingStore for MemoryPairingStore {
     fn get(&self, device_id: &str) -> Option<[u8; 32]> {
-        self.keys.lock().unwrap().get(device_id).copied()
+        self.keys.lock().ok()?.get(device_id).copied()
     }
     fn put(&self, device_id: &str, public_key: [u8; 32]) {
-        self.keys.lock().unwrap().insert(device_id.to_string(), public_key);
+        if let Ok(mut keys) = self.keys.lock() {
+            keys.insert(device_id.to_string(), public_key);
+        }
     }
     fn remove(&self, device_id: &str) {
-        self.keys.lock().unwrap().remove(device_id);
+        if let Ok(mut keys) = self.keys.lock() {
+            keys.remove(device_id);
+        }
     }
 }
 
