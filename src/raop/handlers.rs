@@ -745,12 +745,32 @@ pub(crate) fn handle_command(
     request: &HttpRequest,
     _response: &mut HttpResponse,
 ) -> Option<Vec<u8>> {
-    // Log the command type for debugging
     if let Some(data) = request.data() {
         if let Ok(plist_val) = plist::from_bytes::<plist::Value>(data) {
             if let Some(dict) = plist_val.as_dictionary() {
                 let cmd_type = dict.get("type").and_then(|v| v.as_string()).unwrap_or("unknown");
                 tracing::debug!(cmd_type, "POST /command");
+                if cmd_type == "updateMRSupportedCommands" {
+                    if let Some(params) = dict.get("params").and_then(|v| v.as_dictionary()) {
+                        if let Some(cmds) = params.get("mrSupportedCommandsFromSender").and_then(|v| v.as_array()) {
+                            for entry in cmds {
+                                if let Some(blob) = entry.as_data() {
+                                    if let Ok(inner) = plist::from_bytes::<plist::Value>(blob) {
+                                        if let Some(d) = inner.as_dictionary() {
+                                            let cmd_id = d.get("kCommandInfoCommandKey")
+                                                .and_then(|v| v.as_unsigned_integer())
+                                                .unwrap_or(0);
+                                            let enabled = d.get("kCommandInfoEnabledKey")
+                                                .and_then(|v| v.as_boolean())
+                                                .unwrap_or(false);
+                                            tracing::info!(cmd_id, enabled, "MR command");
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
