@@ -131,7 +131,7 @@ Third-party AP2 receivers cannot send playback commands (play/pause/skip) to the
 - **Companion-link protocol** — requires same Apple ID
 - **DACP** — iPhone doesn't send Active-Remote header in AP2
 
-AP1 DACP remote control is fully implemented and works. See [AP2-REMOTE.md](AP2-REMOTE.md) for the full research.
+AP1 DACP remote control is fully implemented and works. See [AP2-STATUS.md](AP2-STATUS.md) for the full research.
 
 ## Example Player
 

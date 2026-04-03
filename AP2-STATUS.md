@@ -1,4 +1,4 @@
-# AirPlay 2 Implementation Status
+# AirPlay 2 — Implementation Status & Research
 
 ## Complete
 
@@ -16,6 +16,7 @@
 | Timed playout buffer | 103 | Pause/resume/flush, stale frame discard |
 | Metadata forwarding | — | Volume, artwork, progress, DMAP track info |
 | Event channel | — | Bidirectional encrypted TCP, updateInfo |
+| Video (experimental) | 110 | AES-128-CTR decrypt, raw H.264/H.265 NAL delivery |
 | Unified output | — | Always F32LE interleaved PCM to app |
 
 ## Known Issues
@@ -23,14 +24,9 @@
 ### RC Connection Delay (~10s)
 
 The iPhone opens a "Remote Control Only" RTSP connection ~10 seconds before
-the audio connection, even when a song is already playing. This delay persists
-regardless of:
-- Returning `dataPort` in type 130 stream response (tested, no effect)
-- Adding `eventPort` + `updateInfo` to RC connection (tested, no effect)
-- The delay is between the RC connection and the audio connection opening
-
-The cause is unknown. Shairport-sync may have the same behavior — needs
-investigation. The delay does not affect audio quality or playback once started.
+the audio connection, even when a song is already playing. The Mac's built-in
+AirPlay receiver has no delay — it uses `rapportd` (companion-link) which
+provides an always-on trust relationship with the iPhone.
 
 Tested and ruled out:
 - Returning `dataPort` in type 130 stream response (no effect)
@@ -39,59 +35,111 @@ Tested and ruled out:
 - Returning `eventPort: 0, timingPort: 0` in RC SETUP response (no effect)
 - Shairport-sync has the same feedback behavior (empty when not playing)
 
-The Mac's built-in AirPlay receiver has no delay. The Mac uses `rapportd`
-(companion-link) which provides an always-on trust relationship with the iPhone.
-The delay may be the iPhone waiting for companion-link integration that
-third-party receivers cannot provide.
-
-### Multi-Interface Binding
-
-The RTSP server currently binds to a single address (`BindConfig::addr`).
-For multi-homed servers, it would be useful to bind to multiple specific
-interfaces (e.g., one IPv4 + one IPv6). Requires refactoring the server
-to support multiple listeners.
+The delay does not affect audio quality or playback once connected.
 
 ## Not Implemented
 
 ### Realtime ALAC (Stream Type 96)
 
 Low-latency audio over UDP. Used for Siri responses, phone calls, and system
-sounds. The iPhone rarely requests type 96 for music streaming — it prefers
-type 103 (buffered AAC).
+sounds. The iPhone rarely requests type 96 for music — it prefers type 103.
 
 Currently a stub: we bind a UDP port and return it in the SETUP response so the
 iPhone doesn't error, but no audio receiver is spawned.
 
-Implementation would require:
-1. UDP socket receiver (tokio)
-2. RTP packet parsing (12-byte header, same as AP1)
-3. ChaCha20-Poly1305 per-packet decryption (same `shk` key as type 103)
-4. ALAC decoding (we have this from AP1 in `codec/alac.rs`)
-5. Resample/mixdown to output format (we have this in `codec/resample.rs`)
-
-The AP1 RTP pipeline (`raop/rtp.rs`) cannot be reused directly because it uses
-AES-CBC encryption, not ChaCha20-Poly1305. The packet parsing and ALAC decoding
-are reusable; the encryption layer and setup path are not.
+Implementation would require a UDP receiver with ChaCha20-Poly1305 decryption
+and ALAC decoding. The AP1 RTP pipeline cannot be reused directly (AES-CBC vs
+ChaCha20), but the packet parsing and ALAC decoder are reusable.
 
 Priority: Low. Only needed for non-music audio passthrough.
 
-### AP2 Remote Control
+## AP2 Remote Control — Research
 
-Third-party AP2 receivers cannot send playback commands (play/pause/skip) to the
-iPhone. See [AP2-REMOTE.md](AP2-REMOTE.md) for the full research.
+Third-party AP2 receivers cannot send playback commands (play/pause/skip) to
+the iPhone. AP1 DACP remote control is fully implemented and works.
 
-All investigated paths require Apple ecosystem trust:
-- **Type 130 MRP data channel**: requires `seed` from HomeKit pairing (Home app)
-- **Companion-link protocol**: requires same Apple ID (`rapportd` always-on connection)
-- **DACP**: iPhone doesn't send `Active-Remote` header in AP2 (iOS 18+)
-- **Event channel**: one-way (server→client status updates only)
+### All Paths Investigated
 
-AP1 DACP remote control works and is fully implemented for AP1 sessions.
+| Path | Mechanism | Result |
+|------|-----------|--------|
+| DACP | `Active-Remote` RTSP header | Not sent in AP2 (iOS 18+) |
+| Type 130 MRP | Encrypted data channel with `seed` | Seed requires HomeKit trust |
+| Event channel | RTSP `POST /command` over encrypted TCP | One-way only. iPhone returns 200 OK but ignores commands |
+| Companion-link | `_companion-link._tcp` OPACK protocol | Requires same Apple ID (`rapportd` always-on) |
+| HAP pairing | `_hap._tcp` HomeKit accessory | Apple TV/HomePod don't use HAP for AirPlay trust |
+
+### Why It Works for Apple Devices
+
+- **Mac**: Uses `_companion-link._tcp` (Rapport daemon). iPhone connects because
+  they share the same Apple ID. Always-on connection, not AirPlay-specific.
+- **HomePod/Apple TV**: Added to Home app during initial setup. HomeKit trust
+  stored in iCloud. iPhone sends `seed` in type 130 SETUP because the device
+  is in the same Home.
+
+### Event Channel Discovery
+
+The event channel accepts RTSP-framed requests (`POST /command`) and the iPhone
+responds with `RTSP/1.0 200 OK`. Shairport-sync uses this for `updateInfo`
+status messages. We tested sending `sendMediaRemoteCommand`, `sendCommand`, and
+`cycleRemoteCommand` — all returned 200 OK but none triggered playback actions.
+The event channel is for status updates only, not command delivery.
+
+### MR Supported Commands
+
+The iPhone sends `updateMRSupportedCommands` via `POST /command` with 31 MR
+commands as nested binary plists:
+
+```
+0  = Play                    10 = StartForwardSeek
+1  = Pause                   11 = StartBackwardSeek
+2  = TogglePlayPause         17 = SkipForward (disabled)
+3  = Stop                    18 = SkipBackward (disabled)
+4  = NextTrack               19 = ChangePlaybackRate (disabled)
+5  = PreviousTrack           21 = RateTrack
+8  = ToggleShuffle           22 = LikeTrack
+9  = ToggleRepeat            24 = DislikeTrack
+121 = SetPlaybackPosition    127 = PrepareForSetQueue
+122 = SetPlaybackQueue       128-135 = Queue/session management
+125 = PlayItemInQueue        143 = SetVolume
+149 = ChangePlaybackMode
+```
+
+### Feature Flag Research
+
+Tested combinations (all produce type 130 without seed):
+
+| Features | Model | et | Result |
+|----------|-------|----|--------|
+| `0x1C340405D4A00` (shairport-sync) | AppleTV2,1 | 0,1 | ✅ audio, no seed |
+| `0x1C340405D4A00` (shairport-sync) | AppleTV2,1 | 0,3,5 | ✅ audio, no seed |
+| `0x38174FDE4A7FCFD5` (Mac) | Mac15,6 | 0,3,5 | ✅ audio, no seed |
+| `0x1C340405D4A00` + bit 58 | AudioAccessory5,1 | 0,1 | ✅ audio, no seed |
+
+### Companion-Link Protocol
+
+Investigated via pyatv source. Uses OPACK encoding (not plist, not protobuf)
+with frame format `[1B type][3B BE length][payload]`. Commands:
+`{"_i": "_mcc", "_t": 1, "_c": {"_mcc": <cmd_id>}}`. Requires same Apple ID —
+the iPhone connects to the receiver's `_companion-link._tcp` service only if
+they share an iCloud account.
 
 ## Test Coverage
 
-129 tests, 17 C-verified vectors from pair_ap reference implementation:
+130 tests, 17 C-verified vectors from pair_ap reference implementation:
 - TLV codec, HKDF-SHA512, ChaCha20 transport framing
 - ADTS framing, audio packet decryption, server keypair
 - Anchor time calculation, channel mixdown, SSRC mapping
 - Full M1→M4 SRP integration test over real TCP
+- Video cipher streaming AES-CTR partial block tests
+
+## References
+
+- [AirPlay 2 Internals — Features](https://emanuelecozzi.net/docs/airplay2/features/)
+- [AirPlay 2 Internals — RTSP](https://emanuelecozzi.net/docs/airplay2/rtsp/)
+- [Unofficial AirPlay Specification](https://openairplay.github.io/airplay-spec/)
+- [Dissecting the Media Remote Protocol](https://edc.me/posts/dissecting-the-media-remote-protocol/)
+- [pair_ap](https://github.com/ejurgensen/pair_ap)
+- [shairport-sync](https://github.com/mikebrady/shairport-sync)
+- [pyatv](https://github.com/postlund/pyatv)
+- [rairplay](https://github.com/r4v3n6101/rairplay)
+- [SteeBono/airplayreceiver](https://github.com/SteeBono/airplayreceiver/wiki/AirPlay2-Protocol)
