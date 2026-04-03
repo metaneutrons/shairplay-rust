@@ -682,6 +682,7 @@ pub(crate) fn handle_setup_2(
                 let mut msg = rtsp.into_bytes();
                 msg.extend_from_slice(&body);
                 let _ = tx.send(msg);
+                tracing::debug!("updateInfo queued for event channel");
             }
 
             let sender = crate::raop::event_channel::EventSender::from_tx(tx);
