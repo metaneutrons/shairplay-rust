@@ -66,8 +66,6 @@ serial_test = "3"
 cpal = "0.15"
 
 # Disable overflow checks only for the FairPlay garble crate (C-style wrapping arithmetic)
-[profile.dev.package.fairplay-garble]
-overflow-checks = false
 
 [[example]]
 name = "player"
