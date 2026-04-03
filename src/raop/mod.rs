@@ -94,6 +94,30 @@ pub trait AudioSession: Send + Sync {
     fn audio_set_coverart(&mut self, _coverart: &[u8]) {}
     fn audio_remote_control_id(&mut self, _dacp_id: &str, _active_remote: &str, _remote_addr: &[u8]) {}
     fn audio_set_progress(&mut self, _start: u32, _current: u32, _end: u32) {}
+    /// Called when a remote control interface becomes available.
+    /// Use it to send playback commands to the source device (iPhone/Mac).
+    fn remote_control_available(&mut self, _remote: Arc<dyn RemoteControl>) {}
+}
+
+/// Playback command to send to the source device.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RemoteCommand {
+    Play,
+    Pause,
+    NextTrack,
+    PreviousTrack,
+    SetVolume(u8),  // 0-100
+    ToggleShuffle,
+    ToggleRepeat,
+    Stop,
+}
+
+/// Unified remote control interface for AP1 (DACP) and AP2 (MediaRemote).
+pub trait RemoteControl: Send + Sync {
+    /// Send a playback command to the source device.
+    fn send_command(&self, cmd: RemoteCommand) -> Result<(), crate::error::ShairplayError>;
+    /// Commands the source device supports. AP1 returns all; AP2 returns advertised set.
+    fn available_commands(&self) -> Vec<RemoteCommand>;
 }
 
 /// Shared state passed to each connection.
@@ -418,5 +442,59 @@ impl RaopServer {
                 !self.shared.password.is_empty(),
             )
         }
+    }
+}
+
+/// AP1 remote control via DACP (HTTP to iPhone port 3689).
+pub(crate) struct DacpRemoteControl {
+    client: crate::dacp::DacpClient,
+}
+
+impl DacpRemoteControl {
+    pub fn new(dacp_id: &str, active_remote: &str, remote_addr: &[u8]) -> Self {
+        let mut client = crate::dacp::DacpClient::new(dacp_id, active_remote);
+        let ip = match remote_addr.len() {
+            4 => std::net::IpAddr::V4(std::net::Ipv4Addr::new(
+                remote_addr[0], remote_addr[1], remote_addr[2], remote_addr[3])),
+            16 => {
+                let mut octets = [0u8; 16];
+                octets.copy_from_slice(remote_addr);
+                std::net::IpAddr::V6(std::net::Ipv6Addr::from(octets))
+            }
+            _ => std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
+        };
+        client.discover_from_remote(ip);
+        Self { client }
+    }
+}
+
+impl RemoteControl for DacpRemoteControl {
+    fn send_command(&self, cmd: RemoteCommand) -> Result<(), crate::error::ShairplayError> {
+        let rt = tokio::runtime::Handle::current();
+        tokio::task::block_in_place(|| {
+            rt.block_on(async {
+                match cmd {
+                    RemoteCommand::Play => self.client.play_pause().await,
+                    RemoteCommand::Pause => self.client.play_pause().await,
+                    RemoteCommand::NextTrack => self.client.next().await,
+                    RemoteCommand::PreviousTrack => self.client.prev().await,
+                    RemoteCommand::SetVolume(v) => self.client.set_volume(v).await,
+                    RemoteCommand::ToggleShuffle => self.client.set_shuffle(true).await,
+                    RemoteCommand::ToggleRepeat => self.client.set_repeat(1).await,
+                    RemoteCommand::Stop => self.client.stop().await,
+                }
+            })
+        }).map_err(|e| crate::error::ShairplayError::Network(
+            crate::error::NetworkError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))
+        ))
+    }
+
+    fn available_commands(&self) -> Vec<RemoteCommand> {
+        vec![
+            RemoteCommand::Play, RemoteCommand::Pause,
+            RemoteCommand::NextTrack, RemoteCommand::PreviousTrack,
+            RemoteCommand::SetVolume(0), RemoteCommand::ToggleShuffle,
+            RemoteCommand::ToggleRepeat, RemoteCommand::Stop,
+        ]
     }
 }

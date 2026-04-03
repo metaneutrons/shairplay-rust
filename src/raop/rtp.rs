@@ -153,7 +153,10 @@ impl RaopRtp {
                         if let Some(m) = st.metadata.take() { session.audio_set_metadata(&m); }
                         if let Some(c) = st.coverart.take() { session.audio_set_coverart(&c); }
                         if let (Some(d), Some(a)) = (st.dacp_id.take(), st.active_remote.take()) {
-                            session.audio_remote_control_id(&d, &a, remote_addr_bytes(&remote_for_task).as_slice());
+                            let addr_bytes = remote_addr_bytes(&remote_for_task);
+                            session.audio_remote_control_id(&d, &a, addr_bytes.as_slice());
+                            let remote = Arc::new(crate::raop::DacpRemoteControl::new(&d, &a, addr_bytes.as_slice()));
+                            session.remote_control_available(remote);
                         }
                         if let Some((s, c, e)) = st.progress.take() {
                             session.audio_set_progress(s, c, e);
