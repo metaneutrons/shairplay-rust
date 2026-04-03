@@ -57,7 +57,7 @@ tracing = "0.1"
 
 [features]
 default = []
-airplay2 = ["dep:chacha20poly1305", "dep:hkdf", "dep:num-bigint", "dep:uuid", "dep:rubato", "dep:symphonia"]
+airplay2 = ["dep:chacha20poly1305", "dep:hkdf", "dep:num-bigint", "dep:uuid", "dep:rubato"]
 
 [dev-dependencies]
 tokio = { version = "1", features = ["test-util"] }

@@ -483,105 +483,12 @@ pub(crate) fn handle_setup_2(
 
                 tokio::task::block_in_place(|| {
                     tokio::runtime::Handle::current().spawn(async move {
-                        // Create audio session
                         let format = crate::raop::AudioFormat { channels: 2, bits: 16, sample_rate: 44100 };
                         let mut session = handler.audio_init(format);
 
                         let proc = crate::raop::buffered_audio::BufferedAudioProcessor { listener, port: audio_port };
-
-                        // Pipe ADTS frames to decoder thread
-                        let (tx, rx) = std::sync::mpsc::sync_channel::<Vec<u8>>(512);
-
-                        // Decoder thread
-                        std::thread::spawn(move || {
-                            use symphonia::core::audio::SampleBuffer;
-                            use symphonia::core::codecs::DecoderOptions;
-                            use symphonia::core::formats::FormatOptions;
-                            use symphonia::core::io::MediaSourceStream;
-                            use symphonia::core::meta::MetadataOptions;
-                            use symphonia::core::probe::Hint;
-
-                            // Adapter: mpsc receiver → Read
-                            struct RxReader {
-                                rx: std::sync::Mutex<std::sync::mpsc::Receiver<Vec<u8>>>,
-                                buf: std::sync::Mutex<(Vec<u8>, usize)>,
-                            }
-                            impl std::io::Read for RxReader {
-                                fn read(&mut self, out: &mut [u8]) -> std::io::Result<usize> {
-                                    let mut state = self.buf.lock().unwrap();
-                                    if state.1 >= state.0.len() {
-                                        let rx = self.rx.lock().unwrap();
-                                        state.0 = rx.recv().map_err(|_| std::io::ErrorKind::UnexpectedEof)?;
-                                        state.1 = 0;
-                                    }
-                                    let n = out.len().min(state.0.len() - state.1);
-                                    out[..n].copy_from_slice(&state.0[state.1..state.1 + n]);
-                                    state.1 += n;
-                                    Ok(n)
-                                }
-                            }
-                            impl std::io::Seek for RxReader {
-                                fn seek(&mut self, _: std::io::SeekFrom) -> std::io::Result<u64> {
-                                    Err(std::io::Error::new(std::io::ErrorKind::Unsupported, "no seek"))
-                                }
-                            }
-                            impl symphonia::core::io::MediaSource for RxReader {
-                                fn is_seekable(&self) -> bool { false }
-                                fn byte_len(&self) -> Option<u64> { None }
-                            }
-
-                            let reader = RxReader { rx: std::sync::Mutex::new(rx), buf: std::sync::Mutex::new((Vec::new(), 0)) };
-                            let mss = MediaSourceStream::new(Box::new(reader), Default::default());
-                            let mut hint = Hint::new();
-                            hint.with_extension("aac");
-
-                            let probe = match symphonia::default::get_probe().format(
-                                &hint, mss, &FormatOptions::default(), &MetadataOptions::default()
-                            ) {
-                                Ok(p) => p,
-                                Err(e) => { tracing::warn!("AAC probe failed: {e}"); return; }
-                            };
-
-                            let mut format_reader = probe.format;
-                            let track = match format_reader.default_track() {
-                                Some(t) => t.clone(),
-                                None => { tracing::warn!("No AAC track found"); return; }
-                            };
-
-                            let mut decoder = match symphonia::default::get_codecs().make(
-                                &track.codec_params, &DecoderOptions::default()
-                            ) {
-                                Ok(d) => d,
-                                Err(e) => { tracing::warn!("AAC decoder init failed: {e}"); return; }
-                            };
-
-                            tracing::info!("AAC decoder started");
-                            loop {
-                                match format_reader.next_packet() {
-                                    Ok(packet) => {
-                                        if let Ok(decoded) = decoder.decode(&packet) {
-                                            let spec = *decoded.spec();
-                                            let duration = decoded.capacity() as u64;
-                                            let mut sample_buf = SampleBuffer::<i16>::new(duration, spec);
-                                            sample_buf.copy_interleaved_ref(decoded);
-                                            let samples = sample_buf.samples();
-                                            let mut pcm = Vec::with_capacity(samples.len() * 2);
-                                            for &s in samples {
-                                                pcm.extend_from_slice(&s.to_le_bytes());
-                                            }
-                                            session.audio_process(&pcm);
-                                        }
-                                    }
-                                    Err(symphonia::core::errors::Error::IoError(_)) => break,
-                                    Err(_) => continue,
-                                }
-                            }
-                            tracing::info!("AAC decoder stopped");
-                        });
-
-                        // Audio receiver: sends ADTS frames to decoder thread via pipe
                         proc.run(44100, 2, move |adts_data, _ts, _seq| {
-                            let _ = tx.send(adts_data.to_vec());
+                            session.audio_process(adts_data);
                         }).await;
                     })
                 });
