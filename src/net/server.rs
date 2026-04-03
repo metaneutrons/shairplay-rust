@@ -50,6 +50,9 @@ pub trait ConnectionHandler: Send {
 
     /// Whether the connection is in encrypted mode.
     fn is_encrypted(&self) -> bool { false }
+
+    /// Called after a response is written. Activates pending encryption.
+    fn after_response(&mut self) {}
 }
 
 /// Async TCP server supporting IPv4 and IPv6. Equivalent to httpd_t.
@@ -232,6 +235,7 @@ fn spawn_accept_loop(
                                 if stream.write_all(&wire_out).await.is_err() {
                                     return;
                                 }
+                                handler.after_response();
                                 if disconnect {
                                     let _ = stream.shutdown().await;
                                     return;

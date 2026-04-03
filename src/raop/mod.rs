@@ -155,18 +155,6 @@ struct RaopConnectionHandler {
 
 impl ConnectionHandler for RaopConnectionHandler {
     fn conn_request(&mut self, request: &HttpRequest) -> HttpResponse {
-        // Activate pending encryption from previous request
-        #[cfg(feature = "airplay2")]
-        if let Some(secret) = self.pending_secret.take() {
-            match crate::crypto::chacha_transport::EncryptedChannel::control(&secret) {
-                Ok(ch) => {
-                    tracing::info!("Encrypted RTSP transport activated");
-                    self.cipher = Some(ch);
-                }
-                Err(e) => tracing::warn!("Failed to create cipher: {e}"),
-            }
-        }
-
         let resp = rtsp::dispatch(&mut self.conn, request);
 
         // Queue encryption activation for AFTER this response is sent
@@ -185,6 +173,21 @@ impl ConnectionHandler for RaopConnectionHandler {
         { self.cipher.is_some() }
         #[cfg(not(feature = "airplay2"))]
         { false }
+    }
+
+    fn after_response(&mut self) {
+        #[cfg(feature = "airplay2")]
+        if self.cipher.is_none() {
+            if let Some(secret) = self.pending_secret.take() {
+                match crate::crypto::chacha_transport::EncryptedChannel::control(&secret) {
+                    Ok(ch) => {
+                        tracing::info!("Encrypted RTSP transport activated");
+                        self.cipher = Some(ch);
+                    }
+                    Err(e) => tracing::warn!("Failed to create cipher: {e}"),
+                }
+            }
+        }
     }
 
     fn decrypt_incoming(&mut self, data: &[u8]) -> Option<(Vec<u8>, usize)> {
