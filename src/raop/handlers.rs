@@ -796,23 +796,25 @@ pub(crate) fn handle_flushbuffered(
 
 #[cfg(feature = "airplay2")]
 pub(crate) fn handle_feedback(
-    _conn: &mut RaopConnection,
+    conn: &mut RaopConnection,
     _request: &HttpRequest,
     response: &mut HttpResponse,
 ) -> Option<Vec<u8>> {
-    // Return stream info so iPhone can estimate latency
-    let mut stream_dict = plist::Dictionary::new();
-    stream_dict.insert("type".into(), plist::Value::Integer(103_i64.into()));
-    stream_dict.insert("sr".into(), plist::Value::Real(44100.0));
-
-    let streams = vec![plist::Value::Dictionary(stream_dict)];
-    let mut resp_dict = plist::Dictionary::new();
-    resp_dict.insert("streams".into(), plist::Value::Array(streams));
-
-    let mut buf = Vec::new();
-    plist::to_writer_binary(&mut buf, &resp_dict).ok()?;
-    response.add_header("Content-Type", "application/x-apple-binary-plist");
-    Some(buf)
+    // Only return stream info when audio is actually playing (matches shairport-sync)
+    #[cfg(feature = "airplay2")]
+    if conn.playout_cmd.is_some() {
+        let mut stream_dict = plist::Dictionary::new();
+        stream_dict.insert("type".into(), plist::Value::Integer(103_i64.into()));
+        stream_dict.insert("sr".into(), plist::Value::Real(44100.0));
+        let mut resp_dict = plist::Dictionary::new();
+        resp_dict.insert("streams".into(), plist::Value::Array(vec![plist::Value::Dictionary(stream_dict)]));
+        let mut buf = Vec::new();
+        plist::to_writer_binary(&mut buf, &resp_dict).ok()?;
+        response.add_header("Content-Type", "application/x-apple-binary-plist");
+        return Some(buf);
+    }
+    let _ = conn;
+    None
 }
 
 #[cfg(feature = "airplay2")]
