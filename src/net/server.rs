@@ -264,9 +264,9 @@ fn spawn_accept_loop(
                                             raw_buf.drain(..consumed);
                                         }
                                         if !plain.is_empty() {
-                                            tracing::debug!(plain_len = plain.len(), "Decrypted data: {:?}", String::from_utf8_lossy(&plain[..plain.len().min(200)]));
+                                            tracing::debug!("Decrypted {} bytes: {:?}", plain.len(), String::from_utf8_lossy(&plain[..plain.len().min(120)]));
                                             if request.add_data(&plain).is_err() {
-                                                tracing::warn!("HTTP parse error on decrypted data: {:?}", String::from_utf8_lossy(&plain[..plain.len().min(100)]));
+                                                tracing::warn!("HTTP parse error on decrypted data");
                                                 break;
                                             }
                                         }
@@ -282,6 +282,8 @@ fn spawn_accept_loop(
                                     break;
                                 }
                             }
+                            // Loop back to check is_complete() before reading more
+                            continue;
                         }
                         tracing::info!(%remote, "Connection closed");
                     });

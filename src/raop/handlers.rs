@@ -309,6 +309,7 @@ pub(crate) fn handle_pair_setup_ap2(
     match state {
         1 => {
             // M1: client initiates pair-setup
+            tracing::info!("AP2 pair-setup M1 received");
             let mut srp = SrpServer::new(None).ok()?;
             srp.process_m1(data).ok()?;
             let m2 = srp.build_m2();
@@ -359,17 +360,31 @@ pub(crate) fn handle_pair_verify_ap2(
         1 => {
             tracing::info!("AP2 pair-verify M1 received");
             let mut pv = PairVerifyServer::new(&conn.device_id);
-            let m2 = pv.process_m1_build_m2(data).ok()?;
-            conn.pair_verify = Some(pv);
-            Some(m2)
+            match pv.process_m1_build_m2(data) {
+                Ok(m2) => {
+                    conn.pair_verify = Some(pv);
+                    Some(m2)
+                }
+                Err(e) => {
+                    tracing::warn!("pair-verify M1 failed: {e}");
+                    None
+                }
+            }
         }
         3 => {
             let pv = conn.pair_verify.as_mut()?;
-            let m4 = pv.process_m3_build_m4(data).ok()?;
-            conn.ap2_shared_secret = pv.shared_secret().map(|s| s.to_vec());
-            conn.is_ap2 = true;
-            tracing::info!("AP2 pair-verify complete, encrypted RTSP active");
-            Some(m4)
+            match pv.process_m3_build_m4(data) {
+                Ok(m4) => {
+                    conn.ap2_shared_secret = pv.shared_secret().map(|s| s.to_vec());
+                    conn.is_ap2 = true;
+                    tracing::info!("AP2 pair-verify complete, encrypted RTSP active");
+                    Some(m4)
+                }
+                Err(e) => {
+                    tracing::warn!("pair-verify M3 failed: {e}");
+                    None
+                }
+            }
         }
         _ => None,
     }
