@@ -509,8 +509,39 @@ pub(crate) fn handle_setup_2(
                 stream_resp.insert("dataPort".into(), plist::Value::Integer(audio_port.into()));
                 stream_resp.insert("audioBufferSize".into(), plist::Value::Integer(0x100000_i64.into()));
             }
+            130 => {
+                // Remote Control data channel
+                tracing::info!("Remote Control stream setup (type 130)");
+
+                // On PTP connections, type 130 is just acknowledged
+                // On RC connections, it sets up an encrypted data channel
+                if let Some(seed) = stream0.get("seed").and_then(|v| v.as_unsigned_integer()) {
+                    let bind_addr = if conn.local_addr.len() == 16 { "[::]:0" } else { "0.0.0.0:0" };
+                    let data_listener = tokio::task::block_in_place(|| {
+                        tokio::runtime::Handle::current().block_on(
+                            tokio::net::TcpListener::bind(bind_addr)
+                        )
+                    }).ok()?;
+                    let data_port = data_listener.local_addr().ok()?.port();
+                    tracing::info!(data_port, seed, "RC data channel opened");
+
+                    // Spawn listener (just accept + log for now)
+                    tokio::task::block_in_place(|| {
+                        tokio::runtime::Handle::current().spawn(async move {
+                            if let Ok((_, addr)) = data_listener.accept().await {
+                                tracing::info!(%addr, "RC data channel client connected");
+                            }
+                        })
+                    });
+
+                    stream_resp.insert("streamID".into(), plist::Value::Integer(1_i64.into()));
+                    stream_resp.insert("dataPort".into(), plist::Value::Integer(data_port.into()));
+                } else {
+                    stream_resp.insert("streamID".into(), plist::Value::Integer(1_i64.into()));
+                }
+            }
             _ => {
-                tracing::warn!(stream_type, "Unhandled AP2 stream type");
+                tracing::warn!(stream_type, "Unknown AP2 stream type");
             }
         }
 
