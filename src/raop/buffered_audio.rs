@@ -27,6 +27,10 @@ pub enum PlayoutCommand {
     SetRate { anchor_rtp: u32, anchor_time_ns: u64, rate: u32 },
     Flush { from_seq: u32, until_seq: u32 },
     Stop,
+    Volume(f32),
+    Metadata(Vec<u8>),
+    Coverart(Vec<u8>),
+    Progress { start: u32, current: u32, end: u32 },
 }
 
 struct PlayoutState {
@@ -38,6 +42,7 @@ struct PlayoutState {
     channels: u8,
     stopped: bool,
     format_changed: bool,
+    pending_meta: Vec<PlayoutCommand>, // Volume/Metadata/Coverart/Progress
 }
 
 pub struct BufferedAudioProcessor {
@@ -71,6 +76,7 @@ impl BufferedAudioProcessor {
                 channels: 2,
                 stopped: false,
                 format_changed: false,
+                pending_meta: Vec::new(),
             }),
             Condvar::new(),
         ));
@@ -124,6 +130,11 @@ impl BufferedAudioProcessor {
                         s.buffer.clear();
                         cvar.notify_all();
                         break;
+                    }
+                    cmd @ (PlayoutCommand::Volume(_) | PlayoutCommand::Metadata(_) |
+                           PlayoutCommand::Coverart(_) | PlayoutCommand::Progress { .. }) => {
+                        s.pending_meta.push(cmd);
+                        cvar.notify_all();
                     }
                 }
             }
@@ -318,9 +329,19 @@ fn delivery_loop(
             .collect();
 
         for (ts, _) in &ready { s.buffer.remove(ts); }
+        let meta: Vec<PlayoutCommand> = s.pending_meta.drain(..).collect();
         drop(s);
 
         if let Some(ref mut sess) = session {
+            for cmd in meta {
+                match cmd {
+                    PlayoutCommand::Volume(v) => sess.audio_set_volume(v),
+                    PlayoutCommand::Metadata(d) => sess.audio_set_metadata(&d),
+                    PlayoutCommand::Coverart(d) => sess.audio_set_coverart(&d),
+                    PlayoutCommand::Progress { start, current, end } => sess.audio_set_progress(start, current, end),
+                    _ => {}
+                }
+            }
             for (_, frame) in &ready {
                 sess.audio_process(frame);
             }

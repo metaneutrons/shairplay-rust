@@ -272,8 +272,38 @@ pub(crate) fn handle_set_parameter(
 ) -> Option<Vec<u8>> {
     let content_type = request.header("Content-Type")?;
     let data = request.data()?;
-    let rtp = conn.raop_rtp.as_ref()?;
 
+    // AP2: forward via playout command channel
+    #[cfg(feature = "airplay2")]
+    if let Some(tx) = &conn.playout_cmd {
+        let cmd = match content_type {
+            "text/parameters" => {
+                let text = std::str::from_utf8(data).ok()?;
+                if let Some(rest) = text.strip_prefix("volume: ") {
+                    rest.trim().parse::<f32>().ok().map(crate::raop::buffered_audio::PlayoutCommand::Volume)
+                } else if let Some(rest) = text.strip_prefix("progress: ") {
+                    let p: Vec<&str> = rest.trim().split('/').collect();
+                    if p.len() == 3 {
+                        Some(crate::raop::buffered_audio::PlayoutCommand::Progress {
+                            start: p[0].parse().unwrap_or(0),
+                            current: p[1].parse().unwrap_or(0),
+                            end: p[2].parse().unwrap_or(0),
+                        })
+                    } else { None }
+                } else { None }
+            }
+            "image/jpeg" | "image/png" => Some(crate::raop::buffered_audio::PlayoutCommand::Coverart(data.to_vec())),
+            "application/x-dmap-tagged" => Some(crate::raop::buffered_audio::PlayoutCommand::Metadata(data.to_vec())),
+            _ => None,
+        };
+        if let Some(c) = cmd {
+            let _ = tx.send(c);
+        }
+        return None;
+    }
+
+    // AP1: forward via raop_rtp
+    let rtp = conn.raop_rtp.as_ref()?;
     match content_type {
         "text/parameters" => {
             let text = std::str::from_utf8(data).ok()?;
@@ -472,9 +502,10 @@ pub(crate) fn handle_setup_2(
 
         match stream_type {
             96 => {
-                // Realtime ALAC — bind UDP port, reuse existing RTP pipeline
+                // Realtime ALAC — stub: bind UDP port but no receiver yet.
+                // iPhone prefers type 103 (buffered) for AP2 audio.
                 let sr = stream0.get("sr").and_then(|v| v.as_unsigned_integer()).unwrap_or(44100);
-                tracing::info!(stream_type = 96, sample_rate = sr, "AP2 realtime ALAC stream setup");
+                tracing::info!(stream_type = 96, sample_rate = sr, "AP2 realtime ALAC stream setup (stub)");
 
                 // Bind UDP port for realtime audio
                 let udp_sock = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
