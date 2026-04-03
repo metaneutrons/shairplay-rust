@@ -748,29 +748,6 @@ pub(crate) fn handle_feedback(
     _request: &HttpRequest,
     response: &mut HttpResponse,
 ) -> Option<Vec<u8>> {
-    // Test: send one RTSP-framed command via event channel
-    if let Some(sender) = &conn.event_sender {
-        // Try: sendMediaRemoteCommand with command ID 1 (Pause)
-        let mut cmd = plist::Dictionary::new();
-        cmd.insert("type".into(), plist::Value::String("cycleRemoteCommand".into()));
-        let mut params = plist::Dictionary::new();
-        params.insert("cycleRemoteCommand".into(), plist::Value::Integer(1.into()));
-        cmd.insert("params".into(), plist::Value::Dictionary(params));
-
-        let mut body = Vec::new();
-        if plist::to_writer_binary(&mut body, &cmd).is_ok() {
-            let rtsp = format!(
-                "POST /command RTSP/1.0\r\nContent-Length: {}\r\nContent-Type: application/x-apple-binary-plist\r\nCSeq: 1\r\n\r\n",
-                body.len()
-            );
-            let mut msg = rtsp.into_bytes();
-            msg.extend_from_slice(&body);
-            tracing::info!("Sending cycleRemoteCommand(1=Pause) via event channel");
-            let _ = sender.send(msg);
-        }
-        conn.event_sender = None;
-    }
-
     // Return stream info so iPhone can estimate latency
     let mut stream_dict = plist::Dictionary::new();
     stream_dict.insert("type".into(), plist::Value::Integer(103_i64.into()));
