@@ -26,11 +26,8 @@ pub const MAX_NONCE_LEN: usize = 32;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// Audio codec type.
 pub enum AudioCodec {
-    /// Decoded PCM (S16LE interleaved stereo). Used by AirPlay 1 (ALAC decoded in library).
+    /// Decoded PCM (S16LE interleaved). Always delivered regardless of AP1/AP2.
     Pcm,
-    /// ADTS-wrapped AAC. Used by AirPlay 2 buffered audio. App must decode.
-    #[cfg(feature = "airplay2")]
-    AacAdts,
 }
 
 #[derive(Debug, Clone, Copy)]

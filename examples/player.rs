@@ -10,7 +10,7 @@ use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use shairplay::{AudioCodec, AudioFormat, AudioHandler, AudioSession, RaopServer};
+use shairplay::{AudioFormat, AudioHandler, AudioSession, RaopServer};
 
 /// Ring buffer shared between the AirPlay audio callback and the cpal output callback.
 struct AudioRing {
@@ -42,23 +42,18 @@ struct Handler {
 impl AudioHandler for Handler {
     fn audio_init(&self, format: AudioFormat) -> Box<dyn AudioSession> {
         eprintln!("🎵 New stream: {}ch {}bit {}Hz codec={:?}", format.channels, format.bits, format.sample_rate, format.codec);
-        Box::new(Session { ring: self.ring.clone(), aac_decoder: None, codec: format.codec })
+        Box::new(Session { ring: self.ring.clone() })
     }
 }
 
 struct Session {
     ring: Arc<Mutex<AudioRing>>,
-    aac_decoder: Option<Box<dyn symphonia::core::codecs::Decoder>>,
-    codec: AudioCodec,
+
 }
 
 impl AudioSession for Session {
     fn audio_process(&mut self, buffer: &[u8]) {
-        match self.codec {
-            AudioCodec::Pcm => self.ring.lock().unwrap().push_samples(buffer),
-            #[cfg(feature = "airplay2")]
-            AudioCodec::AacAdts => self.decode_aac(buffer),
-        }
+        self.ring.lock().unwrap().push_samples(buffer);
     }
 
     fn audio_set_volume(&mut self, volume: f32) {
@@ -83,56 +78,6 @@ impl AudioSession for Session {
 impl Drop for Session {
     fn drop(&mut self) {
         eprintln!("🔇 Stream ended");
-    }
-}
-
-impl Session {
-    fn decode_aac(&mut self, adts_frame: &[u8]) {
-        use symphonia::core::audio::SampleBuffer;
-        use symphonia::core::codecs::{DecoderOptions, CODEC_TYPE_AAC, CodecParameters};
-        use symphonia::core::formats::Packet;
-
-        if adts_frame.len() <= 7 { return; }
-
-        // Lazy init: parse ADTS header for sample rate
-        if self.aac_decoder.is_none() {
-            let freq_idx = (adts_frame[2] >> 2) & 0x0F;
-            let sr = match freq_idx { 3 => 48000, 4 => 44100, _ => 44100 };
-            let chan = ((adts_frame[2] & 1) << 2) | ((adts_frame[3] >> 6) & 3);
-            eprintln!("🎧 ADTS: freq_idx={freq_idx} sr={sr} chan={chan}");
-
-            let mut params = CodecParameters::new();
-            params.for_codec(CODEC_TYPE_AAC)
-                .with_sample_rate(sr)
-                .with_channels(symphonia::core::audio::Channels::FRONT_LEFT | symphonia::core::audio::Channels::FRONT_RIGHT);
-
-            match symphonia::default::get_codecs().make(&params, &DecoderOptions::default()) {
-                Ok(d) => { self.aac_decoder = Some(d); }
-                Err(e) => { eprintln!("⚠️  AAC decoder failed: {e}"); return; }
-            }
-        }
-
-        let decoder = self.aac_decoder.as_mut().unwrap();
-        let raw = &adts_frame[7..];
-        let packet = Packet::new_from_slice(0, 0, 1024, raw);
-
-        match decoder.decode(&packet) {
-            Ok(decoded) => {
-                let spec = *decoded.spec();
-                let dur = decoded.capacity() as u64;
-                let mut sbuf = SampleBuffer::<i16>::new(dur, spec);
-                sbuf.copy_interleaved_ref(decoded);
-                let samples = sbuf.samples();
-                let mut pcm = Vec::with_capacity(samples.len() * 2);
-                for &s in samples {
-                    pcm.extend_from_slice(&s.to_le_bytes());
-                }
-                self.ring.lock().unwrap().push_samples(&pcm);
-            }
-            Err(e) => {
-                tracing::debug!("AAC decode error: {e}");
-            }
-        }
     }
 }
 

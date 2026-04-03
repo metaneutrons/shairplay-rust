@@ -47,7 +47,7 @@ hkdf = { version = "0.12", optional = true }
 num-bigint = { version = "0.4", optional = true }
 uuid = { version = "1", features = ["v4"], optional = true }
 rubato = { version = "0.15", optional = true }
-symphonia = { version = "0.5", optional = true, features = ["aac", "isomp4"] }
+symphonia = { version = "0.5", optional = true, features = ["aac"] }
 
 # Error handling
 thiserror = "2"
@@ -57,14 +57,13 @@ tracing = "0.1"
 
 [features]
 default = []
-airplay2 = ["dep:chacha20poly1305", "dep:hkdf", "dep:num-bigint", "dep:uuid", "dep:rubato"]
+airplay2 = ["dep:chacha20poly1305", "dep:hkdf", "dep:num-bigint", "dep:uuid", "dep:rubato", "dep:symphonia"]
 
 [dev-dependencies]
 tokio = { version = "1", features = ["test-util"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 serial_test = "3"
 cpal = "0.15"
-symphonia = { version = "0.5", features = ["aac"] }
 
 # Disable overflow checks only for the FairPlay garble crate (C-style wrapping arithmetic)
 [profile.dev.package.fairplay-garble]

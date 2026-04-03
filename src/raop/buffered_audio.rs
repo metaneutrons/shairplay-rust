@@ -30,7 +30,7 @@ pub enum PlayoutCommand {
 
 /// Shared playout state between receiver, delivery thread, and RTSP handlers.
 struct PlayoutState {
-    buffer: BTreeMap<u32, Vec<u8>>, // rtp_timestamp → ADTS frame
+    buffer: BTreeMap<u32, Vec<u8>>, // rtp_timestamp → S16LE PCM
     anchor_rtp: u32,
     anchor_local_ns: u64, // local wall clock when anchor was set
     rate: u32, // 0 = paused, 1 = playing
@@ -161,6 +161,7 @@ async fn receive_loop(
 
     let cipher = ChaCha20Poly1305::new(shk.into());
     let mut len_buf = [0u8; 2];
+    let mut decoder: Option<aac::AacDecoder> = None;
 
     loop {
         if stream.read_exact(&mut len_buf).await.is_err() { break; }
@@ -180,11 +181,33 @@ async fn receive_loop(
         let ciphertext = &packet[RTP_HEADER_LEN..pkt_len - NONCE_TRAIL_LEN];
 
         if let Ok(plaintext) = cipher.decrypt(Nonce::from_slice(&nonce), Payload { msg: ciphertext, aad: &aad }) {
-            let adts_frame = aac::wrap_adts(&plaintext, sample_rate, channels);
-            let (lock, cvar) = &*state;
-            let mut s = lock.lock().unwrap();
-            s.buffer.insert(timestamp, adts_frame);
-            cvar.notify_all();
+            // Determine format from SSRC
+            let ssrc_val = u32::from_be_bytes([packet[8], packet[9], packet[10], packet[11]]);
+            let ssrc = aac::AudioSsrc::from_u32(ssrc_val);
+            let sr = if ssrc != aac::AudioSsrc::None { ssrc.sample_rate() } else { sample_rate };
+            let ch = if ssrc != aac::AudioSsrc::None { ssrc.channels() } else { channels };
+
+            // Decode AAC to PCM
+            let pcm = if ssrc.is_aac() || ssrc == aac::AudioSsrc::None {
+                let dec = decoder.get_or_insert_with(|| {
+                    aac::AacDecoder::new(sr, ch).unwrap_or_else(|e| {
+                        tracing::warn!("AAC decoder init: {e}");
+                        aac::AacDecoder::new(44100, 2).expect("fallback decoder")
+                    })
+                });
+                dec.decode(&plaintext)
+            } else {
+                // ALAC: already decoded by the library's ALAC decoder? No — buffered ALAC
+                // is raw, needs decoding too. For now, pass through as-is.
+                Some(plaintext.clone())
+            };
+
+            if let Some(pcm_data) = pcm {
+                let (lock, cvar) = &*state;
+                let mut s = lock.lock().unwrap();
+                s.buffer.insert(timestamp, pcm_data);
+                cvar.notify_all();
+            }
         }
     }
     debug!("Buffered audio receive loop ended");

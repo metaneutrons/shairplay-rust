@@ -3,6 +3,60 @@
 //! Raw AAC packets from the buffered audio stream need ADTS headers
 //! prepended before they can be decoded. Ported from ap2_buffered_audio_processor.c.
 
+/// SSRC values identifying the audio format (from shairport-sync player.h).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u32)]
+pub enum AudioSsrc {
+    None = 0,
+    Alac44100S16Stereo = 0x0000FACE,
+    Alac48000S24Stereo = 0x15000000,
+    Aac44100F24Stereo = 0x16000000,
+    Aac48000F24Stereo = 0x17000000,
+    Aac48000F24Surround51 = 0x27000000,
+    Aac48000F24Surround71 = 0x28000000,
+}
+
+impl AudioSsrc {
+    pub fn from_u32(v: u32) -> Self {
+        match v {
+            0x0000FACE => Self::Alac44100S16Stereo,
+            0x15000000 => Self::Alac48000S24Stereo,
+            0x16000000 => Self::Aac44100F24Stereo,
+            0x17000000 => Self::Aac48000F24Stereo,
+            0x27000000 => Self::Aac48000F24Surround51,
+            0x28000000 => Self::Aac48000F24Surround71,
+            _ => Self::None,
+        }
+    }
+
+    pub fn is_aac(self) -> bool {
+        matches!(self, Self::Aac44100F24Stereo | Self::Aac48000F24Stereo | Self::Aac48000F24Surround51 | Self::Aac48000F24Surround71)
+    }
+
+    pub fn sample_rate(self) -> u32 {
+        match self {
+            Self::Alac44100S16Stereo | Self::Aac44100F24Stereo => 44100,
+            _ => 48000,
+        }
+    }
+
+    pub fn channels(self) -> u8 {
+        match self {
+            Self::Aac48000F24Surround51 => 6,
+            Self::Aac48000F24Surround71 => 8,
+            _ => 2,
+        }
+    }
+
+    pub fn adts_channel_config(self) -> u8 {
+        match self {
+            Self::Aac48000F24Surround51 => 6,
+            Self::Aac48000F24Surround71 => 7,
+            _ => 2,
+        }
+    }
+}
+
 /// Construct a 7-byte ADTS header for a raw AAC packet.
 ///
 /// `packet_len` is the total length including the 7-byte header itself.
@@ -75,4 +129,62 @@ mod tests {
         assert_eq!(&wrapped[0..2], &[0xFF, 0xF9]); // sync word
         assert_eq!(&wrapped[7..], &[0xDE, 0xAD]); // payload preserved
     }
+}
+
+/// Persistent AAC decoder using symphonia. Decodes ADTS-wrapped AAC to S16LE PCM.
+pub struct AacDecoder {
+    decoder: Box<dyn symphonia::core::codecs::Decoder>,
+    sample_rate: u32,
+    channels: u8,
+}
+
+impl AacDecoder {
+    /// Create a new decoder for the given format.
+    pub fn new(sample_rate: u32, channels: u8) -> Result<Self, String> {
+        use symphonia::core::codecs::{CodecParameters, DecoderOptions, CODEC_TYPE_AAC};
+        use symphonia::core::audio::Channels;
+
+        let mut params = CodecParameters::new();
+        params.for_codec(CODEC_TYPE_AAC).with_sample_rate(sample_rate);
+
+        let ch = match channels {
+            1 => Channels::FRONT_CENTRE,
+            2 => Channels::FRONT_LEFT | Channels::FRONT_RIGHT,
+            6 => Channels::FRONT_LEFT | Channels::FRONT_RIGHT | Channels::FRONT_CENTRE
+                | Channels::REAR_LEFT | Channels::REAR_RIGHT | Channels::LFE1,
+            8 => Channels::FRONT_LEFT | Channels::FRONT_RIGHT | Channels::FRONT_CENTRE
+                | Channels::SIDE_LEFT | Channels::SIDE_RIGHT
+                | Channels::REAR_LEFT | Channels::REAR_RIGHT | Channels::LFE1,
+            _ => Channels::FRONT_LEFT | Channels::FRONT_RIGHT,
+        };
+        params.with_channels(ch);
+
+        let decoder = symphonia::default::get_codecs()
+            .make(&params, &DecoderOptions::default())
+            .map_err(|e| format!("AAC decoder init failed: {e}"))?;
+
+        Ok(Self { decoder, sample_rate, channels })
+    }
+
+    /// Decode a raw AAC frame (without ADTS header) to interleaved S16LE PCM.
+    pub fn decode(&mut self, raw_aac: &[u8]) -> Option<Vec<u8>> {
+        use symphonia::core::audio::SampleBuffer;
+        use symphonia::core::formats::Packet;
+
+        let packet = Packet::new_from_slice(0, 0, 1024, raw_aac);
+        let decoded = self.decoder.decode(&packet).ok()?;
+        let spec = *decoded.spec();
+        let duration = decoded.capacity() as u64;
+        let mut sample_buf = SampleBuffer::<i16>::new(duration, spec);
+        sample_buf.copy_interleaved_ref(decoded);
+        let samples = sample_buf.samples();
+        let mut pcm = Vec::with_capacity(samples.len() * 2);
+        for &s in samples {
+            pcm.extend_from_slice(&s.to_le_bytes());
+        }
+        Some(pcm)
+    }
+
+    pub fn sample_rate(&self) -> u32 { self.sample_rate }
+    pub fn channels(&self) -> u8 { self.channels }
 }
