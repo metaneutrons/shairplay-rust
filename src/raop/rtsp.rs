@@ -117,7 +117,7 @@ pub(crate) fn dispatch(conn: &mut RaopConnection, request: &HttpRequest) -> Http
         {
             if method == "RECORD" && conn.is_ap2 {
                 Some(handlers::handle_record_2 as Handler)
-            } else if method == "SETRATEANCHORTI" {
+            } else if method == "SETRATEANCHORTIME" {
                 Some(handlers::handle_setrateanchorti as Handler)
             } else if method == "SETPEERS" || method == "SETPEERSX" {
                 Some(handlers::handle_setpeers as Handler)
