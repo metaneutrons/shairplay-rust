@@ -40,6 +40,40 @@ pub trait AudioHandler: Send + Sync + 'static {
     fn audio_init(&self, format: AudioFormat) -> Box<dyn AudioSession>;
 }
 
+/// Storage for paired device keys. Implement this to persist pairing across restarts.
+///
+/// Without persistence, iPhones that previously paired will send encrypted data
+/// on connect and fail because the server has no cached keys.
+#[cfg(feature = "airplay2")]
+pub trait PairingStore: Send + Sync + 'static {
+    /// Look up a paired device's Ed25519 public key by device ID.
+    fn get(&self, device_id: &str) -> Option<[u8; 32]>;
+    /// Save a paired device's Ed25519 public key.
+    fn put(&self, device_id: &str, public_key: [u8; 32]);
+    /// Remove a paired device.
+    fn remove(&self, device_id: &str);
+}
+
+/// In-memory pairing store (lost on restart). Use for testing or wrap with file I/O.
+#[cfg(feature = "airplay2")]
+#[derive(Default)]
+pub struct MemoryPairingStore {
+    keys: std::sync::Mutex<std::collections::HashMap<String, [u8; 32]>>,
+}
+
+#[cfg(feature = "airplay2")]
+impl PairingStore for MemoryPairingStore {
+    fn get(&self, device_id: &str) -> Option<[u8; 32]> {
+        self.keys.lock().unwrap().get(device_id).copied()
+    }
+    fn put(&self, device_id: &str, public_key: [u8; 32]) {
+        self.keys.lock().unwrap().insert(device_id.to_string(), public_key);
+    }
+    fn remove(&self, device_id: &str) {
+        self.keys.lock().unwrap().remove(device_id);
+    }
+}
+
 /// Per-connection audio session.
 /// Per-connection audio session receiving decoded PCM samples.
 ///
@@ -61,6 +95,8 @@ struct RaopShared {
     hwaddr: Vec<u8>,
     password: String,
     handler: Arc<dyn AudioHandler>,
+    #[cfg(feature = "airplay2")]
+    pairing_store: Arc<dyn PairingStore>,
 }
 
 impl HttpdCallbacks for RaopShared {
@@ -96,6 +132,8 @@ impl HttpdCallbacks for RaopShared {
             ap2_shared_secret: None,
             #[cfg(feature = "airplay2")]
             is_ap2: false,
+            #[cfg(feature = "airplay2")]
+            pairing_store: self.pairing_store.clone(),
         };
         Some(Box::new(RaopConnectionHandler(conn)))
     }
@@ -135,6 +173,8 @@ pub struct RaopServerBuilder {
     password: Option<String>,
     name: String,
     bind: BindConfig,
+    #[cfg(feature = "airplay2")]
+    pairing_store: Option<Arc<dyn PairingStore>>,
 }
 
 impl Default for RaopServerBuilder {
@@ -151,6 +191,8 @@ impl RaopServerBuilder {
             password: None,
             name: "Shairplay".to_string(),
             bind: BindConfig::default(),
+            #[cfg(feature = "airplay2")]
+            pairing_store: None,
         }
     }
 
@@ -163,6 +205,13 @@ impl RaopServerBuilder {
     pub fn bind(mut self, config: BindConfig) -> Self { self.bind = config; self }
     pub fn name(mut self, name: impl Into<String>) -> Self { self.name = name.into(); self }
 
+    /// Set a pairing store for persisting device keys across restarts.
+    /// Without this, iPhones must re-pair on every server restart.
+    #[cfg(feature = "airplay2")]
+    pub fn pairing_store(mut self, store: Arc<dyn PairingStore>) -> Self {
+        self.pairing_store = Some(store); self
+    }
+
     pub fn build(self, handler: Arc<dyn AudioHandler>) -> Result<RaopServer, ShairplayError> {
         let rsakey = airport_rsakey();
         let pairing = Arc::new(Pairing::generate()?);
@@ -174,6 +223,8 @@ impl RaopServerBuilder {
             hwaddr: hwaddr.clone(),
             password: self.password.unwrap_or_default(),
             handler,
+            #[cfg(feature = "airplay2")]
+            pairing_store: self.pairing_store.unwrap_or_else(|| Arc::new(MemoryPairingStore::default())),
         });
 
         let mut httpd = HttpServer::new(shared.clone(), self.max_clients);

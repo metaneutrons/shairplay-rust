@@ -129,7 +129,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let handler = Arc::new(Handler { ring });
     let mut server = RaopServer::builder()
         .name(name)
-        .hwaddr([0xf6, 0xc1, 0xcc, 0xce, 0xb4, 0x8c])
+        .hwaddr({
+            // Random MAC each run until we implement key persistence
+            let mut mac = [0u8; 6];
+            mac[0] = 0x02; // locally administered
+            rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut mac[1..]);
+            eprintln!("🔑 Device MAC: {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x} (random, no key persistence yet)",
+                mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+            mac
+        })
         .build(handler)?;
 
     server.start().await?;

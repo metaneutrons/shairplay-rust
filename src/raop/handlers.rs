@@ -37,6 +37,8 @@ pub(crate) struct RaopConnection {
     pub ap2_shared_secret: Option<Vec<u8>>,
     #[cfg(feature = "airplay2")]
     pub is_ap2: bool,
+    #[cfg(feature = "airplay2")]
+    pub pairing_store: Arc<dyn crate::raop::PairingStore>,
 }
 
 pub(crate) fn handle_none(
@@ -321,6 +323,7 @@ pub(crate) fn handle_pair_setup_ap2(
             if ok && srp.is_transient() {
                 conn.ap2_shared_secret = srp.shared_secret().map(|s| s.to_vec());
                 conn.is_ap2 = true;
+                tracing::info!("AP2 transient pair-setup complete");
             }
             Some(m4)
         }
@@ -354,6 +357,7 @@ pub(crate) fn handle_pair_verify_ap2(
 
     match state {
         1 => {
+            tracing::info!("AP2 pair-verify M1 received");
             let mut pv = PairVerifyServer::new(&conn.device_id);
             let m2 = pv.process_m1_build_m2(data).ok()?;
             conn.pair_verify = Some(pv);
@@ -364,6 +368,7 @@ pub(crate) fn handle_pair_verify_ap2(
             let m4 = pv.process_m3_build_m4(data).ok()?;
             conn.ap2_shared_secret = pv.shared_secret().map(|s| s.to_vec());
             conn.is_ap2 = true;
+            tracing::info!("AP2 pair-verify complete, encrypted RTSP active");
             Some(m4)
         }
         _ => None,
