@@ -224,3 +224,76 @@ mod tests {
         assert!(mt > 42); // should be now + 42
     }
 }
+
+/// PTP-anchored audio playout timing.
+/// Converts RTP timestamps to local playout times using PTP clock offset.
+pub struct PtpAnchor {
+    pub clock_id: u64,
+    pub anchor_rtp: u32,
+    pub anchor_network_time_ns: u64,
+    pub sample_rate: u32,
+}
+
+impl PtpAnchor {
+    /// Set anchor from SETRATEANCHORTI parameters.
+    pub fn new(clock_id: u64, rtp_time: u32, network_secs: u64, network_frac: u64, sample_rate: u32) -> Self {
+        // Convert network time to nanoseconds (frac is 64-bit fixed point, MSB = 0.5)
+        let frac_ns = ((network_frac >> 32) * 1_000_000_000) >> 32;
+        let network_time_ns = network_secs * 1_000_000_000 + frac_ns;
+        Self { clock_id, anchor_rtp: rtp_time, anchor_network_time_ns: network_time_ns, sample_rate }
+    }
+
+    /// Given a PTP clock offset, compute the local time (ns) when an RTP frame should play.
+    /// `ptp_offset` = add to local time to get master time (from PtpClock).
+    pub fn local_playout_time(&self, rtp_timestamp: u32, ptp_offset: u64) -> u64 {
+        let frame_diff = rtp_timestamp.wrapping_sub(self.anchor_rtp) as i64;
+        let time_diff_ns = (frame_diff * 1_000_000_000) / self.sample_rate as i64;
+        let master_playout = (self.anchor_network_time_ns as i64 + time_diff_ns) as u64;
+        // local_time = master_time - offset
+        master_playout.wrapping_sub(ptp_offset)
+    }
+
+    /// How many nanoseconds until this RTP frame should play?
+    pub fn delay_until_playout(&self, rtp_timestamp: u32, ptp_offset: u64) -> i64 {
+        let target = self.local_playout_time(rtp_timestamp, ptp_offset);
+        let now = now_ns();
+        target as i64 - now as i64
+    }
+}
+
+#[cfg(test)]
+mod anchor_tests {
+    use super::*;
+
+    #[test]
+    fn anchor_playout_at_anchor_point() {
+        let anchor = PtpAnchor::new(1, 1000, 5, 0, 44100);
+        // At the anchor RTP time, playout should be at anchor_network_time - offset
+        let local = anchor.local_playout_time(1000, 100);
+        assert_eq!(local, 5_000_000_000 - 100);
+    }
+
+    #[test]
+    fn anchor_playout_one_second_later() {
+        let anchor = PtpAnchor::new(1, 0, 10, 0, 44100);
+        // 44100 frames later = 1 second
+        let local = anchor.local_playout_time(44100, 0);
+        assert_eq!(local, 11_000_000_000); // 10s + 1s
+    }
+
+    #[test]
+    fn anchor_playout_with_offset() {
+        let anchor = PtpAnchor::new(1, 0, 10, 0, 48000);
+        // 48000 frames = 1 second, offset = 500ms
+        let local = anchor.local_playout_time(48000, 500_000_000);
+        // master time = 11s, local = 11s - 0.5s = 10.5s
+        assert_eq!(local, 10_500_000_000);
+    }
+
+    #[test]
+    fn anchor_network_frac_conversion() {
+        // frac = 0x8000000000000000 means 0.5 seconds
+        let anchor = PtpAnchor::new(1, 0, 1, 0x8000_0000_0000_0000, 44100);
+        assert_eq!(anchor.anchor_network_time_ns, 1_500_000_000);
+    }
+}
