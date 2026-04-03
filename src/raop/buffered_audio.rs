@@ -30,12 +30,14 @@ pub enum PlayoutCommand {
 }
 
 struct PlayoutState {
-    buffer: BTreeMap<u32, Vec<u8>>, // rtp_timestamp → F32 PCM
+    buffer: BTreeMap<u32, Vec<u8>>, // rtp_timestamp → F32 PCM bytes
     anchor_rtp: u32,
     anchor_local_ns: u64,
     rate: u32,
     sample_rate: u32,
+    channels: u8,
     stopped: bool,
+    format_changed: bool,
 }
 
 pub struct BufferedAudioProcessor {
@@ -66,7 +68,9 @@ impl BufferedAudioProcessor {
                 anchor_local_ns: 0,
                 rate: 0,
                 sample_rate: default_sr,
+                channels: 2,
                 stopped: false,
+                format_changed: false,
             }),
             Condvar::new(),
         ));
@@ -153,6 +157,9 @@ async fn receive_loop(
     let mut len_buf = [0u8; 2];
     let mut decoder: Option<AacDecoder> = None;
     let mut current_ssrc = AudioSsrc::None;
+    let mut stream_resampler: Option<crate::codec::resample::StreamResampler> = None;
+    let mut source_channels: u8 = 2;
+    let mut output_channels: u8 = 2;
 
     loop {
         if stream.read_exact(&mut len_buf).await.is_err() { break; }
@@ -186,6 +193,39 @@ async fn receive_loop(
                 info!(from = sr, to = target_sr, "Resampling needed (TODO)");
             }
         }
+        // Detect format change
+        if ssrc != AudioSsrc::None && ssrc != current_ssrc {
+            current_ssrc = ssrc;
+            let src_sr = ssrc.sample_rate();
+            let src_ch = ssrc.channels();
+            info!(ssrc = ?ssrc, src_sr, src_ch, "Audio format detected");
+
+            decoder = AacDecoder::new(src_sr, src_ch).ok();
+            if decoder.is_none() {
+                warn!("Failed to create AAC decoder for {:?}", ssrc);
+            }
+
+            let target_sr = output_config.sample_rate.unwrap_or(src_sr);
+            let target_ch = output_config.max_channels
+                .map(|max| src_ch.min(max))
+                .unwrap_or(src_ch);
+
+            stream_resampler = crate::codec::resample::StreamResampler::new(src_sr, target_sr, target_ch as usize);
+            if stream_resampler.is_some() {
+                info!(from = src_sr, to = target_sr, "Resampler initialized");
+            }
+
+            source_channels = src_ch;
+            output_channels = target_ch;
+
+            // Signal format change to delivery thread
+            let (lock, cvar) = &*state;
+            let mut s = lock.lock().unwrap();
+            s.sample_rate = target_sr;
+            s.channels = target_ch;
+            s.format_changed = true;
+            cvar.notify_all();
+        }
 
         // Decrypt
         let pkt_len = packet.len();
@@ -207,12 +247,30 @@ async fn receive_loop(
         };
 
         if let Some(pcm_data) = pcm {
-            // TODO: resample if needed (rubato integration)
-            // TODO: channel mixdown if needed
+            // Convert bytes to f32 samples for processing
+            let mut samples: Vec<f32> = pcm_data.chunks_exact(4)
+                .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+                .collect();
+
+            // Channel mixdown if needed
+            if source_channels > output_channels {
+                samples = crate::codec::resample::mixdown(&samples, source_channels as usize, output_channels as usize);
+            }
+
+            // Resample if needed
+            if let Some(ref mut rs) = stream_resampler {
+                samples = rs.process(&samples);
+            }
+
+            // Convert back to bytes
+            let mut out_bytes = Vec::with_capacity(samples.len() * 4);
+            for s in &samples {
+                out_bytes.extend_from_slice(&s.to_le_bytes());
+            }
 
             let (lock, cvar) = &*state;
             let mut s = lock.lock().unwrap();
-            s.buffer.insert(timestamp, pcm_data);
+            s.buffer.insert(timestamp, out_bytes);
             cvar.notify_all();
         }
     }
@@ -235,10 +293,15 @@ fn delivery_loop(
         }
         if s.stopped { break; }
 
-        // Lazy init session on first delivery
-        if session.is_none() {
-            let sr = output_config.sample_rate.unwrap_or(s.sample_rate);
-            let format = AudioFormat { codec: AudioCodec::Pcm, bits: 32, channels: 2, sample_rate: sr };
+        // Lazy init or reinit session on format change
+        if session.is_none() || s.format_changed {
+            s.format_changed = false;
+            let format = AudioFormat {
+                codec: AudioCodec::Pcm,
+                bits: 32,
+                channels: s.channels,
+                sample_rate: s.sample_rate,
+            };
             info!(?format, "Audio session initialized");
             session = Some(handler.audio_init(format));
         }
