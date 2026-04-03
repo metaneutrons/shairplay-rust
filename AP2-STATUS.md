@@ -44,6 +44,13 @@ The Mac's built-in AirPlay receiver has no delay. The Mac uses `rapportd`
 The delay may be the iPhone waiting for companion-link integration that
 third-party receivers cannot provide.
 
+### Multi-Interface Binding
+
+The RTSP server currently binds to a single address (`BindConfig::addr`).
+For multi-homed servers, it would be useful to bind to multiple specific
+interfaces (e.g., one IPv4 + one IPv6). Requires refactoring the server
+to support multiple listeners.
+
 ## Not Implemented
 
 ### Realtime ALAC (Stream Type 96)
