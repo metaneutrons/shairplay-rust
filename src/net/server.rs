@@ -168,13 +168,14 @@ fn spawn_accept_loop(
                         Ok(v) => v,
                         Err(_) => continue,
                     };
+                    tracing::info!(%remote, "New connection");
                     let local = match stream.local_addr() {
                         Ok(a) => a,
                         Err(_) => continue,
                     };
                     let permit = match semaphore.clone().try_acquire_owned() {
                         Ok(p) => p,
-                        Err(_) => continue, // max connections reached
+                        Err(_) => { tracing::warn!("Max connections reached"); continue; }
                     };
                     let cb = callbacks.clone();
                     tokio::spawn(async move {
@@ -198,7 +199,12 @@ fn spawn_accept_loop(
                             if !request.is_complete() {
                                 continue;
                             }
+                            let method = request.method().unwrap_or("?").to_string();
+                            let url = request.url().unwrap_or("?").to_string();
+                            tracing::debug!(%method, %url, body_len = request.data().map(|d| d.len()).unwrap_or(0), "RTSP request");
                             let response = handler.conn_request(&request);
+                            let status = response.status_code();
+                            tracing::debug!(%method, %url, status, "RTSP response");
                             let disconnect = response.get_disconnect();
                             let data = response.get_data();
                             if stream.write_all(data).await.is_err() {
@@ -210,7 +216,7 @@ fn spawn_accept_loop(
                             }
                             request = HttpRequest::new();
                         }
-                        // handler dropped here = conn_destroy
+                        tracing::info!(%remote, "Connection closed");
                     });
                 }
                 _ = shutdown_rx.changed() => {

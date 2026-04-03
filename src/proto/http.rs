@@ -142,6 +142,7 @@ pub struct HttpResponse {
     data: Vec<u8>,
     complete: bool,
     disconnect: bool,
+    code: u16,
 }
 
 impl HttpResponse {
@@ -154,6 +155,7 @@ impl HttpResponse {
             data,
             complete: false,
             disconnect: false,
+            code,
         }
     }
 
@@ -184,6 +186,8 @@ impl HttpResponse {
     pub fn set_disconnect(&mut self, disconnect: bool) {
         self.disconnect = disconnect;
     }
+
+    pub fn status_code(&self) -> u16 { self.code }
 
     pub fn get_disconnect(&self) -> bool {
         self.disconnect
