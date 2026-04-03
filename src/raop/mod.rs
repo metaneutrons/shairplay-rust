@@ -420,6 +420,8 @@ impl RaopServer {
         let info = self.service_info();
         let mut mdns = MdnsService::new()?;
         mdns.register_raop(&info)?;
+        #[cfg(feature = "airplay2")]
+        #[cfg(feature = "airplay2")]
         mdns.register_airplay(&info)?;
         self.mdns = Some(mdns);
 
