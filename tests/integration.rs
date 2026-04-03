@@ -201,3 +201,50 @@ async fn teardown_closes_connection() {
 
     server.stop().await;
 }
+
+// --- AirPlay 2 integration tests ---
+
+#[cfg(feature = "airplay2")]
+mod ap2_tests {
+    use super::*;
+    use shairplay::crypto::tlv::{TlvValues, TlvType};
+    use shairplay::crypto::pairing_homekit;
+    use num_bigint::BigUint;
+
+    #[tokio::test]
+    #[serial]
+    async fn ap2_transient_pair_setup() {
+        let (mut server, port, _) = start_server().await;
+
+        let mut stream = TcpStream::connect(format!("127.0.0.1:{port}")).await.unwrap();
+
+        // M1: State=1, Method=0, Flags=0x10 (transient)
+        let mut m1_tlv = TlvValues::new();
+        m1_tlv.add(TlvType::State as u8, &[1]);
+        m1_tlv.add(TlvType::Method as u8, &[0]);
+        m1_tlv.add(TlvType::Flags as u8, &[0x10]);
+        let m1_body = m1_tlv.encode();
+
+        let req = format!(
+            "POST /pair-setup RTSP/1.0\r\nCSeq: 1\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\n\r\n",
+            m1_body.len()
+        );
+        stream.write_all(req.as_bytes()).await.unwrap();
+        stream.write_all(&m1_body).await.unwrap();
+
+        let mut buf = vec![0u8; 8192];
+        let n = stream.read(&mut buf).await.unwrap();
+        let resp = String::from_utf8_lossy(&buf[..n]);
+        assert!(resp.contains("200 OK"), "M2 should be 200, got: {}", &resp[..resp.len().min(100)]);
+
+        // Parse M2 response body — find the body after \r\n\r\n
+        let header_end = resp.find("\r\n\r\n").unwrap() + 4;
+        let body = &buf[header_end..n];
+        let m2 = TlvValues::decode(body).expect("M2 should be valid TLV");
+        assert_eq!(m2.get_type(TlvType::State), Some(&[2u8][..]));
+        assert!(m2.get_type(TlvType::Salt).is_some(), "M2 should have salt");
+        assert!(m2.get_type(TlvType::PublicKey).is_some(), "M2 should have B");
+
+        server.stop().await;
+    }
+}
