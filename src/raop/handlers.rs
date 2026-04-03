@@ -623,52 +623,7 @@ pub(crate) fn handle_setup_2(
 
         if is_rc_only {
             tracing::info!("Remote Control Only connection");
-            // RC connections need an eventPort for updateInfo
-            let bind_addr = if conn.local_addr.len() == 16 { "[::]:0" } else { "0.0.0.0:0" };
-            let event_ch = tokio::task::block_in_place(|| {
-                tokio::runtime::Handle::current().block_on(async {
-                    let listener = tokio::net::TcpListener::bind(bind_addr).await?;
-                    let port = listener.local_addr()?.port();
-                    Ok::<_, std::io::Error>((listener, port))
-                })
-            }).ok()?;
-            let (event_listener, event_port) = event_ch;
-            tracing::info!(event_port, "RC event channel opened");
-
-            let shared_secret = conn.ap2_shared_secret.as_ref()?;
-            let cipher = crate::crypto::chacha_transport::EncryptedChannel::events(shared_secret).ok()?;
-
-            // Queue updateInfo and spawn handler
-            tokio::task::block_in_place(|| {
-                let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-                let mut update_info = plist::Dictionary::new();
-                update_info.insert("type".into(), plist::Value::String("updateInfo".into()));
-                let mut value = plist::Dictionary::new();
-                value.insert("statusFlags".into(), plist::Value::Integer((crate::net::mdns::AP2_STATUS_FLAGS as i64).into()));
-                value.insert("features".into(), plist::Value::Integer((crate::net::mdns::AP2_FEATURES as i64).into()));
-                value.insert("model".into(), plist::Value::String(crate::net::mdns::GLOBAL_MODEL.into()));
-                value.insert("sourceVersion".into(), plist::Value::String(crate::net::mdns::AP2_SRCVERS.into()));
-                value.insert("protocolVersion".into(), plist::Value::String(crate::net::mdns::AP2_PROTOVERS.into()));
-                update_info.insert("value".into(), plist::Value::Dictionary(value));
-                let mut body = Vec::new();
-                if plist::to_writer_binary(&mut body, &update_info).is_ok() {
-                    let rtsp = format!(
-                        "POST /command RTSP/1.0\r\nContent-Length: {}\r\nContent-Type: application/x-apple-binary-plist\r\nCSeq: 0\r\n\r\n",
-                        body.len()
-                    );
-                    let mut msg = rtsp.into_bytes();
-                    msg.extend_from_slice(&body);
-                    let _ = tx.send(msg);
-                }
-                tokio::runtime::Handle::current().spawn(async move {
-                    if let Ok((stream, addr)) = event_listener.accept().await {
-                        tracing::info!(%addr, "RC event channel client connected");
-                        crate::raop::event_channel::EventChannel::handle_stream(stream, cipher, rx).await;
-                    }
-                });
-            });
-
-            resp_dict.insert("eventPort".into(), plist::Value::Integer((event_port as u64).into()));
+            // RC connections don't need timingPeerInfo or eventPort
             let mut buf = Vec::new();
             plist::to_writer_binary(&mut buf, &resp_dict).ok()?;
             response.add_header("Content-Type", "application/x-apple-binary-plist");
