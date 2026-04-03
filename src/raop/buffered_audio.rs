@@ -351,7 +351,7 @@ fn delivery_loop(
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
     }
-    debug!("Delivery loop ended");
+    info!("Delivery loop ended");
 }
 
 fn now_ns() -> u64 {

@@ -197,6 +197,7 @@ pub(crate) fn handle_setup(
     response: &mut HttpResponse,
 ) -> Option<Vec<u8>> {
     let transport = request.header("Transport")?;
+    tracing::debug!(transport, "AP1 SETUP");
 
     // Check for DACP remote control headers
     if let (Some(dacp_id), Some(active_remote)) = (
@@ -272,6 +273,7 @@ pub(crate) fn handle_set_parameter(
 ) -> Option<Vec<u8>> {
     let content_type = request.header("Content-Type")?;
     let data = request.data()?;
+    tracing::debug!(content_type, len = data.len(), "SET_PARAMETER");
 
     // AP2: forward via playout command channel
     #[cfg(feature = "airplay2")]
@@ -563,7 +565,7 @@ pub(crate) fn handle_setup_2(
 
                 // On PTP connections, type 130 is just acknowledged
                 // On RC connections, it sets up an encrypted data channel
-                if let Some(seed) = stream0.get("seed").and_then(|v| v.as_unsigned_integer()) {
+                if let Some(_seed) = stream0.get("seed").and_then(|v| v.as_unsigned_integer()) {
                     let bind_addr = if conn.local_addr.len() == 16 { "[::]:0" } else { "0.0.0.0:0" };
                     let data_listener = tokio::task::block_in_place(|| {
                         tokio::runtime::Handle::current().block_on(
@@ -689,6 +691,7 @@ pub(crate) fn handle_record_2(
     _request: &HttpRequest,
     response: &mut HttpResponse,
 ) -> Option<Vec<u8>> {
+    tracing::debug!("RECORD");
     response.add_header("Audio-Latency", "0");
     None
 }
