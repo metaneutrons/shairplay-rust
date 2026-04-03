@@ -95,7 +95,7 @@ impl AirPlayServiceInfo {
             // AP1 compatibility fields (allows classic AirPlay fallback)
             ("cn".into(), "0,1".into()),
             ("da".into(), "true".into()),
-            ("et".into(), "0,1".into()),
+            ("et".into(), "0,3,5".into()),
             ("pw".into(), (if password { "true" } else { "false" }).into()),
             // AP2 fields
             ("ft".into(), ft.clone()),
