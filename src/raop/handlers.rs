@@ -50,6 +50,12 @@ pub(crate) struct RaopConnection {
     pub pin: Option<String>,
     #[cfg(feature = "airplay2")]
     pub event_sender: Option<crate::raop::event_channel::EventSender>,
+    #[cfg(feature = "video")]
+    pub video_handler: Option<Arc<dyn crate::raop::video::VideoHandler>>,
+    #[cfg(feature = "video")]
+    pub ekey: Option<[u8; 16]>,
+    #[cfg(feature = "video")]
+    pub eiv: Option<[u8; 16]>,
 }
 
 pub(crate) fn handle_none(
@@ -590,6 +596,46 @@ pub(crate) fn handle_setup_2(
                     stream_resp.insert("streamID".into(), plist::Value::Integer(1_i64.into()));
                 }
             }
+            #[cfg(feature = "video")]
+            110 => {
+                // Video (screen mirroring) stream
+                let stream_connection_id = stream0.get("streamConnectionID")
+                    .and_then(|v| v.as_signed_integer())
+                    .unwrap_or(0) as u64;
+                tracing::info!(stream_type = 110, stream_connection_id, "AP2 video stream setup");
+
+                // Video uses AES-CTR with keys from the initial SETUP (ekey/eiv)
+                let ekey = match conn.ekey {
+                    Some(k) => k,
+                    None => { tracing::warn!("Video stream requires ekey"); return None; }
+                };
+                let eiv = match conn.eiv {
+                    Some(iv) => iv,
+                    None => { tracing::warn!("Video stream requires eiv"); return None; }
+                };
+
+                let cipher = crate::crypto::video_cipher::VideoCipher::new(&ekey, &eiv);
+
+                let bind_addr = if conn.local_addr.len() == 16 { "[::]:0" } else { "0.0.0.0:0" };
+                let listener = tokio::task::block_in_place(|| {
+                    tokio::runtime::Handle::current().block_on(
+                        tokio::net::TcpListener::bind(bind_addr)
+                    )
+                }).ok()?;
+                let video_port = listener.local_addr().ok()?.port();
+                tracing::info!(video_port, "Video stream TCP port opened");
+
+                if let Some(vh) = &conn.video_handler {
+                    let session = vh.video_init();
+                    tokio::task::block_in_place(|| {
+                        tokio::runtime::Handle::current().spawn(
+                            crate::raop::video_stream::run(listener, cipher, session)
+                        );
+                    });
+                }
+
+                stream_resp.insert("dataPort".into(), plist::Value::Integer(video_port.into()));
+            }
             _ => {
                 tracing::warn!(stream_type, "Unknown AP2 stream type");
             }
@@ -608,6 +654,25 @@ pub(crate) fn handle_setup_2(
         let timing = dict.get("timingProtocol")
             .and_then(|v| v.as_string())
             .unwrap_or("None");
+
+        // Capture FairPlay encryption keys for video
+        #[cfg(feature = "video")]
+        {
+            if let Some(ekey_data) = dict.get("ekey").and_then(|v| v.as_data()) {
+                if ekey_data.len() == 72 {
+                    if let Ok(input) = <[u8; 72]>::try_from(ekey_data) {
+                        if let Ok(key) = conn.fairplay.decrypt(&input) {
+                            conn.ekey = Some(key);
+                        }
+                    }
+                }
+            }
+            if let Some(eiv_data) = dict.get("eiv").and_then(|v| v.as_data()) {
+                if let Ok(iv) = <[u8; 16]>::try_from(eiv_data) {
+                    conn.eiv = Some(iv);
+                }
+            }
+        }
 
         let is_rc_only = dict.get("isRemoteControlOnly")
             .and_then(|v| v.as_boolean())

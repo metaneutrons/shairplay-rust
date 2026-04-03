@@ -11,3 +11,5 @@ pub mod chacha_transport;
 pub mod pairing_homekit;
 #[cfg(feature = "airplay2")]
 pub mod tlv;
+#[cfg(feature = "video")]
+pub mod video_cipher;

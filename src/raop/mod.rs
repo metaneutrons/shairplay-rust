@@ -6,6 +6,10 @@ pub mod event_channel;
 pub mod handlers;
 pub mod rtp;
 mod rtsp;
+#[cfg(feature = "video")]
+pub mod video;
+#[cfg(feature = "video")]
+pub mod video_stream;
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -139,6 +143,8 @@ struct RaopShared {
     output_max_channels: Option<u8>,
     #[cfg(feature = "airplay2")]
     pin: Option<String>,
+    #[cfg(feature = "video")]
+    video_handler: Option<Arc<dyn crate::raop::video::VideoHandler>>,
 }
 
 impl HttpdCallbacks for RaopShared {
@@ -186,6 +192,12 @@ impl HttpdCallbacks for RaopShared {
             pin: self.pin.clone(),
             #[cfg(feature = "airplay2")]
             event_sender: None,
+            #[cfg(feature = "video")]
+            video_handler: self.video_handler.clone(),
+            #[cfg(feature = "video")]
+            ekey: None,
+            #[cfg(feature = "video")]
+            eiv: None,
         };
         Some(Box::new(RaopConnectionHandler {
             conn,
@@ -294,6 +306,8 @@ pub struct RaopServerBuilder {
     output_max_channels: Option<u8>,
     #[cfg(feature = "airplay2")]
     pin: Option<String>,
+    #[cfg(feature = "video")]
+    video_handler: Option<Arc<dyn crate::raop::video::VideoHandler>>,
 }
 
 impl Default for RaopServerBuilder {
@@ -318,6 +332,8 @@ impl RaopServerBuilder {
             output_max_channels: None,
             #[cfg(feature = "airplay2")]
             pin: None,
+            #[cfg(feature = "video")]
+            video_handler: None,
         }
     }
 
@@ -357,6 +373,11 @@ impl RaopServerBuilder {
         self.pin = Some(pin.into()); self
     }
 
+    #[cfg(feature = "video")]
+    pub fn video_handler(mut self, handler: Arc<dyn crate::raop::video::VideoHandler>) -> Self {
+        self.video_handler = Some(handler); self
+    }
+
     pub fn build(self, handler: Arc<dyn AudioHandler>) -> Result<RaopServer, ShairplayError> {
         let rsakey = airport_rsakey();
         let pairing = Arc::new(Pairing::generate()?);
@@ -376,6 +397,8 @@ impl RaopServerBuilder {
             output_max_channels: self.output_max_channels,
             #[cfg(feature = "airplay2")]
             pin: self.pin,
+            #[cfg(feature = "video")]
+            video_handler: self.video_handler,
         });
 
         let mut httpd = HttpServer::new(shared.clone(), self.max_clients);
