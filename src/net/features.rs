@@ -115,6 +115,7 @@ pub fn features_to_mdns(features: u64) -> String {
 pub fn receiver_features() -> u64 {
     use AirPlayFeature::*;
 
+    #[allow(unused_mut)]
     let mut bits: Vec<AirPlayFeature> = vec![
         // Core audio
         SupportsAirPlayAudio,

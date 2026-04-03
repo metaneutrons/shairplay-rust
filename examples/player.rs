@@ -5,6 +5,7 @@
 //!   cargo run --example player -- --name "My Speaker"
 //!   cargo run --example player -- --bind 192.168.1.100
 //!   cargo run --example player -- --bind 192.168.1.100 --bind fd00::1
+//!   cargo run --example player -- --persist state.json
 //!
 //! Then select "My Speaker" as AirPlay output on your iPhone/Mac.
 
@@ -13,7 +14,71 @@ use std::sync::{Arc, Mutex};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use std::net::IpAddr;
+use std::path::PathBuf;
 use shairplay::{AudioFormat, AudioHandler, AudioSession, BindConfig, RaopServer};
+
+#[cfg(feature = "ap2")]
+use shairplay::PairingStore;
+
+/// Persistent device identity + paired keys, stored as JSON.
+#[derive(serde::Serialize, serde::Deserialize, Default)]
+struct PersistState {
+    mac: Option<[u8; 6]>,
+    #[cfg(feature = "ap2")]
+    #[serde(default)]
+    paired_keys: std::collections::HashMap<String, [u8; 32]>,
+}
+
+impl PersistState {
+    fn load(path: &PathBuf) -> Self {
+        std::fs::read_to_string(path)
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default()
+    }
+
+    fn save(&self, path: &PathBuf) {
+        if let Ok(json) = serde_json::to_string_pretty(self) {
+            let _ = std::fs::write(path, json);
+        }
+    }
+}
+
+#[cfg(feature = "ap2")]
+struct FilePairingStore {
+    path: PathBuf,
+    keys: std::sync::Mutex<std::collections::HashMap<String, [u8; 32]>>,
+}
+
+#[cfg(feature = "ap2")]
+impl FilePairingStore {
+    fn new(path: PathBuf, keys: std::collections::HashMap<String, [u8; 32]>) -> Self {
+        Self { path, keys: std::sync::Mutex::new(keys) }
+    }
+}
+
+#[cfg(feature = "ap2")]
+impl PairingStore for FilePairingStore {
+    fn get(&self, device_id: &str) -> Option<[u8; 32]> {
+        self.keys.lock().ok()?.get(device_id).copied()
+    }
+    fn put(&self, device_id: &str, public_key: [u8; 32]) {
+        if let Ok(mut keys) = self.keys.lock() {
+            keys.insert(device_id.to_string(), public_key);
+            let state = PersistState {
+                mac: None, // MAC saved separately
+                #[cfg(feature = "ap2")]
+                paired_keys: keys.clone(),
+            };
+            state.save(&self.path);
+        }
+    }
+    fn remove(&self, device_id: &str) {
+        if let Ok(mut keys) = self.keys.lock() {
+            keys.remove(device_id);
+        }
+    }
+}
 
 /// Ring buffer shared between the AirPlay audio callback and the cpal output callback.
 struct AudioRing {
@@ -101,6 +166,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .filter(|(_, a)| *a == "--bind")
         .filter_map(|(i, _)| args.get(i + 1)?.parse().ok())
         .collect();
+    let persist_path: Option<PathBuf> = args.iter().position(|a| a == "--persist")
+        .map(|i| PathBuf::from(&args[i + 1]));
 
     // Set up cpal audio output (fallback to /dev/null if no device)
     let host = cpal::default_host();
@@ -148,18 +215,41 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    // Start AirPlay server — key is baked into the library
-    let handler = Arc::new(Handler { ring });
-    let mut builder = RaopServer::builder();
-    builder = builder.name(name)
-        .hwaddr({
+    // Load or generate device identity
+    let mut state = persist_path.as_ref().map(PersistState::load).unwrap_or_default();
+    let mac = match state.mac {
+        Some(mac) => {
+            eprintln!("🔑 Device MAC: {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x} (persistent)",
+                mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+            mac
+        }
+        None => {
             let mut mac = [0u8; 6];
             mac[0] = 0x02;
             rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut mac[1..]);
-            eprintln!("🔑 Device MAC: {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x} (random, no key persistence yet)",
-                mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+            state.mac = Some(mac);
+            if let Some(path) = &persist_path {
+                state.save(path);
+                eprintln!("🔑 Device MAC: {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x} (saved to {})",
+                    mac[0], mac[1], mac[2], mac[3], mac[4], mac[5], path.display());
+            } else {
+                eprintln!("🔑 Device MAC: {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x} (random, use --persist to save)",
+                    mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+            }
             mac
-        });
+        }
+    };
+
+    let handler = Arc::new(Handler { ring });
+    let mut builder = RaopServer::builder();
+    builder = builder.name(name).hwaddr(mac);
+
+    #[cfg(feature = "ap2")]
+    if let Some(path) = &persist_path {
+        let store = Arc::new(FilePairingStore::new(path.clone(), state.paired_keys));
+        builder = builder.pairing_store(store);
+    }
+
     if !bind_addrs.is_empty() {
         eprintln!("🔗 Binding to {:?}", bind_addrs);
         builder = builder.bind(BindConfig::new().addrs(bind_addrs));

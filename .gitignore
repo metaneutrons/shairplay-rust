@@ -3,3 +3,4 @@
 /fuzz/corpus
 /fuzz/artifacts
 Cargo.lock
+.vscode/

@@ -1,6 +1,6 @@
 <div align="center">
 
-# shairplay
+# shairplay-rust
 
 **Pure Rust AirPlay server library**
 
@@ -121,7 +121,7 @@ Full pipeline: SRP-6a pairing → encrypted RTSP → FairPlay → PTP timing →
 
 ### 🧪 Video (Screen Mirroring) — Experimental
 
-Behind the `video` feature gate. The library receives encrypted H.264/H.265 video packets, decrypts them (AES-128-CTR), and delivers raw NAL units to the application. The app is responsible for decoding and rendering. Not yet tested with real devices.
+Behind the `video` feature gate. The library receives encrypted H.264/H.265 video packets, decrypts them (AES-128-CTR), and delivers raw NAL units to the application. The app is responsible for decoding and rendering.
 
 ### 🔬 Remote Control — Research Complete
 
@@ -135,26 +135,26 @@ AP1 DACP remote control is fully implemented and works. See [AP2-REMOTE.md](AP2-
 
 ## Architecture
 
-```
+``` plain
 src/
-├── raop/              RAOP server, RTSP handlers, RTP streaming
+├── raop/                RAOP server, RTSP handlers, RTP streaming
 │   ├── buffered_audio   AP2 timed playout buffer with decrypt/decode/resample
 │   ├── event_channel    AP2 encrypted event channel
 │   ├── video            Video handler traits (experimental)
 │   └── video_stream     Video stream receiver (experimental)
-├── crypto/            RSA, Ed25519+Curve25519, AES, FairPlay
+├── crypto/              RSA, Ed25519+Curve25519, AES, FairPlay
 │   ├── pairing_homekit  AP2 SRP-6a + HomeKit pairing + pair-verify
 │   ├── chacha_transport AP2 ChaCha20-Poly1305 encrypted RTSP
 │   ├── video_cipher     AES-128-CTR streaming cipher for video
 │   └── tlv              AP2 TLV codec for pairing messages
-├── codec/             Audio decoders
+├── codec/               Audio decoders
 │   ├── alac             ALAC decoder (AP1)
 │   ├── aac              AAC decoder via symphonia (AP2)
 │   └── resample         Sample rate conversion + channel mixdown (AP2)
-├── proto/             SDP, HTTP/RTSP, binary plist, HTTP Digest auth
-├── net/               Async TCP server, mDNS, PTP timing, feature flags
-├── dacp/              DACP remote control client (AP1)
-└── error/             Error types
+├── proto/               SDP, HTTP/RTSP, binary plist, HTTP Digest auth
+├── net/                 Async TCP server, mDNS, PTP timing, feature flags
+├── dacp/                DACP remote control client (AP1)
+└── error/               Error types
 ```
 
 ## Test Coverage
