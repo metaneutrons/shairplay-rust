@@ -535,3 +535,166 @@ mod ap2_tests {
             .collect()
     }
 }
+
+
+// --- Channel mixdown tests ---
+
+#[cfg(all(test, feature = "airplay2"))]
+mod mixdown_tests {
+    use shairplay::codec::resample::mixdown;
+
+    #[test]
+    fn stereo_passthrough() {
+        let input = vec![0.5_f32, -0.5, 0.3, -0.3];
+        let out = mixdown(&input, 2, 2);
+        assert_eq!(out, input);
+    }
+
+    #[test]
+    fn surround_51_to_stereo() {
+        // 5.1: FL=1.0 FR=0.0 FC=0.5 LFE=0.0 RL=0.0 RR=0.0
+        let input = vec![1.0, 0.0, 0.5, 0.0, 0.0, 0.0_f32];
+        let out = mixdown(&input, 6, 2);
+        // L = FL + 0.707*FC = 1.0 + 0.3535 = 1.3535 → clamped to 1.0
+        // R = FR + 0.707*FC = 0.0 + 0.3535 = 0.3535
+        assert!((out[0] - 1.0).abs() < 0.01); // clamped
+        assert!((out[1] - 0.3535).abs() < 0.01);
+    }
+
+    #[test]
+    fn surround_71_to_stereo() {
+        // 7.1: FL=0.5 FR=0.5 FC=0.0 LFE=0.0 SL=0.3 SR=0.3 RL=0.2 RR=0.2
+        let input = vec![0.5, 0.5, 0.0, 0.0, 0.3, 0.3, 0.2, 0.2_f32];
+        let out = mixdown(&input, 8, 2);
+        let k: f32 = 0.707;
+        let expected_l = 0.5 + k * 0.3 + k * 0.2;
+        let expected_r = 0.5 + k * 0.3 + k * 0.2;
+        assert!((out[0] - expected_l).abs() < 0.01);
+        assert!((out[1] - expected_r).abs() < 0.01);
+    }
+
+    #[test]
+    fn mixdown_clamps_output() {
+        // All channels at 1.0 — should clamp to [-1.0, 1.0]
+        let input = vec![1.0_f32; 6];
+        let out = mixdown(&input, 6, 2);
+        assert!(out[0] <= 1.0);
+        assert!(out[1] <= 1.0);
+    }
+}
+
+// --- AudioSsrc mapping tests ---
+
+#[cfg(all(test, feature = "airplay2"))]
+mod ssrc_tests {
+    use shairplay::codec::aac::AudioSsrc;
+
+    #[test]
+    fn all_ssrc_values_map_correctly() {
+        let cases = vec![
+            (0x0000FACE, 44100, 2, false),
+            (0x15000000, 48000, 2, false),
+            (0x16000000, 44100, 2, true),
+            (0x17000000, 48000, 2, true),
+            (0x27000000, 48000, 6, true),
+            (0x28000000, 48000, 8, true),
+        ];
+        for (val, sr, ch, is_aac) in cases {
+            let ssrc = AudioSsrc::from_u32(val);
+            assert_ne!(ssrc, AudioSsrc::None, "SSRC 0x{val:08X} should be recognized");
+            assert_eq!(ssrc.sample_rate(), sr, "SSRC 0x{val:08X} sample rate");
+            assert_eq!(ssrc.channels(), ch, "SSRC 0x{val:08X} channels");
+            assert_eq!(ssrc.is_aac(), is_aac, "SSRC 0x{val:08X} is_aac");
+        }
+    }
+
+    #[test]
+    fn unknown_ssrc_returns_none() {
+        assert_eq!(AudioSsrc::from_u32(0x12345678), AudioSsrc::None);
+        assert_eq!(AudioSsrc::from_u32(0), AudioSsrc::None);
+    }
+
+    #[test]
+    fn adts_channel_config() {
+        assert_eq!(AudioSsrc::Aac44100F24Stereo.adts_channel_config(), 2);
+        assert_eq!(AudioSsrc::Aac48000F24Surround51.adts_channel_config(), 6);
+        assert_eq!(AudioSsrc::Aac48000F24Surround71.adts_channel_config(), 7);
+    }
+}
+
+// --- ADTS header for all channel/rate configs ---
+
+#[cfg(all(test, feature = "airplay2"))]
+mod adts_multi_tests {
+    use shairplay::codec::aac::adts_header;
+
+    #[test]
+    fn adts_44100_stereo() {
+        let h = adts_header(100, 44100, 2);
+        assert_eq!(h[0], 0xFF);
+        assert_eq!((h[2] >> 2) & 0x0F, 4); // freq_idx=4 (44100)
+    }
+
+    #[test]
+    fn adts_48000_stereo() {
+        let h = adts_header(100, 48000, 2);
+        assert_eq!((h[2] >> 2) & 0x0F, 3); // freq_idx=3 (48000)
+    }
+
+    #[test]
+    fn adts_48000_surround51() {
+        let h = adts_header(200, 48000, 6);
+        let chan = ((h[2] & 1) << 2) | ((h[3] >> 6) & 3);
+        assert_eq!(chan, 6);
+    }
+
+    #[test]
+    fn adts_48000_surround71() {
+        let h = adts_header(200, 48000, 7); // 7 = ADTS config for 7.1
+        let chan = ((h[2] & 1) << 2) | ((h[3] >> 6) & 3);
+        assert_eq!(chan, 7);
+    }
+}
+
+// --- NetworkTimeFrac edge cases ---
+
+#[cfg(all(test, feature = "airplay2"))]
+mod frac_edge_tests {
+    #[test]
+    fn frac_zero() {
+        let frac: u64 = 0;
+        let ns = ((frac >> 32) * 1_000_000_000) >> 32;
+        assert_eq!(ns, 0);
+    }
+
+    #[test]
+    fn frac_max() {
+        let frac: u64 = 0xFFFF_FFFF_FFFF_FFFF;
+        let ns = ((frac >> 32) * 1_000_000_000) >> 32;
+        // Should be ~999999999 (just under 1 second)
+        assert!(ns >= 999_999_000 && ns <= 1_000_000_000, "got {ns}");
+    }
+
+    #[test]
+    fn frac_one_ms() {
+        // 1ms = 0.001s → frac ≈ 0x00418937_00000000
+        let frac: u64 = 0x0041_8937_0000_0000;
+        let ns = ((frac >> 32) * 1_000_000_000) >> 32;
+        assert!((ns as i64 - 1_000_000).abs() < 100_000, "got {ns}"); // ~1ms ± 0.1ms
+    }
+}
+
+// --- Playout buffer logic ---
+
+#[cfg(all(test, feature = "airplay2"))]
+mod playout_tests {
+    use shairplay::raop::buffered_audio::PlayoutCommand;
+
+    #[test]
+    fn playout_command_variants() {
+        // Just verify the enum is constructible (compile-time check)
+        let _ = PlayoutCommand::SetRate { anchor_rtp: 0, anchor_time_ns: 0, rate: 1 };
+        let _ = PlayoutCommand::Flush { from_seq: 0, until_seq: 100 };
+        let _ = PlayoutCommand::Stop;
+    }
+}
