@@ -377,6 +377,16 @@ impl AlacDecoder {
         output_size
     }
 
+    /// Decode an ALAC frame and return F32LE interleaved samples.
+    pub fn decode_frame_f32(&mut self, input: &[u8]) -> Option<Vec<f32>> {
+        let mut s16_buf = vec![0u8; 16384];
+        let len = self.decode_frame(input, &mut s16_buf);
+        if len == 0 { return None; }
+        Some(s16_buf[..len].chunks_exact(2)
+            .map(|c| i16::from_le_bytes([c[0], c[1]]) as f32 / 32768.0)
+            .collect())
+    }
+
     fn decode_mono(&mut self, reader: &mut BitReader, output: &mut [u8], output_samples: &mut usize, output_size: &mut usize) {
         reader.readbits(4);
         reader.readbits(12);

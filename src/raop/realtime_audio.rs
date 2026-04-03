@@ -88,19 +88,9 @@ pub async fn run(
         };
 
         // Decode ALAC → f32 PCM
-        let pcm = if let Some(ref mut dec) = decoder {
-            let mut output = vec![0u8; 16384];
-            let len = dec.decode_frame(&plaintext, &mut output);
-            if len > 0 { Some(output[..len].to_vec()) } else { None }
-        } else {
-            None
+        let Some(mut samples) = decoder.as_mut().and_then(|d| d.decode_frame_f32(&plaintext)) else {
+            continue;
         };
-        let Some(pcm_data) = pcm else { continue; };
-
-        // ALAC outputs 16-bit PCM — convert to f32
-        let mut samples: Vec<f32> = pcm_data.chunks_exact(2)
-            .map(|c| i16::from_le_bytes([c[0], c[1]]) as f32 / 32768.0)
-            .collect();
 
         // Mixdown if needed
         if src_ch > out_ch {

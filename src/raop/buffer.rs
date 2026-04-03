@@ -82,9 +82,10 @@ impl RaopBuffer {
         aes_iv: &[u8; RAOP_AESIV_LEN],
     ) -> Self {
         let config = parse_fmtp(fmtp).expect("invalid fmtp");
-        let audio_buffer_size = config.frame_length as usize
+        let s16_buffer_size = config.frame_length as usize
             * config.num_channels as usize
             * config.bit_depth as usize / 8;
+        let audio_buffer_size = s16_buffer_size * 2; // F32 = 2x S16
 
         let mut alac = AlacDecoder::new(config.bit_depth as i32, config.num_channels as i32);
         let decoder_info = build_decoder_info(&config);
@@ -160,9 +161,21 @@ impl RaopBuffer {
         }
         packet_buf[encrypted_len..].copy_from_slice(&payload[encrypted_len..]);
 
-        // ALAC decode
+        // ALAC decode → F32LE
         let output_size = self.alac.decode_frame(&packet_buf, &mut self.entries[idx].audio_buffer);
-        self.entries[idx].audio_buffer_len = output_size;
+        // Convert S16LE → F32LE in-place (output grows 2x)
+        let num_samples = output_size / 2;
+        let mut f32_buf = Vec::with_capacity(num_samples * 4);
+        for i in 0..num_samples {
+            let s = i16::from_le_bytes([
+                self.entries[idx].audio_buffer[i * 2],
+                self.entries[idx].audio_buffer[i * 2 + 1],
+            ]);
+            f32_buf.extend_from_slice(&(s as f32 / 32768.0).to_le_bytes());
+        }
+        let len = f32_buf.len();
+        self.entries[idx].audio_buffer[..len].copy_from_slice(&f32_buf);
+        self.entries[idx].audio_buffer_len = len;
 
         if self.is_empty {
             self.first_seqnum = seqnum;

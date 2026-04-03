@@ -53,7 +53,7 @@ impl AudioHandler for MyHandler {
 struct MySession;
 impl AudioSession for MySession {
     fn audio_process(&mut self, buffer: &[u8]) {
-        // 16-bit PCM samples (little-endian, interleaved stereo)
+        // F32LE interleaved PCM — same format for AP1 and AP2
     }
 }
 
@@ -72,10 +72,8 @@ async fn main() -> Result<(), shairplay::ShairplayError> {
 ### AirPlay 2
 
 ```rust
-use shairplay::{AudioCodec, AudioFormat};
-
-// AP2: always AudioCodec::Pcm, 32-bit F32LE interleaved
-// The library decodes AAC, resamples, and mixes down internally
+// AP2 adds resampling and multichannel mixdown.
+// Output is always F32LE interleaved PCM — same as AP1.
 let mut server = RaopServer::builder()
     .name("My Speaker")
     .output_sample_rate(48000)
