@@ -667,7 +667,11 @@ pub(crate) fn handle_setup_2(
             let mut update_info = plist::Dictionary::new();
             update_info.insert("type".into(), plist::Value::String("updateInfo".into()));
             let mut value = plist::Dictionary::new();
-            value.insert("statusFlags".into(), plist::Value::Integer(0_i64.into()));
+            value.insert("statusFlags".into(), plist::Value::Integer((crate::net::mdns::AP2_STATUS_FLAGS as i64).into()));
+            value.insert("features".into(), plist::Value::Integer((crate::net::mdns::AP2_FEATURES as i64).into()));
+            value.insert("model".into(), plist::Value::String(crate::net::mdns::GLOBAL_MODEL.into()));
+            value.insert("sourceVersion".into(), plist::Value::String(crate::net::mdns::AP2_SRCVERS.into()));
+            value.insert("protocolVersion".into(), plist::Value::String(crate::net::mdns::AP2_PROTOVERS.into()));
             update_info.insert("value".into(), plist::Value::Dictionary(value));
             let mut body = Vec::new();
             if plist::to_writer_binary(&mut body, &update_info).is_ok() {
