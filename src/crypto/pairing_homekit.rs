@@ -341,4 +341,43 @@ mod tests {
         // Shared secret should match
         assert_eq!(server.shared_secret().unwrap(), &session_key[..]);
     }
+
+    /// C-verified: HKDF-SHA512 with known IKM (0x00..0x3f), salt, info.
+    /// Generated from OpenSSL EVP_PKEY_HKDF.
+    #[test]
+    fn c_vector_hkdf_sha512() {
+        use hkdf::Hkdf;
+        use sha2::Sha512;
+
+        let ikm: Vec<u8> = (0u8..64).collect();
+
+        // Pair-Setup-Encrypt-Salt / Pair-Setup-Encrypt-Info
+        let hk = Hkdf::<Sha512>::new(Some(b"Pair-Setup-Encrypt-Salt"), &ikm);
+        let mut okm = [0u8; 32];
+        hk.expand(b"Pair-Setup-Encrypt-Info", &mut okm).unwrap();
+        assert_eq!(
+            hex_encode(&okm),
+            "b6335536162d6629e4c0bade85f1b712c85a364bab0dedb25014cfb814489273"
+        );
+
+        // Control-Salt / Control-Write-Encryption-Key
+        let hk = Hkdf::<Sha512>::new(Some(b"Control-Salt"), &ikm);
+        hk.expand(b"Control-Write-Encryption-Key", &mut okm).unwrap();
+        assert_eq!(
+            hex_encode(&okm),
+            "5a6cb19bcbe7d4df2dd8279f39562f7fae2dbf73eb5a4f98849c245c82b2fe96"
+        );
+
+        // Control-Salt / Control-Read-Encryption-Key
+        let hk = Hkdf::<Sha512>::new(Some(b"Control-Salt"), &ikm);
+        hk.expand(b"Control-Read-Encryption-Key", &mut okm).unwrap();
+        assert_eq!(
+            hex_encode(&okm),
+            "c2f56f1912e2fc1f6604fd5bccab619272f687345aa4bce1c3c857421bd3b821"
+        );
+    }
+
+    fn hex_encode(data: &[u8]) -> String {
+        data.iter().map(|b| format!("{:02x}", b)).collect()
+    }
 }
