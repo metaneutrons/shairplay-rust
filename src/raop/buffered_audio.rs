@@ -95,8 +95,7 @@ impl BufferedAudioProcessor {
                         let was_paused = s.rate == 0;
                         s.rate = rate;
                         if rate == 0 {
-                            s.buffer.clear();
-                            info!("Playout paused, buffer cleared");
+                            info!("Playout paused");
                         } else {
                             // Use local wall clock as anchor reference
                             // (PTP anchor_time_ns is in master clock domain which we
