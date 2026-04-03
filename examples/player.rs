@@ -4,6 +4,7 @@
 //!   cargo run --example player
 //!   cargo run --example player -- --name "My Speaker"
 //!   cargo run --example player -- --bind 192.168.1.100
+//!   cargo run --example player -- --bind 192.168.1.100 --bind fd00::1
 //!
 //! Then select "My Speaker" as AirPlay output on your iPhone/Mac.
 
@@ -11,6 +12,7 @@ use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use std::net::IpAddr;
 use shairplay::{AudioFormat, AudioHandler, AudioSession, BindConfig, RaopServer};
 
 /// Ring buffer shared between the AirPlay audio callback and the cpal output callback.
@@ -95,8 +97,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let name = args.iter().position(|a| a == "--name")
         .map(|i| args[i + 1].as_str())
         .unwrap_or("Shairplay Rust");
-    let bind_addr = args.iter().position(|a| a == "--bind")
-        .map(|i| args[i + 1].clone());
+    let bind_addrs: Vec<IpAddr> = args.iter().enumerate()
+        .filter(|(_, a)| *a == "--bind")
+        .filter_map(|(i, _)| args.get(i + 1)?.parse().ok())
+        .collect();
 
     // Set up cpal audio output (fallback to /dev/null if no device)
     let host = cpal::default_host();
@@ -156,9 +160,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
             mac
         });
-    if let Some(addr) = &bind_addr {
-        eprintln!("🔗 Binding to {addr}");
-        builder = builder.bind(BindConfig { addr: Some(addr.parse()?), ..Default::default() });
+    if !bind_addrs.is_empty() {
+        eprintln!("🔗 Binding to {:?}", bind_addrs);
+        builder = builder.bind(BindConfig::new().addrs(bind_addrs));
     }
     let mut server = builder.build(handler)?;
 

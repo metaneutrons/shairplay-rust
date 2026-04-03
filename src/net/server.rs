@@ -9,22 +9,60 @@ use crate::error::NetworkError;
 use crate::proto::http::{HttpRequest, HttpResponse};
 
 /// Controls how the server binds to network addresses.
+///
+/// # Examples
+/// ```
+/// use shairplay::BindConfig;
+/// use std::net::IpAddr;
+///
+/// // Bind to all interfaces (default)
+/// let config = BindConfig::default();
+///
+/// // Bind to a specific IPv4 address
+/// let config = BindConfig::new().addrs(["192.168.1.100".parse().unwrap()]);
+///
+/// // Bind to specific IPv4 + IPv6
+/// let config = BindConfig::new()
+///     .addrs(["192.168.1.100".parse().unwrap(), "fd00::1".parse().unwrap()]);
+///
+/// // Bind to a specific port
+/// let config = BindConfig::new().port(7000);
+/// ```
 #[derive(Debug, Clone)]
 pub struct BindConfig {
-    /// IP address to bind to. `None` = bind to all interfaces (0.0.0.0 / [::]).
-    pub addr: Option<IpAddr>,
+    /// IP addresses to bind to. Empty = bind to all interfaces (0.0.0.0 + [::]).
+    pub bind_addrs: Vec<IpAddr>,
     /// Port number. Used as starting port for auto-sensing, or exact port if `auto_port` is false.
     pub port: u16,
     /// If true (default), try incrementing ports if the requested port is busy.
-    /// If false, fail immediately if the exact port is unavailable.
     pub auto_port: bool,
-    /// Enable IPv6 listener (in addition to IPv4). Ignored if `addr` is set to a specific IP.
-    pub ipv6: bool,
 }
 
 impl Default for BindConfig {
     fn default() -> Self {
-        Self { addr: None, port: 5000, auto_port: true, ipv6: true }
+        Self { bind_addrs: Vec::new(), port: 5000, auto_port: true }
+    }
+}
+
+impl BindConfig {
+    pub fn new() -> Self { Self::default() }
+
+    /// Set specific addresses to bind to. Replaces any previous addresses.
+    pub fn addrs(mut self, addrs: impl IntoIterator<Item = IpAddr>) -> Self {
+        self.bind_addrs = addrs.into_iter().collect();
+        self
+    }
+
+    /// Set the port number.
+    pub fn port(mut self, port: u16) -> Self {
+        self.port = port;
+        self
+    }
+
+    /// Disable port auto-sensing (fail if exact port is unavailable).
+    pub fn exact_port(mut self) -> Self {
+        self.auto_port = false;
+        self
     }
 }
 
@@ -87,58 +125,44 @@ impl HttpServer {
         }
 
         let bind_port = if port > 0 { port } else { self.bind_config.port };
-        let bind_ip = self.bind_config.addr;
         let auto_port = self.bind_config.auto_port;
-        let enable_ipv6 = self.bind_config.ipv6;
 
         // Determine bind addresses
-        let is_specific_ip = bind_ip.is_some();
-        let ipv4_addr = bind_ip.unwrap_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED));
-        let is_ipv6_addr = matches!(ipv4_addr, IpAddr::V6(_));
-
-        // Try binding, with optional port auto-sensing
-        let listener4 = if !is_ipv6_addr {
-            Some(bind_listener(ipv4_addr, bind_port, auto_port).await?)
+        let addrs: Vec<IpAddr> = if self.bind_config.bind_addrs.is_empty() {
+            // Default: all IPv4 + all IPv6
+            vec![IpAddr::V4(Ipv4Addr::UNSPECIFIED), IpAddr::V6(Ipv6Addr::UNSPECIFIED)]
         } else {
-            None
+            self.bind_config.bind_addrs.clone()
         };
 
-        let actual_port = if let Some(ref l) = listener4 {
-            l.local_addr()?.port()
-        } else {
-            bind_port
-        };
+        // Bind first listener (with optional port auto-sensing)
+        let first = bind_listener(addrs[0], bind_port, auto_port).await?;
+        let actual_port = first.local_addr()?.port();
 
-        // IPv6 listener: only if enabled and not binding to a specific IPv4 address
-        let listener6 = if enable_ipv6 && !is_specific_ip && !is_ipv6_addr {
-            bind_listener(IpAddr::V6(Ipv6Addr::UNSPECIFIED), actual_port, false).await.ok()
-        } else if is_ipv6_addr {
-            Some(bind_listener(ipv4_addr, bind_port, auto_port).await?)
-        } else {
-            None
-        };
-
-        let final_port = listener4.as_ref()
-            .or(listener6.as_ref())
-            .map(|l| l.local_addr().unwrap().port())
-            .unwrap_or(bind_port);
+        // Bind remaining listeners on the same port (no auto-sensing)
+        let mut listeners = vec![first];
+        for &addr in &addrs[1..] {
+            match bind_listener(addr, actual_port, false).await {
+                Ok(l) => listeners.push(l),
+                Err(e) => tracing::warn!(%addr, "Failed to bind additional listener: {e}"),
+            }
+        }
 
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
         self.shutdown_tx = Some(shutdown_tx);
-        self.port = final_port;
+        self.port = actual_port;
         self.running = true;
 
         let callbacks = self.callbacks.clone();
         let semaphore = Arc::new(Semaphore::new(self.max_connections));
 
-        if let Some(l4) = listener4 {
-            spawn_accept_loop(l4, callbacks.clone(), semaphore.clone(), shutdown_rx.clone());
-        }
-        if let Some(l6) = listener6 {
-            spawn_accept_loop(l6, callbacks, semaphore, shutdown_rx);
+        for listener in listeners {
+            let addr = listener.local_addr().unwrap();
+            tracing::debug!(%addr, "Listener bound");
+            spawn_accept_loop(listener, callbacks.clone(), semaphore.clone(), shutdown_rx.clone());
         }
 
-        Ok(final_port)
+        Ok(actual_port)
     }
 
     pub fn is_running(&self) -> bool {
