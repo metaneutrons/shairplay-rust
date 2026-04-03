@@ -23,9 +23,20 @@ pub const MAX_HWADDR_LEN: usize = 6;
 pub const MAX_PASSWORD_LEN: usize = 64;
 pub const MAX_NONCE_LEN: usize = 32;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Audio codec type.
+pub enum AudioCodec {
+    /// Decoded PCM (S16LE interleaved stereo). Used by AirPlay 1 (ALAC decoded in library).
+    Pcm,
+    /// ADTS-wrapped AAC. Used by AirPlay 2 buffered audio. App must decode.
+    #[cfg(feature = "airplay2")]
+    AacAdts,
+}
+
 #[derive(Debug, Clone, Copy)]
 /// Audio format descriptor passed to [`AudioHandler::audio_init`].
 pub struct AudioFormat {
+    pub codec: AudioCodec,
     pub bits: u8,
     pub channels: u8,
     pub sample_rate: u32,

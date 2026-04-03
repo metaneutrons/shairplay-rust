@@ -6,7 +6,7 @@ use tokio::sync::{Mutex, watch};
 
 use crate::error::{NetworkError, ShairplayError};
 use crate::raop::buffer::{RaopBuffer, RAOP_PACKET_LEN};
-use crate::raop::{AudioHandler, AudioFormat};
+use crate::raop::{AudioHandler, AudioFormat, AudioCodec};
 
 const NO_FLUSH: i32 = -42;
 
@@ -112,7 +112,7 @@ impl RaopRtp {
                 let buf = self.buffer.lock().await;
                 buf.config().clone()
             };
-            let mut session = self.handler.audio_init(AudioFormat {
+            let mut session = self.handler.audio_init(AudioFormat { codec: AudioCodec::Pcm,
                 bits: config.bit_depth, channels: config.num_channels,
                 sample_rate: config.sample_rate,
             });
@@ -183,7 +183,7 @@ impl RaopRtp {
                 let buf = self.buffer.lock().await;
                 buf.config().clone()
             };
-            let mut session = self.handler.audio_init(AudioFormat {
+            let mut session = self.handler.audio_init(AudioFormat { codec: AudioCodec::Pcm,
                 bits: config.bit_depth, channels: config.num_channels,
                 sample_rate: config.sample_rate,
             });

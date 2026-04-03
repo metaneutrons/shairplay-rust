@@ -491,7 +491,7 @@ pub(crate) fn handle_setup_2(
 
                 let cmd_tx = tokio::task::block_in_place(|| {
                     tokio::runtime::Handle::current().block_on(async {
-                        let format = crate::raop::AudioFormat { channels: 2, bits: 16, sample_rate: 44100 };
+                        let format = crate::raop::AudioFormat { codec: crate::raop::AudioCodec::AacAdts, channels: 2, bits: 16, sample_rate: 44100 };
                         let proc = crate::raop::buffered_audio::BufferedAudioProcessor { listener, port: audio_port };
                         let session = handler.audio_init(format);
                         let session = std::sync::Mutex::new(session);

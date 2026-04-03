@@ -10,7 +10,7 @@ use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use shairplay::{AudioFormat, AudioHandler, AudioSession, RaopServer};
+use shairplay::{AudioCodec, AudioFormat, AudioHandler, AudioSession, RaopServer};
 
 /// Ring buffer shared between the AirPlay audio callback and the cpal output callback.
 struct AudioRing {
@@ -41,24 +41,23 @@ struct Handler {
 
 impl AudioHandler for Handler {
     fn audio_init(&self, format: AudioFormat) -> Box<dyn AudioSession> {
-        eprintln!("🎵 New stream: {}ch {}bit {}Hz", format.channels, format.bits, format.sample_rate);
-        Box::new(Session { ring: self.ring.clone(), aac_decoder: None })
+        eprintln!("🎵 New stream: {}ch {}bit {}Hz codec={:?}", format.channels, format.bits, format.sample_rate, format.codec);
+        Box::new(Session { ring: self.ring.clone(), aac_decoder: None, codec: format.codec })
     }
 }
 
 struct Session {
     ring: Arc<Mutex<AudioRing>>,
     aac_decoder: Option<Box<dyn symphonia::core::codecs::Decoder>>,
+    codec: AudioCodec,
 }
 
 impl AudioSession for Session {
     fn audio_process(&mut self, buffer: &[u8]) {
-        // Detect ADTS: sync word 0xFFF
-        if buffer.len() > 7 && buffer[0] == 0xFF && (buffer[1] & 0xF0) == 0xF0 {
-            self.decode_aac(buffer);
-        } else {
-            // Raw PCM (AirPlay 1 / ALAC)
-            self.ring.lock().unwrap().push_samples(buffer);
+        match self.codec {
+            AudioCodec::Pcm => self.ring.lock().unwrap().push_samples(buffer),
+            #[cfg(feature = "airplay2")]
+            AudioCodec::AacAdts => self.decode_aac(buffer),
         }
     }
 

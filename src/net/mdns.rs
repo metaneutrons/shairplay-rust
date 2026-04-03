@@ -191,7 +191,7 @@ mod tests {
 
         // AP2 _raop._tcp must have these fields (matching shairport-sync)
         assert_eq!(find("vn"), Some("65537")); // AP2 version, not "3"
-        assert_eq!(find("tp"), Some("UDP"));   // AP2 uses UDP only, not "TCP,UDP"
+        assert_eq!(find("tp"), Some("TCP,UDP")); // TCP for AP1 fallback, UDP for AP2
         assert!(find("ft").unwrap().contains(","));  // features has hi,lo
         assert!(find("pk").is_some());         // Ed25519 public key
         assert!(find("sf").is_some());         // status flags
