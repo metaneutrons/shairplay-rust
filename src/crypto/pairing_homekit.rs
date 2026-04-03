@@ -1,1 +1,344 @@
 //! HomeKit pairing (SRP-6a, HKDF-SHA512, Ed25519, ChaCha20-Poly1305).
+//!
+//! Implements PAIR_SERVER_HOMEKIT for AirPlay 2 pair-setup and pair-verify.
+
+use num_bigint::BigUint;
+use sha2::{Sha512, Digest};
+
+use crate::crypto::tlv::{TlvValues, TlvType, TlvError};
+use crate::error::CryptoError;
+
+const USERNAME: &str = "Pair-Setup";
+const TRANSIENT_PIN: &str = "3939";
+
+// RFC 5054 3072-bit group
+const N_3072_HEX: &str = "\
+FFFFFFFFFFFFFFFFC90FDAA22168C234C4C6628B80DC1CD129024E088A67CC74020BBEA63B\
+139B22514A08798E3404DDEF9519B3CD3A431B302B0A6DF25F14374FE1356D6D51C245E485\
+B576625E7EC6F44C42E9A637ED6B0BFF5CB6F406B7EDEE386BFB5A899FA5AE9F24117C4B1F\
+E649286651ECE45B3DC2007CB8A163BF0598DA48361C55D39A69163FA8FD24CF5F83655D23\
+DCA3AD961C62F356208552BB9ED529077096966D670C354E4ABC9804F1746C08CA18217C32\
+905E462E36CE3BE39E772C180E86039B2783A2EC07A28FB5C55DF06F4C52C9DE2BCBF69558\
+17183995497CEA956AE515D2261898FA051015728E5A8AAAC42DAD33170D04507A33A85521\
+ABDF1CBA64ECFB850458DBEF0A8AEA71575D060C7DB3970F85A6E1E4C7ABF5AE8CDB0933D7\
+1E8C94E04A25619DCEE3D2261AD2EE6BF12FFA06D98A0864D87602733EC86A64521F2B1817\
+7B200CBBE117577A615D6C770988C0BAD946E208E24FA074E5AB3143DB5BFCE0FD108E4B82\
+D120A93AD2CAFFFFFFFFFFFFFFFF";
+const G_3072: u32 = 5;
+const N_3072_LEN: usize = 384; // bytes
+
+/// SRP-6a server state for HomeKit pairing.
+pub struct SrpServer {
+    n: BigUint,
+    g: BigUint,
+    salt: Vec<u8>,
+    v: BigUint,
+    b: BigUint,
+    big_b: BigUint,
+    session_key: Vec<u8>,
+    m2: Vec<u8>,
+    is_transient: bool,
+    verified: bool,
+}
+
+impl SrpServer {
+    /// Create a new SRP server for the given PIN.
+    pub fn new(pin: Option<&str>) -> Result<Self, CryptoError> {
+        let pin = pin.unwrap_or(TRANSIENT_PIN);
+        let n = BigUint::parse_bytes(N_3072_HEX.as_bytes(), 16)
+            .ok_or_else(|| CryptoError::PairingHandshake("Failed to parse N".into()))?;
+        let g = BigUint::from(G_3072);
+
+        // Generate random salt (16 bytes)
+        let mut salt_bytes = [0u8; 16];
+        rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut salt_bytes);
+        let salt = BigUint::from_bytes_be(&salt_bytes);
+
+        // x = H(salt || H("Pair-Setup:pin"))
+        let x = calculate_x(&salt, USERNAME, pin.as_bytes());
+
+        // v = g^x mod N
+        let v = g.modpow(&x, &n);
+
+        // k = H(pad(N) || pad(g))
+        let k = h_nn_pad(&n, &g, N_3072_LEN);
+
+        // b = random 256-bit
+        let mut b_bytes = [0u8; 32];
+        rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut b_bytes);
+        let b = BigUint::from_bytes_be(&b_bytes);
+
+        // B = (k*v + g^b) mod N
+        let kv = (&k * &v) % &n;
+        let gb = g.modpow(&b, &n);
+        let big_b = (kv + gb) % &n;
+
+        Ok(Self {
+            n, g, salt: salt_bytes.to_vec(), v, b, big_b,
+            session_key: Vec::new(), m2: Vec::new(),
+            is_transient: false, verified: false,
+        })
+    }
+
+    /// Process M1 from client. Returns (salt, B) for M2 response.
+    pub fn process_m1(&mut self, data: &[u8]) -> Result<(), CryptoError> {
+        let tlv = TlvValues::decode(data).map_err(|e| CryptoError::PairingHandshake(e.to_string()))?;
+
+        let method = tlv.get_type(TlvType::Method)
+            .ok_or_else(|| CryptoError::PairingHandshake("Missing Method".into()))?;
+        if method != [0] {
+            return Err(CryptoError::PairingHandshake("Unexpected pairing method".into()));
+        }
+
+        self.is_transient = tlv.get_type(TlvType::Flags)
+            .map(|f| f.len() == 1 && f[0] == 0x10)
+            .unwrap_or(false);
+
+        Ok(())
+    }
+
+    /// Build M2 response: State=2, Salt, PublicKey(B).
+    pub fn build_m2(&self) -> Vec<u8> {
+        let mut tlv = TlvValues::new();
+        tlv.add(TlvType::State as u8, &[2]);
+        tlv.add(TlvType::Salt as u8, &self.salt);
+        let b_bytes = to_bytes_be_padded(&self.big_b, N_3072_LEN);
+        tlv.add(TlvType::PublicKey as u8, &b_bytes);
+        tlv.encode()
+    }
+
+    /// Process M3 from client (PublicKey=A, Proof=M1). Returns true if auth succeeded.
+    pub fn process_m3(&mut self, data: &[u8]) -> Result<bool, CryptoError> {
+        let tlv = TlvValues::decode(data).map_err(|e| CryptoError::PairingHandshake(e.to_string()))?;
+
+        let pk_bytes = tlv.get_type(TlvType::PublicKey)
+            .ok_or_else(|| CryptoError::PairingHandshake("Missing PublicKey".into()))?;
+        let proof = tlv.get_type(TlvType::Proof)
+            .ok_or_else(|| CryptoError::PairingHandshake("Missing Proof".into()))?;
+        if proof.len() != 64 {
+            return Err(CryptoError::PairingHandshake("Invalid proof length".into()));
+        }
+
+        let big_a = BigUint::from_bytes_be(pk_bytes);
+
+        // Safety check: A mod N != 0
+        if (&big_a % &self.n) == BigUint::ZERO {
+            return Err(CryptoError::PairingHandshake("A mod N is zero".into()));
+        }
+
+        // u = H(pad(A) || pad(B))
+        let u = h_nn_pad(&big_a, &self.big_b, N_3072_LEN);
+
+        // S = (A * v^u)^b mod N
+        let vu = self.v.modpow(&u, &self.n);
+        let avu = (&big_a * &vu) % &self.n;
+        let big_s = avu.modpow(&self.b, &self.n);
+
+        // session_key = H(S)
+        let s_bytes = to_bytes_be(&big_s);
+        self.session_key = sha512(&s_bytes).to_vec();
+
+        // Calculate expected M1
+        let salt_bn = BigUint::from_bytes_be(&self.salt);
+        let expected_m = calculate_m(
+            &self.n, &self.g, USERNAME, &salt_bn,
+            &big_a, &self.big_b, &self.session_key,
+        );
+
+        if proof != expected_m.as_slice() {
+            self.verified = false;
+            return Ok(false);
+        }
+
+        // Calculate M2 = H(A || M || session_key)
+        self.m2 = calculate_h_amk(&big_a, &expected_m, &self.session_key).to_vec();
+        self.verified = true;
+        Ok(true)
+    }
+
+    /// Build M4 response: State=4, Proof(M2).
+    /// For transient pairing, this completes the handshake.
+    pub fn build_m4(&self) -> Result<Vec<u8>, CryptoError> {
+        if !self.verified {
+            // Return auth error TLV
+            let mut tlv = TlvValues::new();
+            tlv.add(TlvType::State as u8, &[4]);
+            tlv.add(TlvType::Error as u8, &[2]); // TLVError_Authentication
+            return Ok(tlv.encode());
+        }
+
+        let mut tlv = TlvValues::new();
+        tlv.add(TlvType::State as u8, &[4]);
+        tlv.add(TlvType::Proof as u8, &self.m2);
+        Ok(tlv.encode())
+    }
+
+    /// Returns the shared secret (SRP session key) after successful transient pairing.
+    pub fn shared_secret(&self) -> Option<&[u8]> {
+        if self.verified && self.is_transient {
+            Some(&self.session_key)
+        } else {
+            None
+        }
+    }
+
+    pub fn is_transient(&self) -> bool { self.is_transient }
+    pub fn is_verified(&self) -> bool { self.verified }
+    pub fn session_key(&self) -> &[u8] { &self.session_key }
+}
+
+// --- SRP helper functions ---
+
+fn sha512(data: &[u8]) -> [u8; 64] {
+    let mut hasher = Sha512::new();
+    hasher.update(data);
+    hasher.finalize().into()
+}
+
+fn to_bytes_be(n: &BigUint) -> Vec<u8> {
+    let b = n.to_bytes_be();
+    if b.is_empty() { vec![0] } else { b }
+}
+
+fn to_bytes_be_padded(n: &BigUint, len: usize) -> Vec<u8> {
+    let b = n.to_bytes_be();
+    if b.len() >= len {
+        b
+    } else {
+        let mut padded = vec![0u8; len - b.len()];
+        padded.extend_from_slice(&b);
+        padded
+    }
+}
+
+/// H(pad(n1, padded_len) || pad(n2, padded_len)) → BigUint
+fn h_nn_pad(n1: &BigUint, n2: &BigUint, padded_len: usize) -> BigUint {
+    let mut buf = Vec::with_capacity(2 * padded_len);
+    buf.extend_from_slice(&to_bytes_be_padded(n1, padded_len));
+    buf.extend_from_slice(&to_bytes_be_padded(n2, padded_len));
+    BigUint::from_bytes_be(&sha512(&buf))
+}
+
+/// x = H(salt_bytes || H("username:password"))
+fn calculate_x(salt: &BigUint, username: &str, password: &[u8]) -> BigUint {
+    // Inner hash: H(username:password)
+    let mut hasher = Sha512::new();
+    hasher.update(username.as_bytes());
+    hasher.update(b":");
+    hasher.update(password);
+    let ucp_hash = hasher.finalize();
+
+    // H_ns: H(salt_bytes || ucp_hash)
+    let salt_bytes = to_bytes_be(salt);
+    let mut buf = Vec::with_capacity(salt_bytes.len() + 64);
+    buf.extend_from_slice(&salt_bytes);
+    buf.extend_from_slice(&ucp_hash);
+    BigUint::from_bytes_be(&sha512(&buf))
+}
+
+/// M = H(H(N) XOR H(g) || H(username) || salt || A || B || K)
+fn calculate_m(
+    n: &BigUint, g: &BigUint, username: &str, salt: &BigUint,
+    big_a: &BigUint, big_b: &BigUint, session_key: &[u8],
+) -> [u8; 64] {
+    let h_n = sha512(&to_bytes_be(n));
+    let h_g = sha512(&to_bytes_be(g));
+    let mut h_xor = [0u8; 64];
+    for i in 0..64 { h_xor[i] = h_n[i] ^ h_g[i]; }
+    let h_i = sha512(username.as_bytes());
+
+    let mut hasher = Sha512::new();
+    hasher.update(&h_xor);
+    hasher.update(&h_i);
+    hasher.update(&to_bytes_be(salt));
+    hasher.update(&to_bytes_be(big_a));
+    hasher.update(&to_bytes_be(big_b));
+    hasher.update(session_key);
+    hasher.finalize().into()
+}
+
+/// H_AMK = H(A || M || K)
+fn calculate_h_amk(big_a: &BigUint, m: &[u8], session_key: &[u8]) -> [u8; 64] {
+    let mut hasher = Sha512::new();
+    hasher.update(&to_bytes_be(big_a));
+    hasher.update(m);
+    hasher.update(session_key);
+    hasher.finalize().into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn transient_pairing_self_test() {
+        // Simulate a transient pair-setup between our server and a mock client
+        let mut server = SrpServer::new(Some("3939")).unwrap();
+
+        // Client sends M1
+        let mut m1 = TlvValues::new();
+        m1.add(TlvType::State as u8, &[1]);
+        m1.add(TlvType::Method as u8, &[0]);
+        m1.add(TlvType::Flags as u8, &[0x10]); // transient
+        server.process_m1(&m1.encode()).unwrap();
+        assert!(server.is_transient());
+
+        // Server builds M2 (salt + B)
+        let m2_data = server.build_m2();
+        let m2 = TlvValues::decode(&m2_data).unwrap();
+        assert_eq!(m2.get_type(TlvType::State), Some(&[2u8][..]));
+        let salt = m2.get_type(TlvType::Salt).unwrap();
+        let pk_b = m2.get_type(TlvType::PublicKey).unwrap();
+        assert_eq!(salt.len(), 16);
+        assert!(pk_b.len() <= N_3072_LEN);
+
+        // Mock client: compute A, M1 proof using same SRP math
+        let n = BigUint::parse_bytes(N_3072_HEX.as_bytes(), 16).unwrap();
+        let g = BigUint::from(G_3072);
+
+        let mut a_bytes = [0u8; 32];
+        rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut a_bytes);
+        let a = BigUint::from_bytes_be(&a_bytes);
+        let big_a = g.modpow(&a, &n);
+
+        let salt_bn = BigUint::from_bytes_be(salt);
+        let big_b = BigUint::from_bytes_be(pk_b);
+
+        let k = h_nn_pad(&n, &g, N_3072_LEN);
+        let u = h_nn_pad(&big_a, &big_b, N_3072_LEN);
+        let x = calculate_x(&salt_bn, USERNAME, b"3939");
+
+        // S = (B - k*g^x)^(a + u*x) mod N
+        let gx = g.modpow(&x, &n);
+        let kgx = (&k * &gx) % &n;
+        // Handle potential underflow: (B + N - kgx) mod N
+        let base = (&big_b + &n - &kgx) % &n;
+        
+        let big_s = base.modpow(&(&a + &u * &x), &n);
+
+        let session_key = sha512(&to_bytes_be(&big_s));
+        let client_m = calculate_m(&n, &g, USERNAME, &salt_bn, &big_a, &big_b, &session_key);
+
+        // Client sends M3
+        let mut m3 = TlvValues::new();
+        m3.add(TlvType::State as u8, &[3]);
+        let a_padded = to_bytes_be(&big_a);
+        m3.add(TlvType::PublicKey as u8, &a_padded);
+        m3.add(TlvType::Proof as u8, &client_m);
+        let auth_ok = server.process_m3(&m3.encode()).unwrap();
+        assert!(auth_ok, "SRP authentication should succeed");
+
+        // Server builds M4
+        let m4_data = server.build_m4().unwrap();
+        let m4 = TlvValues::decode(&m4_data).unwrap();
+        assert_eq!(m4.get_type(TlvType::State), Some(&[4u8][..]));
+        let server_proof = m4.get_type(TlvType::Proof).unwrap();
+
+        // Client verifies M2 proof
+        let expected_hamk = calculate_h_amk(&big_a, &client_m, &session_key);
+        assert_eq!(server_proof, &expected_hamk[..]);
+
+        // Shared secret should match
+        assert_eq!(server.shared_secret().unwrap(), &session_key[..]);
+    }
+}
