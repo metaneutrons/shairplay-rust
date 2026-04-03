@@ -28,8 +28,10 @@ A complete AirPlay audio receiver as a Rust library. Supports both classic AirPl
 | 🔄 | **Resampling** | Automatic sample rate conversion via rubato |
 | 🔐 | **HomeKit pairing** | Transient (PIN 3939) and normal (persistent key storage) |
 | 📺 | **Video** | Screen mirroring — experimental, behind `video` feature gate |
-| 🌐 | **Cross-platform** | macOS (Bonjour) + Linux (mdns-sd) mDNS support |
-| 🔒 | **Pure safe Rust** | `#![forbid(unsafe_code)]`, no C dependencies |
+| 🌐 | **Cross-platform** | macOS (native Bonjour) + Linux (pure Rust mDNS) |
+| 🔒 | **Pure safe Rust** | `#![forbid(unsafe_code)]`, no C code in this crate¹ |
+
+> ¹ The crate itself contains no `unsafe` code. On macOS, mDNS service registration uses [astro-dnssd](https://crates.io/crates/astro-dnssd), which internally calls Apple's Bonjour C API via FFI. On Linux, [mdns-sd](https://crates.io/crates/mdns-sd) provides a pure Rust mDNS implementation with no native dependencies.
 | ⚡ | **Async** | Built on [tokio](https://tokio.rs) |
 
 ## Quick Start
