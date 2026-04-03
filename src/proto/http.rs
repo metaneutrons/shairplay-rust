@@ -122,6 +122,10 @@ impl HttpRequest {
         self.complete
     }
 
+    pub fn headers_complete(&self) -> bool {
+        self.headers_complete
+    }
+
     pub fn has_error(&self) -> bool {
         self.error.is_some()
     }

@@ -84,8 +84,8 @@ impl Drop for Session {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Enable tracing output (set RUST_LOG=debug for verbose protocol logs)
     tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env()
-            .add_directive("shairplay=info".parse().unwrap()))
+        .with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env()
+            .unwrap_or_else(|_| "shairplay=info".parse().unwrap()))
         .with_target(false)
         .init();
 

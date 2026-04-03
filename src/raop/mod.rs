@@ -179,7 +179,7 @@ impl ConnectionHandler for RaopConnectionHandler {
         #[cfg(feature = "airplay2")]
         if self.cipher.is_none() {
             if let Some(secret) = self.pending_secret.take() {
-                tracing::info!(secret_len = secret.len(), "Activating cipher from pending_secret");
+                tracing::debug!(secret_len = secret.len(), "Activating cipher from pending_secret");
                 match crate::crypto::chacha_transport::EncryptedChannel::control(&secret) {
                     Ok(ch) => {
                         tracing::info!("Encrypted RTSP transport activated");
