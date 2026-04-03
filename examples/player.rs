@@ -90,45 +90,30 @@ impl Drop for Session {
 impl Session {
     fn decode_aac(&mut self, adts_frame: &[u8]) {
         use symphonia::core::audio::SampleBuffer;
-        use symphonia::core::codecs::DecoderOptions;
+        use symphonia::core::codecs::{DecoderOptions, CODEC_TYPE_AAC, CodecParameters};
         use symphonia::core::formats::Packet;
-        use symphonia::core::io::MediaSourceStream;
-        use symphonia::core::meta::MetadataOptions;
-        use symphonia::core::formats::FormatOptions;
-        use symphonia::core::probe::Hint;
 
-        // Lazy init: probe the first ADTS frame to get correct parameters
+        if adts_frame.len() <= 7 { return; }
+
+        // Lazy init: parse ADTS header for sample rate
         if self.aac_decoder.is_none() {
-            let cursor = std::io::Cursor::new(adts_frame.to_vec());
-            let mss = MediaSourceStream::new(Box::new(cursor), Default::default());
-            let mut hint = Hint::new();
-            hint.with_extension("aac");
+            let freq_idx = (adts_frame[2] >> 2) & 0x0F;
+            let sr = match freq_idx { 3 => 48000, 4 => 44100, _ => 44100 };
+            let chan = ((adts_frame[2] & 1) << 2) | ((adts_frame[3] >> 6) & 3);
+            eprintln!("🎧 ADTS: freq_idx={freq_idx} sr={sr} chan={chan}");
 
-            let probe = match symphonia::default::get_probe().format(
-                &hint, mss, &FormatOptions::default(), &MetadataOptions::default()
-            ) {
-                Ok(p) => p,
-                Err(e) => { eprintln!("⚠️  AAC probe failed: {e}"); return; }
-            };
+            let mut params = CodecParameters::new();
+            params.for_codec(CODEC_TYPE_AAC)
+                .with_sample_rate(sr)
+                .with_channels(symphonia::core::audio::Channels::FRONT_LEFT | symphonia::core::audio::Channels::FRONT_RIGHT);
 
-            let track = match probe.format.default_track() {
-                Some(t) => t.clone(),
-                None => { eprintln!("⚠️  No AAC track"); return; }
-            };
-
-            match symphonia::default::get_codecs().make(&track.codec_params, &DecoderOptions::default()) {
-                Ok(d) => {
-                    eprintln!("🎧 AAC decoder initialized (params from ADTS probe)");
-                    self.aac_decoder = Some(d);
-                }
+            match symphonia::default::get_codecs().make(&params, &DecoderOptions::default()) {
+                Ok(d) => { self.aac_decoder = Some(d); }
                 Err(e) => { eprintln!("⚠️  AAC decoder failed: {e}"); return; }
             }
         }
 
         let decoder = self.aac_decoder.as_mut().unwrap();
-
-        // Strip ADTS header (7 bytes), feed raw AAC
-        if adts_frame.len() <= 7 { return; }
         let raw = &adts_frame[7..];
         let packet = Packet::new_from_slice(0, 0, 1024, raw);
 
@@ -145,7 +130,9 @@ impl Session {
                 }
                 self.ring.lock().unwrap().push_samples(&pcm);
             }
-            Err(_) => {}
+            Err(e) => {
+                tracing::debug!("AAC decode error: {e}");
+            }
         }
     }
 }

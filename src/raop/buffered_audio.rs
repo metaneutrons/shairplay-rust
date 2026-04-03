@@ -74,6 +74,13 @@ impl BufferedAudioProcessor {
             let timestamp = u32::from_be_bytes([packet[4], packet[5], packet[6], packet[7]]);
             let payload = &packet[RTP_HEADER_LEN..];
 
+            tracing::info!(
+                seq_no, timestamp, payload_len = payload.len(),
+                rtp_header = ?&packet[..RTP_HEADER_LEN.min(packet.len())],
+                first_bytes = ?&payload[..payload.len().min(16)],
+                "Buffered audio packet"
+            );
+
             // Wrap with ADTS header
             let adts_frame = aac::wrap_adts(payload, sample_rate, channels);
             on_audio(&adts_frame, timestamp, seq_no);
