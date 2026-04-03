@@ -92,17 +92,19 @@ impl AirPlayServiceInfo {
         let ft = format!("0x{:X},0x{:X}", features_lo, features_hi);
 
         let raop_txt = vec![
+            // AP1 compatibility fields (allows classic AirPlay fallback)
             ("cn".into(), "0,1".into()),
             ("da".into(), "true".into()),
             ("et".into(), "0,1".into()),
             ("pw".into(), (if password { "true" } else { "false" }).into()),
+            // AP2 fields
             ("ft".into(), ft.clone()),
             ("fv".into(), AP2_FW_VERSION.into()),
             ("sf".into(), format!("0x{:X}", AP2_STATUS_FLAGS)),
             ("md".into(), "0,1,2".into()),
             ("am".into(), GLOBAL_MODEL.into()),
             ("pk".into(), pk_hex.into()),
-            ("tp".into(), "UDP".into()),
+            ("tp".into(), "TCP,UDP".into()), // TCP for AP1 fallback, UDP for AP2
             ("vn".into(), "65537".into()),
             ("vs".into(), AP2_SRCVERS.into()),
             ("ov".into(), AP2_OSVERS.into()),
