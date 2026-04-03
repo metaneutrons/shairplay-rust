@@ -48,6 +48,8 @@ pub(crate) struct RaopConnection {
     pub output_max_channels: Option<u8>,
     #[cfg(feature = "airplay2")]
     pub pin: Option<String>,
+    #[cfg(feature = "airplay2")]
+    pub event_sender: Option<crate::raop::event_channel::EventSender>,
 }
 
 pub(crate) fn handle_none(
@@ -614,31 +616,38 @@ pub(crate) fn handle_setup_2(
 
         // Bind event port on same address family as the client connection
         let bind_addr = if conn.local_addr.len() == 16 { "[::]:0" } else { "0.0.0.0:0" };
-        let event_listener = tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(
-                tokio::net::TcpListener::bind(bind_addr)
-            )
+        let event_ch = tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async {
+                let listener = tokio::net::TcpListener::bind(bind_addr).await?;
+                let port = listener.local_addr()?.port();
+                Ok::<_, std::io::Error>((listener, port))
+            })
         }).ok()?;
-        let event_port = event_listener.local_addr().ok()?.port() as u64;
+        let (event_listener, event_port) = event_ch;
         tracing::info!(event_port, "Event channel opened");
 
-        // Spawn event receiver (just accept + log for now)
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().spawn(async move {
-                if let Ok((mut stream, addr)) = event_listener.accept().await {
-                    tracing::info!(%addr, "Event channel client connected");
-                    let mut buf = [0u8; 4096];
-                    loop {
-                        match tokio::io::AsyncReadExt::read(&mut stream, &mut buf).await {
-                            Ok(0) | Err(_) => break,
-                            Ok(n) => tracing::debug!(n, "Event channel data"),
-                        }
-                    }
-                }
-            })
-        });
+        // Derive event channel encryption keys from shared secret
+        let shared_secret = conn.ap2_shared_secret.as_ref()?;
+        let event_channel_cipher = crate::crypto::chacha_transport::EncryptedChannel::events(shared_secret)
+            .ok()?;
 
-        resp_dict.insert("eventPort".into(), plist::Value::Integer(event_port.into()));
+        // Spawn bidirectional event channel
+        let event_sender = tokio::task::block_in_place(|| {
+            let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+            let sender = crate::raop::event_channel::EventSender::from_tx(tx);
+            tokio::runtime::Handle::current().spawn(async move {
+                if let Ok((stream, addr)) = event_listener.accept().await {
+                    tracing::info!(%addr, "Event channel client connected");
+                    crate::raop::event_channel::EventChannel::handle_stream(
+                        stream, event_channel_cipher, rx
+                    ).await;
+                }
+            });
+            sender
+        });
+        conn.event_sender = Some(event_sender);
+
+        resp_dict.insert("eventPort".into(), plist::Value::Integer((event_port as u64).into()));
         resp_dict.insert("timingPort".into(), plist::Value::Integer(0_i64.into()));
     }
 
@@ -735,10 +744,33 @@ pub(crate) fn handle_flushbuffered(
 
 #[cfg(feature = "airplay2")]
 pub(crate) fn handle_feedback(
-    _conn: &mut RaopConnection,
+    conn: &mut RaopConnection,
     _request: &HttpRequest,
     response: &mut HttpResponse,
 ) -> Option<Vec<u8>> {
+    // Test: send one RTSP-framed command via event channel
+    if let Some(sender) = &conn.event_sender {
+        // Try: sendMediaRemoteCommand with command ID 1 (Pause)
+        let mut cmd = plist::Dictionary::new();
+        cmd.insert("type".into(), plist::Value::String("cycleRemoteCommand".into()));
+        let mut params = plist::Dictionary::new();
+        params.insert("cycleRemoteCommand".into(), plist::Value::Integer(1.into()));
+        cmd.insert("params".into(), plist::Value::Dictionary(params));
+
+        let mut body = Vec::new();
+        if plist::to_writer_binary(&mut body, &cmd).is_ok() {
+            let rtsp = format!(
+                "POST /command RTSP/1.0\r\nContent-Length: {}\r\nContent-Type: application/x-apple-binary-plist\r\nCSeq: 1\r\n\r\n",
+                body.len()
+            );
+            let mut msg = rtsp.into_bytes();
+            msg.extend_from_slice(&body);
+            tracing::info!("Sending cycleRemoteCommand(1=Pause) via event channel");
+            let _ = sender.send(msg);
+        }
+        conn.event_sender = None;
+    }
+
     // Return stream info so iPhone can estimate latency
     let mut stream_dict = plist::Dictionary::new();
     stream_dict.insert("type".into(), plist::Value::Integer(103_i64.into()));
@@ -756,7 +788,7 @@ pub(crate) fn handle_feedback(
 
 #[cfg(feature = "airplay2")]
 pub(crate) fn handle_command(
-    _conn: &mut RaopConnection,
+    conn: &mut RaopConnection,
     request: &HttpRequest,
     _response: &mut HttpResponse,
 ) -> Option<Vec<u8>> {
@@ -766,25 +798,7 @@ pub(crate) fn handle_command(
                 let cmd_type = dict.get("type").and_then(|v| v.as_string()).unwrap_or("unknown");
                 tracing::debug!(cmd_type, "POST /command");
                 if cmd_type == "updateMRSupportedCommands" {
-                    if let Some(params) = dict.get("params").and_then(|v| v.as_dictionary()) {
-                        if let Some(cmds) = params.get("mrSupportedCommandsFromSender").and_then(|v| v.as_array()) {
-                            for entry in cmds {
-                                if let Some(blob) = entry.as_data() {
-                                    if let Ok(inner) = plist::from_bytes::<plist::Value>(blob) {
-                                        if let Some(d) = inner.as_dictionary() {
-                                            let cmd_id = d.get("kCommandInfoCommandKey")
-                                                .and_then(|v| v.as_unsigned_integer())
-                                                .unwrap_or(0);
-                                            let enabled = d.get("kCommandInfoEnabledKey")
-                                                .and_then(|v| v.as_boolean())
-                                                .unwrap_or(false);
-                                            tracing::info!(cmd_id, enabled, "MR command");
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    tracing::info!("MR supported commands received");
                 }
             }
         }

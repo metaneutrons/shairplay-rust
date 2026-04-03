@@ -184,6 +184,8 @@ impl HttpdCallbacks for RaopShared {
             output_max_channels: self.output_max_channels,
             #[cfg(feature = "airplay2")]
             pin: self.pin.clone(),
+            #[cfg(feature = "airplay2")]
+            event_sender: None,
         };
         Some(Box::new(RaopConnectionHandler {
             conn,
