@@ -19,7 +19,7 @@ pub(crate) struct RaopConnection {
     pub fairplay: FairPlay,
     pub pairing: PairingSession,
     pub local_addr: Vec<u8>,
-    #[allow(dead_code)]
+    #[allow(dead_code)] // read in AP2 event channel binding
     pub remote_addr: Vec<u8>,
     pub nonce: String,
     // Shared references from the server
@@ -40,13 +40,13 @@ pub(crate) struct RaopConnection {
     #[cfg(feature = "ap2")]
     pub is_ap2: bool,
     #[cfg(feature = "ap2")]
-    #[allow(dead_code)]
+    #[allow(dead_code)] // read in AP2 pair-setup M5 handler
     pub pairing_store: Arc<dyn crate::raop::PairingStore>,
     #[cfg(feature = "ap2")]
     pub playout_cmd: Option<tokio::sync::mpsc::UnboundedSender<crate::raop::buffered_audio::PlayoutCommand>>,
-    #[allow(dead_code)] // used when resample or ap2 enabled
+    #[allow(dead_code)] // read when resample or ap2 feature enabled
     pub output_sample_rate: Option<u32>,
-    #[allow(dead_code)] // used when ap2 enabled
+    #[allow(dead_code)] // read when ap2 feature enabled
     pub output_max_channels: Option<u8>,
     #[cfg(feature = "ap2")]
     pub pin: Option<String>,
@@ -212,8 +212,16 @@ pub(crate) fn handle_announce(
     conn.raop_rtp = None;
 
     conn.raop_rtp = Some(RaopRtp::new(
-        conn.handler.clone(), remote, local_ip_from(conn), rtpmap, fmtp, &aeskey, &aesiv,
-        conn.output_sample_rate,
+        conn.handler.clone(),
+        crate::raop::rtp::RtpConfig {
+            remote: remote.to_string(),
+            local_addr: local_ip_from(conn),
+            rtpmap: rtpmap.to_string(),
+            fmtp: fmtp.to_string(),
+            aes_key: aeskey,
+            aes_iv: aesiv,
+            output_sample_rate: conn.output_sample_rate,
+        },
     ));
 
     if conn.raop_rtp.is_none() {
