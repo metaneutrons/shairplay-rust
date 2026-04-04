@@ -102,7 +102,8 @@ let mut server = RaopServer::builder()
 | Flag | Dependencies | Description |
 |------|-------------|-------------|
 | *(default)* | — | AirPlay 1 only |
-| `ap2` | chacha20poly1305, hkdf, symphonia, rubato, … | Full AirPlay 2 audio |
+| `resample` | rubato | Sample rate conversion + channel mixdown |
+| `ap2` | chacha20poly1305, hkdf, symphonia, … (implies `resample`) | Full AirPlay 2 audio |
 | `video` | (implies `ap2`) | Screen mirroring (experimental) |
 
 ## Implementation Status
@@ -145,14 +146,19 @@ cargo run --example player
 # AirPlay 2
 cargo run --example player --features ap2
 
+# With resampling to match output device rate (e.g. 44100→96000 Hz)
+cargo run --example player --features ap2 -- --resample
+
 # With persistent device identity (stable MAC + paired keys across restarts)
 cargo run --example player --features ap2 -- --persist state.json
 
 # Custom name and interface binding
-cargo run --example player --features ap2 -- --name "Kitchen" --bind 192.168.1.100 --persist state.json
+cargo run --example player --features ap2 -- --name "Kitchen" --bind 192.168.1.100 --persist state.json --resample
 ```
 
 Without `--persist`, the device gets a random MAC each run and the iPhone treats it as a new device. With `--persist`, the MAC and paired keys are saved to a JSON file.
+
+Without `--resample`, audio is delivered at the source's native rate (44100 Hz). If your output device runs at a different rate (e.g. 96000 Hz), use `--resample` to convert in the example app.
 
 ## Architecture
 
@@ -180,7 +186,7 @@ src/
 
 ## Test Coverage
 
-130 tests including 17 C-verified vectors from the [pair_ap](https://github.com/ejurgensen/pair_ap) reference implementation:
+127 tests including 17 C-verified vectors from the [pair_ap](https://github.com/ejurgensen/pair_ap) reference implementation:
 
 ```
 cargo test                    # AP1 tests
