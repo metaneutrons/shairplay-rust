@@ -28,6 +28,7 @@ A complete AirPlay audio and video receiver as a Rust library. Supports both cla
 | 🔄 | **Resampling** | Automatic sample rate conversion via rubato |
 | 🔐 | **HomeKit pairing** | Transient (PIN 3939) and normal (persistent key storage) |
 | 📺 | **Video** | Screen mirroring — work in progress, behind `video` feature gate |
+| 🎬 | **HLS Video** | YouTube and other HLS streams — receiver relays URL to app |
 | 🌐 | **Cross-platform** | macOS (native Bonjour) + Linux (pure Rust mDNS) |
 | 🔒 | **Pure safe Rust** | `#![forbid(unsafe_code)]`, no C code in this crate¹ |
 | ⚡ | **Async** | Built on [tokio](https://tokio.rs) |
@@ -96,6 +97,7 @@ let mut server = RaopServer::builder()
 | `.pin()` | `"3939"` | `ap2` | PIN for HomeKit pairing |
 | `.pairing_store()` | `MemoryPairingStore` | `ap2` | Persistent key storage |
 | `.video_handler()` | none | `video` | Video session factory |
+| `.hls_handler()` | none | `hls` | HLS video playback handler |
 
 ## Feature Flags
 
@@ -104,7 +106,8 @@ let mut server = RaopServer::builder()
 | *(default)* | — | AirPlay 1 only |
 | `resample` | rubato | Sample rate conversion + channel mixdown |
 | `ap2` | chacha20poly1305, hkdf, symphonia, … (implies `resample`) | Full AirPlay 2 audio |
-| `video` | (implies `ap2`) | Screen mirroring (work in progress — audio works, video decryption unsolved) |
+| `video` | (implies `ap2`) | Legacy audio for screen mirroring (video decryption unsolved on iOS 18) |
+| `hls` | (implies `video`) | HLS video playback (YouTube, etc.) — receiver relays URL to app |
 
 ## Implementation Status
 
@@ -165,6 +168,9 @@ cargo run --example player --features ap2 -- --persist state.json
 
 # Custom name and interface binding
 cargo run --example player --features ap2 -- --name "Kitchen" --bind 192.168.1.100 --persist state.json --resample
+
+# HLS video (YouTube) — requires mpv installed
+cargo run --example player --features hls -- --resample
 ```
 
 Without `--persist`, the device gets a random MAC each run and the iPhone treats it as a new device. With `--persist`, the MAC and paired keys are saved to a JSON file.
@@ -197,7 +203,7 @@ src/
 
 ## Test Coverage
 
-139 tests including 17 C-verified pairing vectors from [pair_ap](https://github.com/ejurgensen/pair_ap) and 10 C-verified FairPlay vectors generated from the original [shairplay](https://github.com/juhovh/shairplay) C source:
+144 tests including 17 C-verified pairing vectors from [pair_ap](https://github.com/ejurgensen/pair_ap) and 10 C-verified FairPlay vectors generated from the original [shairplay](https://github.com/juhovh/shairplay) C source:
 
 ```
 cargo test                    # AP1 tests
