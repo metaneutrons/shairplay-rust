@@ -8,6 +8,8 @@ pub mod event_channel;
 #[cfg(feature = "ap2")]
 pub mod realtime_audio;
 pub mod handlers;
+#[cfg(feature = "ap2")]
+pub mod handlers_ap2;
 pub mod rtp;
 mod rtsp;
 #[cfg(feature = "video")]

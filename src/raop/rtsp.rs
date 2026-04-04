@@ -13,6 +13,8 @@
 use crate::proto::digest;
 use crate::proto::http::{HttpRequest, HttpResponse};
 use crate::raop::handlers::{self, RaopConnection};
+#[cfg(feature = "ap2")]
+use crate::raop::handlers_ap2;
 
 /// Route an RTSP request to the appropriate handler and build the response.
 ///
@@ -64,29 +66,29 @@ pub(crate) fn dispatch(conn: &mut RaopConnection, request: &HttpRequest) -> Http
         Some(handlers::handle_none)
     } else if method == "POST" && url == "/pair-setup" {
         #[cfg(feature = "ap2")]
-        { Some(handlers::handle_pair_setup_ap2) }
+        { Some(handlers_ap2::handle_pair_setup_ap2) }
         #[cfg(not(feature = "ap2"))]
         { Some(handlers::handle_pair_setup) }
     } else if method == "POST" && url == "/pair-verify" {
         #[cfg(feature = "ap2")]
-        { Some(handlers::handle_pair_verify_ap2) }
+        { Some(handlers_ap2::handle_pair_verify_ap2) }
         #[cfg(not(feature = "ap2"))]
         { Some(handlers::handle_pair_verify) }
     } else if method == "POST" && url == "/fp-setup" {
         Some(handlers::handle_fp_setup)
     } else if method == "POST" && url == "/feedback" {
         #[cfg(feature = "ap2")]
-        { Some(handlers::handle_feedback as Handler) }
+        { Some(handlers_ap2::handle_feedback as Handler) }
         #[cfg(not(feature = "ap2"))]
         { None }
     } else if method == "POST" && url == "/command" {
         #[cfg(feature = "ap2")]
-        { Some(handlers::handle_command as Handler) }
+        { Some(handlers_ap2::handle_command as Handler) }
         #[cfg(not(feature = "ap2"))]
         { None }
     } else if method == "POST" && url == "/audioMode" {
         #[cfg(feature = "ap2")]
-        { Some(handlers::handle_audiomode as Handler) }
+        { Some(handlers_ap2::handle_audiomode as Handler) }
         #[cfg(not(feature = "ap2"))]
         { None }
     } else if method == "OPTIONS" {
@@ -100,7 +102,7 @@ pub(crate) fn dispatch(conn: &mut RaopConnection, request: &HttpRequest) -> Http
             // (legacy pairing with plist-based SETUP, e.g. screen mirroring)
             let is_plist = request.data().map(|d| d.starts_with(b"bplist")).unwrap_or(false);
             if conn.is_ap2 || is_plist {
-                Some(handlers::handle_setup_2 as Handler)
+                Some(handlers_ap2::handle_setup_2 as Handler)
             } else {
                 Some(handlers::handle_setup as Handler)
             }
@@ -113,7 +115,7 @@ pub(crate) fn dispatch(conn: &mut RaopConnection, request: &HttpRequest) -> Http
         Some(handlers::handle_set_parameter)
     } else if method == "GET" {
         #[cfg(feature = "ap2")]
-        { Some(handlers::handle_get_info as Handler) }
+        { Some(handlers_ap2::handle_get_info as Handler) }
         #[cfg(not(feature = "ap2"))]
         { None }
     } else if method == "FLUSH" {
@@ -142,13 +144,13 @@ pub(crate) fn dispatch(conn: &mut RaopConnection, request: &HttpRequest) -> Http
         #[cfg(feature = "ap2")]
         {
             if method == "RECORD" && conn.is_ap2 {
-                Some(handlers::handle_record_2 as Handler)
+                Some(handlers_ap2::handle_record_2 as Handler)
             } else if method == "SETRATEANCHORTIME" {
-                Some(handlers::handle_setrateanchortime as Handler)
+                Some(handlers_ap2::handle_setrateanchortime as Handler)
             } else if method == "SETPEERS" || method == "SETPEERSX" {
-                Some(handlers::handle_setpeers as Handler)
+                Some(handlers_ap2::handle_setpeers as Handler)
             } else if method == "FLUSHBUFFERED" {
-                Some(handlers::handle_flushbuffered as Handler)
+                Some(handlers_ap2::handle_flushbuffered as Handler)
             } else {
                 None
             }
