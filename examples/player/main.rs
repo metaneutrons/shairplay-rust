@@ -216,23 +216,10 @@ impl AudioSession for Session {
         self.ring.lock().unwrap().push_samples(&final_samples);
     }
 
-    fn audio_set_volume(&mut self, volume: f32) {
-        tracing::info!(volume, "Volume changed");
-    }
-
-    fn audio_set_metadata(&mut self, _metadata: &[u8]) {
-        tracing::info!("Track metadata received");
-    }
-
-    fn audio_set_coverart(&mut self, coverart: &[u8]) {
-        tracing::info!(bytes = coverart.len(), "Cover art received");
-    }
-
-    fn audio_set_progress(&mut self, start: u32, current: u32, end: u32) {
-        let total = end.saturating_sub(start) as f64 / 44100.0;
-        let pos = current.saturating_sub(start) as f64 / 44100.0;
-        tracing::info!(pos_s = pos as u32, total_s = total as u32, "Playback progress");
-    }
+    fn audio_set_volume(&mut self, _volume: f32) {}
+    fn audio_set_metadata(&mut self, _metadata: &[u8]) {}
+    fn audio_set_coverart(&mut self, _coverart: &[u8]) {}
+    fn audio_set_progress(&mut self, _start: u32, _current: u32, _end: u32) {}
 }
 
 impl Drop for Session {

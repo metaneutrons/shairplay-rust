@@ -17,7 +17,7 @@ use std::sync::Arc;
 
 use tokio::net::UdpSocket;
 use tokio::sync::{Mutex, watch};
-use tracing::info;
+use tracing::{info, debug};
 
 use crate::error::{NetworkError, ShairplayError};
 use crate::raop::buffer::{RaopBuffer, RAOP_PACKET_LEN};
@@ -380,6 +380,7 @@ impl RaopRtp {
     /// Volume is in dB: 0.0 = max, -144.0 = mute.
     pub fn set_volume(&self, volume: f32) {
         let v = volume.clamp(-144.0, 0.0);
+        debug!(volume = v, "Volume set");
         let state = self.state.clone();
         tokio::spawn(async move {
             let mut st = state.lock().await;
@@ -390,6 +391,7 @@ impl RaopRtp {
 
     /// Queue DMAP track metadata for delivery to the AudioSession.
     pub fn set_metadata(&self, data: &[u8]) {
+        debug!(bytes = data.len(), "Track metadata received");
         let d = data.to_vec();
         let state = self.state.clone();
         tokio::spawn(async move { state.lock().await.metadata = Some(d); });
@@ -397,6 +399,7 @@ impl RaopRtp {
 
     /// Queue album artwork for delivery to the AudioSession.
     pub fn set_coverart(&self, data: &[u8]) {
+        debug!(bytes = data.len(), "Cover art received");
         let d = data.to_vec();
         let state = self.state.clone();
         tokio::spawn(async move { state.lock().await.coverart = Some(d); });
@@ -419,6 +422,7 @@ impl RaopRtp {
     /// Queue playback progress for delivery to the AudioSession.
     /// Values are in RTP timestamp units (sample clock).
     pub fn set_progress(&self, start: u32, curr: u32, end: u32) {
+        debug!(start, curr, end, "Playback progress");
         let state = self.state.clone();
         tokio::spawn(async move { state.lock().await.progress = Some((start, curr, end)); });
     }
