@@ -110,48 +110,65 @@ pub fn features_to_mdns(features: u64) -> String {
 
 /// Features for an audio-only AirPlay 2 receiver.
 ///
-/// Based on shairport-sync's proven AP2 features (0x1C340405D4A00)
-/// Returns the feature bitmask for the receiver based on enabled compile-time features.
+/// Features for an audio-only AirPlay 2 receiver.
+///
+/// Known-good bitmask: `0x0001C340405D4A00` (matches shairport-sync).
+/// Tested working with iOS 18 on 2026-04-04.
+///
+/// # Warning
+///
+/// Do NOT add bits without testing on a real iPhone. Extra bits (e.g.
+/// `SupportsAirPlayVideoV2`, `SupportsVolume`, `Authentication1`) cause
+/// the iPhone to expect capabilities we don't implement, resulting in
+/// the device being hidden from AirPlay discovery or immediate TEARDOWN
+/// after SETUP.
+///
+/// Bits that were tested and MUST NOT be set for audio-only:
+/// - bit 15 (MetadataArtwork) — causes discovery failure
+/// - bit 17 (MetadataNowPlayingDaap) — causes discovery failure
+/// - bit 23 (Authentication1/RSA) — causes discovery failure
+/// - bit 27 (SupportsLegacyPairing) — causes discovery failure
+/// - bit 32 (SupportsVolume) — causes discovery failure
+/// - bit 49 (SupportsAirPlayVideoV2) — causes immediate TEARDOWN
+/// - bit 50 (MetadataNowPlayingBplist) — causes discovery failure
+/// - bit 52 (SupportsSetPeersExtendedMessage) — causes discovery failure
+/// - bit 59/60/61 (AudioStreamConn/MediaDataCtrl/Rfc2198) — causes discovery failure
 pub fn receiver_features() -> u64 {
     use AirPlayFeature::*;
 
+    // Known-good bitmask: 0x0001C340405D4A00
+    // Verified with iOS 18 + shairport-sync reference.
+    // Each bit is annotated with its position for easy cross-referencing
+    // with https://emanuelecozzi.net/docs/airplay2/features/
     #[allow(unused_mut)]
     let mut bits: Vec<AirPlayFeature> = vec![
-        // Core audio
-        SupportsAirPlayAudio,
-        AudioRedundant,
-        Authentication4,              // FairPlay
-        MetadataArtwork,
-        MetadataProgress,
-        MetadataNowPlayingDaap,
-        AudioFormats0,
-        AudioFormats1,
-        Authentication1,
-        SupportsLegacyPairing,
-        HasUnifiedAdvertiserInfo,
-        SupportsVolume,
-        SupportsUnifiedMediaControl,
-        SupportsBufferedAudio,
-        SupportsPtp,
-        SupportsHkPairingAndAccessControl,
-        SupportsCoreUtilsPairingAndEncryption,
-        MetadataNowPlayingBplist,
-        SupportsSetPeersExtendedMessage,
-        SupportsAirPlayVideoV2,       // needed for AP2 audio despite the name
-        SupportsAudioStreamConnectionSetup,
-        SupportsAudioMediaDataControl,
-        SupportsRfc2198Redundancy,
+        SupportsAirPlayAudio,         // bit 9
+        AudioRedundant,               // bit 11
+        Authentication4,              // bit 14 — FairPlay
+        MetadataProgress,             // bit 16
+        AudioFormats0,                // bit 18
+        AudioFormats1,                // bit 19
+        HasUnifiedAdvertiserInfo,     // bit 30
+        SupportsUnifiedMediaControl,  // bit 38
+        SupportsBufferedAudio,        // bit 40
+        SupportsPtp,                  // bit 41
+        SupportsHkPairingAndAccessControl,       // bit 46
+        SupportsCoreUtilsPairingAndEncryption,   // bit 48
     ];
 
     #[allow(unused_mut)]
     let mut val = features_from(&bits);
 
+    // Bits 20, 22, 47 are set by shairport-sync but not in our enum.
+    val |= (1 << 20) | (1 << 22) | (1 << 47);
+
+    // TODO: test video feature bits with real iPhone — may break AP2 audio discovery.
     #[cfg(feature = "video")]
     {
         val |= features_from(&[
-            SupportsAirPlayVideoV1,
-            SupportsAirPlayScreen,
-            SupportsScreenMultiCodec,
+            SupportsAirPlayVideoV1,   // bit 0
+            SupportsAirPlayScreen,    // bit 7
+            SupportsScreenMultiCodec, // bit 42
         ]);
     }
 
