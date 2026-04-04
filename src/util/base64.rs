@@ -1,7 +1,5 @@
 //! Base64 encoding/decoding (custom implementation for RTSP compatibility).
 
-#[allow(dead_code)]
-const DEFAULT_CHARLIST: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 const BASE64_PADDING: u8 = 0x40;
 const BASE64_INVALID: u8 = 0x80;
 
@@ -33,11 +31,6 @@ impl Base64 {
         b
     }
 
-    /// Standard base64 (RFC 4648) with padding and space-skipping.
-        #[allow(dead_code)]
-    pub fn standard() -> Self {
-        Self::new(DEFAULT_CHARLIST, true, true)
-    }
 
     /// Compute the encoded length for a given source length.
     /// Equivalent to base64_encoded_length (minus the NUL terminator).

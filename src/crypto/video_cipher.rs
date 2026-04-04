@@ -1,5 +1,4 @@
 //! AES-128-CTR streaming cipher for video packet decryption.
-#![allow(clippy::needless_range_loop)]
 //!
 //! Video packets use AES-CTR with a key derived from the FairPlay session.
 //! The cipher maintains partial block state across packets (streaming mode).
@@ -34,8 +33,8 @@ impl VideoCipher {
         // Apply leftover keystream from previous partial block
         if n > 0 {
             let apply = n.min(payload.len());
-            for i in 0..apply {
-                payload[i] ^= self.leftover[(16 - n) + i];
+            for (p, &k) in payload[..apply].iter_mut().zip(&self.leftover[(16 - n)..]) {
+                *p ^= k;
             }
             if apply < n {
                 self.leftover_count = n - apply;

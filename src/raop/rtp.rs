@@ -26,6 +26,19 @@ use crate::raop::{AudioHandler, AudioFormat, AudioCodec};
 /// Sentinel value for [`RtpState::flush`] indicating no flush is pending.
 const NO_FLUSH: i32 = -42;
 
+/// Determine the bind address for RTP sockets.
+/// Uses the specific local IP for routable addresses (respects BindConfig).
+/// Falls back to unspecified for link-local IPv6 — the iPhone may send RTP
+/// packets from a different address than the RTSP connection used.
+fn rtp_bind_addr(local: IpAddr) -> IpAddr {
+    match local {
+        IpAddr::V6(v6) if (v6.segments()[0] & 0xffc0) == 0xfe80 => {
+            IpAddr::V6(std::net::Ipv6Addr::UNSPECIFIED)
+        }
+        other => other,
+    }
+}
+
 /// Parse the SDP `c=` remote address to raw IP bytes for DACP callbacks.
 /// Handles "IP6 ::1" prefix and IPv4-mapped IPv6 addresses.
 fn remote_addr_bytes(remote: &str) -> Vec<u8> {
@@ -59,6 +72,24 @@ struct RtpState {
     progress: Option<(u32, u32, u32)>,
     /// Sequence number to flush to, or [`NO_FLUSH`] if no flush pending.
     flush: i32,
+}
+
+/// Configuration for creating an AP1 RTP session, parsed from SDP.
+pub struct RtpConfig {
+    /// SDP `c=` remote address string (e.g. "192.168.1.5").
+    pub remote: String,
+    /// Local IP address to bind sockets to.
+    pub local_addr: IpAddr,
+    /// SDP `a=rtpmap` attribute.
+    pub rtpmap: String,
+    /// SDP `a=fmtp` attribute (ALAC configuration).
+    pub fmtp: String,
+    /// 128-bit AES session key (decrypted from SDP).
+    pub aes_key: [u8; 16],
+    /// 128-bit AES initialization vector.
+    pub aes_iv: [u8; 16],
+    /// If set, resample decoded audio to this rate.
+    pub output_sample_rate: Option<u32>,
 }
 
 /// AP1 RTP streaming session.
@@ -98,23 +129,13 @@ pub struct RaopRtp {
 impl RaopRtp {
     /// Create a new RTP session from SDP parameters and AES session keys.
     /// Does not bind sockets or start receiving — call [`start`](Self::start) for that.
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        callbacks: Arc<dyn AudioHandler>,
-        remote: &str,
-        local_addr: IpAddr,
-        rtpmap: &str,
-        fmtp: &str,
-        aes_key: &[u8; 16],
-        aes_iv: &[u8; 16],
-        output_sample_rate: Option<u32>,
-    ) -> Self {
-        let buffer = RaopBuffer::new(rtpmap, fmtp, aes_key, aes_iv);
+    pub fn new(callbacks: Arc<dyn AudioHandler>, config: RtpConfig) -> Self {
+        let buffer = RaopBuffer::new(&config.rtpmap, &config.fmtp, &config.aes_key, &config.aes_iv);
         Self {
             handler: callbacks,
-            remote: remote.to_string(),
-            local_addr,
-            output_sample_rate,
+            remote: config.remote,
+            local_addr: config.local_addr,
+            output_sample_rate: config.output_sample_rate,
             buffer: Arc::new(Mutex::new(buffer)),
             state: Arc::new(Mutex::new(RtpState {
                 volume: 0.0, volume_changed: false,
@@ -153,7 +174,7 @@ impl RaopRtp {
         self.shutdown_tx = Some(shutdown_tx);
 
         if use_udp {
-            let bind_addr = SocketAddr::new(self.local_addr, 0);
+            let bind_addr = SocketAddr::new(rtp_bind_addr(self.local_addr), 0);
             let csock = UdpSocket::bind(bind_addr).await.map_err(NetworkError::Io)?;
             let tsock = UdpSocket::bind(bind_addr).await.map_err(NetworkError::Io)?;
             let dsock = UdpSocket::bind(bind_addr).await.map_err(NetworkError::Io)?;
@@ -253,7 +274,7 @@ impl RaopRtp {
             });
         } else {
             // TCP interleaved mode: single connection, `$`-prefixed framing.
-            let listener = tokio::net::TcpListener::bind(SocketAddr::new(self.local_addr, 0)).await.map_err(NetworkError::Io)?;
+            let listener = tokio::net::TcpListener::bind(SocketAddr::new(rtp_bind_addr(self.local_addr), 0)).await.map_err(NetworkError::Io)?;
             self.data_lport = listener.local_addr().map_err(NetworkError::Io)?.port();
 
             let config = {
