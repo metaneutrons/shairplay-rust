@@ -635,43 +635,34 @@ pub(crate) fn handle_setup_2(
                     // Legacy ALAC — only available with video feature (UxPlay-style features).
                     #[cfg(feature = "video")]
                     {
-                    // RaopRtp was already created in the initial SETUP for timing.
                     tracing::info!(stream_type = 96, sample_rate = sr, "Legacy ALAC (AES-CBC via ekey)");
 
-                    if conn.raop_rtp.is_none() {
-                        let aes_key = conn.ekey.unwrap_or([0u8; 16]);
-                        let aes_iv = conn.eiv.unwrap_or([0u8; 16]);
-                        let fmtp = format!("96 {spf} 0 16 40 10 14 2 255 0 0 {sr}");
-                        conn.raop_rtp = Some(RaopRtp::new(
-                            conn.handler.clone(),
-                            crate::raop::rtp::RtpConfig {
-                                remote: conn.remote_socket.ip().to_string(),
-                                local_addr: local_ip_from(conn),
-                                rtpmap: "96 AppleLossless".to_string(),
-                                fmtp,
-                                aes_key,
-                                aes_iv,
-                                output_sample_rate: conn.output_sample_rate,
-                    remote_socket: conn.remote_socket,
-                            },
-                        ));
-                        if let Some(rtp) = &mut conn.raop_rtp {
-                            let control_port = stream0.get("controlPort")
-                                .and_then(|v| v.as_unsigned_integer()).unwrap_or(0) as u16;
-                            let (cport, _tport, dport) = tokio::task::block_in_place(|| {
-                                tokio::runtime::Handle::current().block_on(
-                                    rtp.start(true, control_port, 0)
-                                )
-                            }).ok()?;
-                            stream_resp.insert("dataPort".into(), plist::Value::Integer(dport.into()));
-                            stream_resp.insert("controlPort".into(), plist::Value::Integer(cport.into()));
-                        }
-                    } else {
-                        // Already started — just return the ports
-                        if let Some(rtp) = &conn.raop_rtp {
-                            stream_resp.insert("dataPort".into(), plist::Value::Integer(rtp.data_lport.into()));
-                            stream_resp.insert("controlPort".into(), plist::Value::Integer(rtp.control_lport.into()));
-                        }
+                    let aes_key = conn.ekey.unwrap_or([0u8; 16]);
+                    let aes_iv = conn.eiv.unwrap_or([0u8; 16]);
+                    let fmtp = format!("96 {spf} 0 16 40 10 14 2 255 0 0 {sr}");
+                    conn.raop_rtp = Some(RaopRtp::new(
+                        conn.handler.clone(),
+                        crate::raop::rtp::RtpConfig {
+                            remote: conn.remote_socket.ip().to_string(),
+                            local_addr: local_ip_from(conn),
+                            rtpmap: "96 AppleLossless".to_string(),
+                            fmtp,
+                            aes_key,
+                            aes_iv,
+                            output_sample_rate: conn.output_sample_rate,
+                            remote_socket: conn.remote_socket,
+                        },
+                    ));
+                    if let Some(rtp) = &mut conn.raop_rtp {
+                        let control_port = stream0.get("controlPort")
+                            .and_then(|v| v.as_unsigned_integer()).unwrap_or(0) as u16;
+                        let (cport, _tport, dport) = tokio::task::block_in_place(|| {
+                            tokio::runtime::Handle::current().block_on(
+                                rtp.start(true, control_port, 0)
+                            )
+                        }).ok()?;
+                        stream_resp.insert("dataPort".into(), plist::Value::Integer(dport.into()));
+                        stream_resp.insert("controlPort".into(), plist::Value::Integer(cport.into()));
                     }
                     } // cfg(feature = "video")
                     #[cfg(not(feature = "video"))]
@@ -1025,38 +1016,26 @@ pub(crate) fn handle_setup_2(
         let event_port_resp = if conn.ap2_shared_secret.is_some() { event_port as u64 } else { 0 };
         resp_dict.insert("eventPort".into(), plist::Value::Integer(event_port_resp.into()));
 
-        // Legacy mirror mode: create RTP handler early so we can return a timing port.
-        // The iPhone needs a valid timing port for NTP sync before it sends audio.
+        // Legacy mode: bind a standalone NTP timing socket and return its port.
+        // The iPhone needs NTP sync before it sends the stream SETUP.
+        // RaopRtp is created later in the stream SETUP with real ALAC parameters.
         #[cfg(feature = "video")]
         let timing_port = if !conn.is_ap2 && conn.ekey.is_some() {
-            tracing::debug!("Legacy video: creating early RTP for NTP timing");
-            let aes_key = conn.ekey.unwrap_or([0u8; 16]);
-            let aes_iv = conn.eiv.unwrap_or([0u8; 16]);
-            let fmtp = "96 352 0 16 40 10 14 2 255 0 0 44100".to_string();
-            conn.raop_rtp = Some(RaopRtp::new(
-                conn.handler.clone(),
-                crate::raop::rtp::RtpConfig {
-                    remote: conn.remote_socket.ip().to_string(),
-                    local_addr: local_ip_from(conn),
-                    rtpmap: "96 AppleLossless".to_string(),
-                    fmtp,
-                    aes_key,
-                    aes_iv,
-                    output_sample_rate: conn.output_sample_rate,
-                    remote_socket: conn.remote_socket,
-                },
-            ));
-            // Start with control_rport=0 for now — just to bind the timing socket.
             let timing_rport = dict.get("timingPort")
                 .and_then(|v| v.as_unsigned_integer()).unwrap_or(0) as u16;
-            if let Some(rtp) = &mut conn.raop_rtp {
-                let (_cport, tport, _dport) = tokio::task::block_in_place(|| {
-                    tokio::runtime::Handle::current().block_on(
-                        rtp.start(true, 0, timing_rport)
-                    )
-                }).ok().unwrap_or((0, 0, 0));
-                tport
-            } else { 0 }
+            let bind_addr = bind_addr_for(conn);
+            let tport = tokio::task::block_in_place(|| {
+                tokio::runtime::Handle::current().block_on(async {
+                    let tsock = tokio::net::UdpSocket::bind(&bind_addr).await?;
+                    let local_port = tsock.local_addr()?.port();
+                    let mut remote_timing = conn.remote_socket;
+                    remote_timing.set_port(timing_rport);
+                    crate::raop::rtp::spawn_ntp_responder(tsock, remote_timing);
+                    Ok::<_, std::io::Error>(local_port)
+                })
+            }).unwrap_or(0);
+            tracing::debug!(tport, timing_rport, "Legacy video: NTP timing socket bound");
+            tport
         } else {
             0
         };

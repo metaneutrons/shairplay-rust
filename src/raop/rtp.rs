@@ -187,101 +187,11 @@ impl RaopRtp {
             self.timing_lport = tsock.local_addr().map_err(NetworkError::Io)?.port();
             self.data_lport = dsock.local_addr().map_err(NetworkError::Io)?.port();
 
-            // Spawn NTP timing responder — echoes timing requests back with timestamps,
-            // and actively sends timing requests to the iPhone's timing port.
+            // Spawn NTP timing responder for this connection.
             let remote_sockaddr = self.remote_socket;
-            tokio::spawn(async move {
-                let mut buf = [0u8; 128];
-
-                // Build remote timing address, preserving scope_id for link-local IPv6
-                let remote_timing: Option<std::net::SocketAddr> = if timing_rport > 0 {
-                    let mut addr = remote_sockaddr;
-                    addr.set_port(timing_rport);
-                    Some(addr)
-                } else {
-                    None
-                };
-
-                let ntp_now = || {
-                    let now = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default();
-                    let secs = (now.as_secs() + 0x83AA7E80) as u32;
-                    let frac = ((now.subsec_nanos() as u64) << 32) / 1_000_000_000;
-                    (secs, frac as u32)
-                };
-
-                let put_ntp = |buf: &mut [u8], off: usize, secs: u32, frac: u32| {
-                    buf[off..off+4].copy_from_slice(&secs.to_be_bytes());
-                    buf[off+4..off+8].copy_from_slice(&frac.to_be_bytes());
-                };
-
-                // Send initial timing requests to iPhone
-                if let Some(addr) = remote_timing {
-                    tracing::info!(%addr, "NTP: sending initial timing requests");
-                    for i in 0..3 {
-                        let mut req = [0u8; 32];
-                        req[0] = 0x80;
-                        req[1] = 0xd2;
-                        req[2] = 0x00;
-                        req[3] = 0x07;
-                        let (s, f) = ntp_now();
-                        put_ntp(&mut req, 24, s, f);
-                        match tsock.send_to(&req, addr).await {
-                            Ok(_) => tracing::debug!(i, "NTP: request sent"),
-                            Err(e) => tracing::warn!(i, %e, "NTP: send failed"),
-                        }
-                        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                    }
-                } else {
-                    tracing::warn!("NTP: no remote timing address");
-                }
-
-                loop {
-                    let timeout = tokio::time::sleep(std::time::Duration::from_secs(3));
-                    tokio::select! {
-                        result = tsock.recv_from(&mut buf) => {
-                            match result {
-                                Ok((len, addr)) if len >= 32 => {
-                                    let ptype = buf[1] & 0x7f;
-                                    tracing::debug!(len, ptype = format!("0x{ptype:02x}"), %addr, "NTP: received");
-                                    if ptype == 0x52 {
-                                        // Timing request from iPhone — send response
-                                        let mut resp = [0u8; 32];
-                                        resp[..len.min(32)].copy_from_slice(&buf[..len.min(32)]);
-                                        resp[1] = 0xd3;
-                                        resp[8..16].copy_from_slice(&buf[24..32]);
-                                        let (s, f) = ntp_now();
-                                        put_ntp(&mut resp, 16, s, f);
-                                        put_ntp(&mut resp, 24, s, f);
-                                        let _ = tsock.send_to(&resp, addr).await;
-                                        tracing::debug!(%addr, "NTP: response sent");
-                                    } else if ptype == 0x53 {
-                                        tracing::debug!("NTP: got timing response (ignored)");
-                                    }
-                                }
-                                Ok((len, addr)) => {
-                                    tracing::debug!(len, %addr, "NTP: short packet ignored");
-                                }
-                                Err(e) => { tracing::warn!(%e, "NTP: recv error"); break; }
-                            }
-                        }
-                        _ = timeout => {
-                            if let Some(addr) = remote_timing {
-                                let mut req = [0u8; 32];
-                                req[0] = 0x80;
-                                req[1] = 0xd2;
-                                req[2] = 0x00;
-                                req[3] = 0x07;
-                                let (s, f) = ntp_now();
-                                put_ntp(&mut req, 24, s, f);
-                                let _ = tsock.send_to(&req, addr).await;
-                                tracing::debug!(%addr, "NTP: keepalive sent");
-                            }
-                        }
-                    }
-                }
-            });
+            let mut timing_addr = remote_sockaddr;
+            timing_addr.set_port(timing_rport);
+            spawn_ntp_responder(tsock, timing_addr);
 
             let config = {
                 let buf = self.buffer.lock().await;
@@ -527,4 +437,80 @@ impl RaopRtp {
         }
         self.buffer.lock().await.flush(-1);
     }
+}
+
+/// Spawn an NTP timing responder on the given UDP socket.
+///
+/// Sends initial timing requests to `remote_timing`, then responds to incoming
+/// timing requests and sends periodic keepalives. Required for legacy AirPlay
+/// connections where the iPhone expects NTP sync before streaming audio.
+pub(crate) fn spawn_ntp_responder(tsock: tokio::net::UdpSocket, remote_timing: std::net::SocketAddr) {
+    tokio::spawn(async move {
+        let mut buf = [0u8; 128];
+
+        let ntp_now = || {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default();
+            let secs = (now.as_secs() + 0x83AA7E80) as u32;
+            let frac = ((now.subsec_nanos() as u64) << 32) / 1_000_000_000;
+            (secs, frac as u32)
+        };
+
+        let put_ntp = |buf: &mut [u8], off: usize, secs: u32, frac: u32| {
+            buf[off..off+4].copy_from_slice(&secs.to_be_bytes());
+            buf[off+4..off+8].copy_from_slice(&frac.to_be_bytes());
+        };
+
+        // Send initial timing requests to iPhone
+        if remote_timing.port() > 0 {
+            tracing::debug!(%remote_timing, "NTP: sending initial timing requests");
+            for _ in 0..3 {
+                let mut req = [0u8; 32];
+                req[0] = 0x80;
+                req[1] = 0xd2;
+                req[2] = 0x00;
+                req[3] = 0x07;
+                let (s, f) = ntp_now();
+                put_ntp(&mut req, 24, s, f);
+                let _ = tsock.send_to(&req, remote_timing).await;
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            }
+        }
+
+        loop {
+            let timeout = tokio::time::sleep(std::time::Duration::from_secs(3));
+            tokio::select! {
+                result = tsock.recv_from(&mut buf) => {
+                    match result {
+                        Ok((len, addr)) if len >= 32 && buf[1] & 0x7f == 0x52 => {
+                            // Timing request — send response
+                            let mut resp = [0u8; 32];
+                            resp[..32].copy_from_slice(&buf[..32]);
+                            resp[1] = 0xd3;
+                            resp[8..16].copy_from_slice(&buf[24..32]);
+                            let (s, f) = ntp_now();
+                            put_ntp(&mut resp, 16, s, f);
+                            put_ntp(&mut resp, 24, s, f);
+                            let _ = tsock.send_to(&resp, addr).await;
+                        }
+                        Ok(_) => {}
+                        Err(_) => break,
+                    }
+                }
+                _ = timeout => {
+                    if remote_timing.port() > 0 {
+                        let mut req = [0u8; 32];
+                        req[0] = 0x80;
+                        req[1] = 0xd2;
+                        req[2] = 0x00;
+                        req[3] = 0x07;
+                        let (s, f) = ntp_now();
+                        put_ntp(&mut req, 24, s, f);
+                        let _ = tsock.send_to(&req, remote_timing).await;
+                    }
+                }
+            }
+        }
+    });
 }
