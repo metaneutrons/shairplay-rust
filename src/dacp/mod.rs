@@ -13,6 +13,41 @@ use tokio::net::TcpStream;
 use crate::error::NetworkError;
 use tracing::debug;
 
+/// Browse `_dacp._tcp` via mDNS and return the port for the given DACP-ID.
+/// Returns None if not found within 2 seconds.
+#[cfg(not(target_os = "macos"))]
+fn discover_dacp_port(dacp_id: &str, _remote_ip: std::net::IpAddr) -> Option<u16> {
+    let daemon = mdns_sd::ServiceDaemon::new().ok()?;
+    let receiver = daemon.browse("_dacp._tcp.local.").ok()?;
+    let target = dacp_id.to_uppercase();
+    let deadline = std::time::Instant::now() + Duration::from_secs(2);
+
+    while std::time::Instant::now() < deadline {
+        match receiver.recv_timeout(deadline.duration_since(std::time::Instant::now())) {
+            Ok(mdns_sd::ServiceEvent::ServiceResolved(info)) => {
+                if info.get_fullname().to_uppercase().contains(&target) {
+                    let port = info.get_port();
+                    let _ = daemon.shutdown();
+                    return Some(port);
+                }
+            }
+            Err(_) => break,
+            _ => continue,
+        }
+    }
+    let _ = daemon.shutdown();
+    None
+}
+
+/// Browse `_dacp._tcp` via Bonjour and return the port for the given DACP-ID.
+/// Always returns None on macOS — astro-dnssd doesn't expose a synchronous
+/// browse+resolve API. The caller falls back to port 3689.
+#[cfg(target_os = "macos")]
+fn discover_dacp_port(dacp_id: &str, _remote_ip: std::net::IpAddr) -> Option<u16> {
+    let _ = dacp_id;
+    None
+}
+
 /// Client for sending DACP remote control commands to an Apple device.
 ///
 /// Created from the DACP ID and Active-Remote header received via
@@ -30,7 +65,7 @@ use tracing::debug;
 #[derive(Debug)]
 /// HTTP client for sending DACP playback commands to the iPhone.
 pub struct DacpClient {
-    #[allow(dead_code)]
+    /// DACP-ID from the RTSP session. Identifies the `_dacp._tcp` mDNS service.
     dacp_id: String,
     active_remote: String,
     addr: Option<SocketAddr>,
@@ -46,18 +81,22 @@ impl DacpClient {
         }
     }
 
-    /// Discover the Apple device's DACP service.
+    /// Discover the Apple device's DACP service via mDNS.
     ///
-    /// Uses the remote IP from the AirPlay TCP connection and the conventional
-    /// DACP port (3689). If the device uses a non-standard port, use `set_addr()`
-    /// instead.
-    ///
-    /// Note: port 3689 is the standard DACP port. Reliable across tested Apple devices.
-    /// and iOS versions. If not, implement proper mDNS browse+resolve for
-    /// `_dacp._tcp` to discover the actual port dynamically.
+    /// Browses `_dacp._tcp.local.` for a service matching the DACP-ID,
+    /// with a 2-second timeout. Falls back to port 3689 on the remote IP
+    /// if mDNS discovery fails.
     pub fn discover_from_remote(&mut self, remote_ip: std::net::IpAddr) {
-        // DACP port is conventionally 3689 on Apple devices
-        self.addr = Some(SocketAddr::new(remote_ip, 3689));
+        self.addr = match discover_dacp_port(&self.dacp_id, remote_ip) {
+            Some(port) => {
+                debug!(port, dacp_id = %self.dacp_id, "DACP service discovered via mDNS");
+                Some(SocketAddr::new(remote_ip, port))
+            }
+            None => {
+                debug!(dacp_id = %self.dacp_id, "DACP mDNS discovery failed, falling back to port 3689");
+                Some(SocketAddr::new(remote_ip, 3689))
+            }
+        };
     }
 
     /// Set the device address directly (skip mDNS discovery).
