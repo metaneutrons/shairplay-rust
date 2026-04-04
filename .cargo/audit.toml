@@ -1,0 +1,5 @@
+[advisories]
+ignore = [
+    "RUSTSEC-2023-0071", # rsa: Marvin attack — no fix available (rsa 0.10 is RC)
+    "RUSTSEC-2024-0384", # instant: unmaintained — transitive dep from minifb (dev-dep)
+]
