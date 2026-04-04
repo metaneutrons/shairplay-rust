@@ -10,6 +10,7 @@
 //!   cargo run --example player -- --bind 192.168.1.100
 //!   cargo run --example player -- --bind 192.168.1.100 --bind fd00::1
 //!   cargo run --example player -- --persist state.json
+//!   cargo run --example player -- --resample
 //!
 //! Then select the speaker as AirPlay output on your iPhone/Mac.
 
@@ -18,6 +19,53 @@ use std::sync::{Arc, Mutex};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use rubato::{Async, FixedAsync, Resampler, SincInterpolationParameters, SincInterpolationType, WindowFunction};
+use rubato::audioadapter_buffers::direct::SequentialSliceOfVecs;
+
+/// Simple streaming resampler for the example app (uses rubato directly).
+struct ExampleResampler {
+    resampler: Async<f32>,
+    channels: usize,
+    chunk_size: usize,
+    pending: Vec<f32>,
+}
+
+impl ExampleResampler {
+    fn new(from_rate: u32, to_rate: u32, channels: usize) -> Option<Self> {
+        if from_rate == to_rate { return None; }
+        let params = SincInterpolationParameters {
+            sinc_len: 64, f_cutoff: 0.95,
+            interpolation: SincInterpolationType::Linear,
+            oversampling_factor: 128,
+            window: WindowFunction::BlackmanHarris2,
+        };
+        let chunk_size = 128;
+        let resampler = Async::<f32>::new_sinc(
+            to_rate as f64 / from_rate as f64, 1.0, &params,
+            chunk_size, channels, FixedAsync::Input,
+        ).ok()?;
+        Some(Self { resampler, channels, chunk_size, pending: Vec::new() })
+    }
+
+    fn process(&mut self, input: &[f32]) -> Vec<f32> {
+        self.pending.extend_from_slice(input);
+        let samples_per_chunk = self.chunk_size * self.channels;
+        let mut output = Vec::new();
+        while self.pending.len() >= samples_per_chunk {
+            let chunk: Vec<f32> = self.pending.drain(..samples_per_chunk).collect();
+            let mut ch_vecs: Vec<Vec<f32>> = (0..self.channels)
+                .map(|_| Vec::with_capacity(self.chunk_size)).collect();
+            for frame in chunk.chunks_exact(self.channels) {
+                for (ch, &s) in frame.iter().enumerate() { ch_vecs[ch].push(s); }
+            }
+            if let Ok(input) = SequentialSliceOfVecs::new(&ch_vecs, self.channels, self.chunk_size) {
+                if let Ok(result) = self.resampler.process(&input, 0, None) {
+                    output.extend(result.take_data());
+                }
+            }
+        }
+        output
+    }
+}
 use std::net::IpAddr;
 use std::path::PathBuf;
 use shairplay::{AudioFormat, AudioHandler, AudioSession, BindConfig, RaopServer};
@@ -108,31 +156,22 @@ struct Handler {
     ring: Arc<Mutex<AudioRing>>,
     device_rate: u32,
     device_channels: u16,
+    use_resample: bool,
 }
 
 impl AudioHandler for Handler {
     fn audio_init(&self, format: AudioFormat) -> Box<dyn AudioSession> {
         eprintln!("🎵 New stream: {}ch {}bit {}Hz", format.channels, format.bits, format.sample_rate);
 
-        let resampler = if format.sample_rate != self.device_rate {
+        let resampler = if self.use_resample && format.sample_rate != self.device_rate {
             eprintln!("🔄 Resampling {}Hz → {}Hz (in example app)", format.sample_rate, self.device_rate);
-            let params = SincInterpolationParameters {
-                sinc_len: 256,
-                f_cutoff: 0.95,
-                interpolation: SincInterpolationType::Linear,
-                oversampling_factor: 256,
-                window: WindowFunction::BlackmanHarris2,
-            };
-            Async::<f64>::new_sinc(
-                self.device_rate as f64 / format.sample_rate as f64,
-                2.0,
-                &params,
-                1024,
-                format.channels as usize,
-                FixedAsync::Input,
-            ).ok()
+            ExampleResampler::new(format.sample_rate, self.device_rate, format.channels as usize)
         } else {
-            eprintln!("✅ Source rate matches device — no resampling needed");
+            if format.sample_rate != self.device_rate {
+                eprintln!("⚠️  Source {}Hz ≠ device {}Hz — use --resample to convert", format.sample_rate, self.device_rate);
+            } else {
+                eprintln!("✅ Source rate matches device — no resampling needed");
+            }
             None
         };
 
@@ -147,7 +186,7 @@ impl AudioHandler for Handler {
 
 struct Session {
     ring: Arc<Mutex<AudioRing>>,
-    resampler: Option<Mutex<Async<f64>>>,
+    resampler: Option<Mutex<ExampleResampler>>,
     source_channels: usize,
     device_channels: usize,
 }
@@ -155,45 +194,23 @@ struct Session {
 impl AudioSession for Session {
     fn audio_process(&mut self, buffer: &[u8]) {
         // Decode F32LE bytes to samples
-        let samples: Vec<f32> = buffer.chunks_exact(4)
+        let mut samples: Vec<f32> = buffer.chunks_exact(4)
             .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
             .collect();
 
-        let output = if let Some(ref rs) = self.resampler {
-            let mut rs = rs.lock().unwrap();
-            // Deinterleave into per-channel vectors
-            let mut channels: Vec<Vec<f64>> = vec![Vec::new(); self.source_channels];
-            for (i, &s) in samples.iter().enumerate() {
-                channels[i % self.source_channels].push(s as f64);
-            }
-            // Pad to resampler chunk size
-            let chunk = rs.input_frames_max();
-            for ch in &mut channels {
-                ch.resize(chunk, 0.0);
-            }
-            // Resample — returns InterleavedOwned<f64>
-            let frames = channels[0].len();
-            let input = rubato::audioadapter_buffers::direct::SequentialSliceOfVecs::new(
-                &channels, self.source_channels, frames,
-            ).unwrap();
-            match rs.process(&input, 0, None) {
-                Ok(resampled) => {
-                    resampled.take_data().iter().map(|&s| s as f32).collect()
-                }
-                Err(_) => samples,
-            }
-        } else {
-            samples
-        };
+        // Resample if needed
+        if let Some(ref rs) = self.resampler {
+            samples = rs.lock().unwrap().process(&samples);
+        }
 
-        // Mix down to device channels if needed (simple: take first N channels)
+        // Mix down to device channels if needed
         let final_samples: Vec<f32> = if self.source_channels > self.device_channels {
-            output.chunks_exact(self.source_channels)
+            samples.chunks_exact(self.source_channels)
                 .flat_map(|frame| &frame[..self.device_channels])
                 .copied()
                 .collect()
         } else {
-            output
+            samples
         };
 
         self.ring.lock().unwrap().push_samples(&final_samples);
@@ -242,6 +259,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .collect();
     let persist_path: Option<PathBuf> = args.iter().position(|a| a == "--persist")
         .map(|i| PathBuf::from(&args[i + 1]));
+    let use_resample = args.iter().any(|a| a == "--resample");
 
     // Detect output device and its native sample rate
     let host = cpal::default_host();
@@ -253,7 +271,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (ring, _stream) = match host.default_output_device() {
         Some(device) => {
             eprintln!("🔈 Output device: {} ({}Hz, {}ch)",
-                device.name().unwrap_or_default(), device_rate, device_channels);
+                device.description().map(|d| d.name().to_string()).unwrap_or_default(), device_rate, device_channels);
 
             let config = cpal::StreamConfig {
                 channels: device_channels,
@@ -317,7 +335,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     // Build server — no output_sample_rate(), resampling handled in this example
-    let handler = Arc::new(Handler { ring, device_rate, device_channels });
+    let handler = Arc::new(Handler { ring, device_rate, device_channels, use_resample });
     let mut builder = RaopServer::builder();
     builder = builder.name(name).hwaddr(mac);
 
