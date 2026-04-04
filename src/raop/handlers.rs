@@ -21,6 +21,7 @@ pub(crate) struct RaopConnection {
     pub local_addr: Vec<u8>,
     #[allow(dead_code)] // read in AP2 event channel binding
     pub remote_addr: Vec<u8>,
+    pub remote_socket: std::net::SocketAddr,
     pub nonce: String,
     // Shared references from the server
     pub rsakey: Arc<RsaKey>,
@@ -70,11 +71,15 @@ pub(crate) struct RaopConnection {
 
 /// Returns the connection's local IP address.
 fn local_ip_from(conn: &RaopConnection) -> std::net::IpAddr {
-    if conn.local_addr.len() == 16 {
-        let ip: [u8; 16] = conn.local_addr[..16].try_into().unwrap_or([0; 16]);
+    ip_from_bytes(&conn.local_addr)
+}
+
+fn ip_from_bytes(bytes: &[u8]) -> std::net::IpAddr {
+    if bytes.len() == 16 {
+        let ip: [u8; 16] = bytes[..16].try_into().unwrap_or([0; 16]);
         std::net::IpAddr::V6(std::net::Ipv6Addr::from(ip))
     } else {
-        let ip: [u8; 4] = conn.local_addr[..4].try_into().unwrap_or([0; 4]);
+        let ip: [u8; 4] = bytes[..4].try_into().unwrap_or([0; 4]);
         std::net::IpAddr::V4(std::net::Ipv4Addr::from(ip))
     }
 }
@@ -158,6 +163,7 @@ pub(crate) fn handle_fp_setup(
     _response: &mut HttpResponse,
 ) -> Option<Vec<u8>> {
     let data = request.data()?;
+    tracing::debug!(data_len = data.len(), "fp-setup");
     match data.len() {
         16 => {
             let req: &[u8; 16] = data.try_into().ok()?;
@@ -239,6 +245,7 @@ pub(crate) fn handle_announce(
             aes_key: aeskey,
             aes_iv: aesiv,
             output_sample_rate: conn.output_sample_rate,
+                    remote_socket: conn.remote_socket,
         },
     ));
 
@@ -593,41 +600,86 @@ pub(crate) fn handle_setup_2(
 
         match stream_type {
             96 => {
-                // Realtime ALAC over UDP with ChaCha20-Poly1305 per-packet encryption.
                 let sr = stream0.get("sr").and_then(|v| v.as_unsigned_integer()).unwrap_or(44100);
-                tracing::info!(stream_type = 96, sample_rate = sr, "AP2 realtime ALAC stream setup");
-
+                let spf = stream0.get("spf").and_then(|v| v.as_unsigned_integer()).unwrap_or(352);
                 let shk = stream0.get("shk").and_then(|v| v.as_data()).unwrap_or(&[]);
-                if shk.len() != 32 {
-                    // Screen mirroring audio (type 96 without shk) uses a different
-                    // encryption scheme — not yet implemented. Skip gracefully.
-                    tracing::warn!("Type 96 without shk — screen mirroring audio not yet supported");
-                    return None;
+
+                if shk.len() == 32 {
+                    // AP2 realtime ALAC — ChaCha20-Poly1305 per-packet encryption.
+                    tracing::info!(stream_type = 96, sample_rate = sr, "AP2 realtime ALAC (ChaCha20)");
+                    let mut shk_arr = [0u8; 32];
+                    shk_arr.copy_from_slice(shk);
+
+                    let bind_addr = bind_addr_for(conn);
+                    let socket = tokio::task::block_in_place(|| {
+                        tokio::runtime::Handle::current().block_on(
+                            tokio::net::UdpSocket::bind(&bind_addr)
+                        )
+                    }).ok()?;
+                    let audio_port = socket.local_addr().ok()?.port();
+
+                    let handler = conn.handler.clone();
+                    let output_config = crate::raop::realtime_audio::OutputConfig {
+                        sample_rate: conn.output_sample_rate,
+                        max_channels: conn.output_max_channels,
+                    };
+
+                    tokio::task::block_in_place(|| {
+                        tokio::runtime::Handle::current().spawn(
+                            crate::raop::realtime_audio::run(socket, shk_arr, handler, output_config)
+                        );
+                    });
+
+                    stream_resp.insert("dataPort".into(), plist::Value::Integer(audio_port.into()));
+                } else {
+                    // Legacy ALAC — only available with video feature (UxPlay-style features).
+                    #[cfg(feature = "video")]
+                    {
+                    // RaopRtp was already created in the initial SETUP for timing.
+                    tracing::info!(stream_type = 96, sample_rate = sr, "Legacy ALAC (AES-CBC via ekey)");
+
+                    if conn.raop_rtp.is_none() {
+                        let aes_key = conn.ekey.unwrap_or([0u8; 16]);
+                        let aes_iv = conn.eiv.unwrap_or([0u8; 16]);
+                        let fmtp = format!("96 {spf} 0 16 40 10 14 2 255 0 0 {sr}");
+                        conn.raop_rtp = Some(RaopRtp::new(
+                            conn.handler.clone(),
+                            crate::raop::rtp::RtpConfig {
+                                remote: conn.remote_socket.ip().to_string(),
+                                local_addr: local_ip_from(conn),
+                                rtpmap: "96 AppleLossless".to_string(),
+                                fmtp,
+                                aes_key,
+                                aes_iv,
+                                output_sample_rate: conn.output_sample_rate,
+                    remote_socket: conn.remote_socket,
+                            },
+                        ));
+                        if let Some(rtp) = &mut conn.raop_rtp {
+                            let control_port = stream0.get("controlPort")
+                                .and_then(|v| v.as_unsigned_integer()).unwrap_or(0) as u16;
+                            let (cport, _tport, dport) = tokio::task::block_in_place(|| {
+                                tokio::runtime::Handle::current().block_on(
+                                    rtp.start(true, control_port, 0)
+                                )
+                            }).ok()?;
+                            stream_resp.insert("dataPort".into(), plist::Value::Integer(dport.into()));
+                            stream_resp.insert("controlPort".into(), plist::Value::Integer(cport.into()));
+                        }
+                    } else {
+                        // Already started — just return the ports
+                        if let Some(rtp) = &conn.raop_rtp {
+                            stream_resp.insert("dataPort".into(), plist::Value::Integer(rtp.data_lport.into()));
+                            stream_resp.insert("controlPort".into(), plist::Value::Integer(rtp.control_lport.into()));
+                        }
+                    }
+                    } // cfg(feature = "video")
+                    #[cfg(not(feature = "video"))]
+                    {
+                        tracing::warn!("Type 96 without shk — requires video feature");
+                        return None;
+                    }
                 }
-                let mut shk_arr = [0u8; 32];
-                shk_arr.copy_from_slice(shk);
-
-                let bind_addr = bind_addr_for(conn);
-                let socket = tokio::task::block_in_place(|| {
-                    tokio::runtime::Handle::current().block_on(
-                        tokio::net::UdpSocket::bind(&bind_addr)
-                    )
-                }).ok()?;
-                let audio_port = socket.local_addr().ok()?.port();
-
-                let handler = conn.handler.clone();
-                let output_config = crate::raop::realtime_audio::OutputConfig {
-                    sample_rate: conn.output_sample_rate,
-                    max_channels: conn.output_max_channels,
-                };
-
-                tokio::task::block_in_place(|| {
-                    tokio::runtime::Handle::current().spawn(
-                        crate::raop::realtime_audio::run(socket, shk_arr, handler, output_config)
-                    );
-                });
-
-                stream_resp.insert("dataPort".into(), plist::Value::Integer(audio_port.into()));
             }
             103 => {
                 // Buffered audio — bind TCP port and spawn processor
@@ -836,7 +888,8 @@ pub(crate) fn handle_setup_2(
             if let Some(ekey_data) = dict.get("ekey").and_then(|v| v.as_data()) {
                 if ekey_data.len() == 72 {
                     if let Ok(input) = <[u8; 72]>::try_from(ekey_data) {
-                        if let Ok(fp_key) = conn.fairplay.decrypt(&input) {
+                        match conn.fairplay.decrypt(&input) {
+                            Ok(fp_key) => {
                             // SHA-512 two-step: hash FairPlay key with ECDH shared secret
                             // Stage 2: hash with ECDH only if AP2 pairing was used.
                             // With UxPlay-style features (bit 27 off), no pairing occurs
@@ -858,6 +911,10 @@ pub(crate) fn handle_setup_2(
                             if let Ok(mut shared) = conn.shared_video_ekey.write() {
                                 *shared = Some(derived);
                                 tracing::debug!("Video ekey stored in shared state");
+                            }
+                            }
+                            Err(e) => {
+                                tracing::warn!("FairPlay decrypt failed: {e:?}");
                             }
                         }
                     }
@@ -919,56 +976,99 @@ pub(crate) fn handle_setup_2(
         let (event_listener, event_port) = event_ch;
         tracing::info!(event_port, "Event channel opened");
 
-        // Derive event channel encryption keys from shared secret
-        let shared_secret = conn.ap2_shared_secret.as_ref()?;
-        let event_channel_cipher = crate::crypto::chacha_transport::EncryptedChannel::events(shared_secret)
-            .ok()?;
+        // Derive event channel encryption keys from shared secret (AP2 only).
+        // In legacy mode there's no shared secret — skip the encrypted event channel.
+        if let Some(shared_secret) = conn.ap2_shared_secret.as_ref() {
+            if let Ok(event_channel_cipher) = crate::crypto::chacha_transport::EncryptedChannel::events(shared_secret) {
+                // Spawn bidirectional event channel
+                let event_sender = tokio::task::block_in_place(|| {
+                    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
 
-        // Spawn bidirectional event channel
-        let event_sender = tokio::task::block_in_place(|| {
-            let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+                    // Queue updateInfo so it's sent immediately when client connects
+                    let mut update_info = plist::Dictionary::new();
+                    update_info.insert("type".into(), plist::Value::String("updateInfo".into()));
+                    let mut value = plist::Dictionary::new();
+                    value.insert("statusFlags".into(), plist::Value::Integer((crate::net::mdns::AP2_STATUS_FLAGS as i64).into()));
+                    value.insert("features".into(), plist::Value::Integer((crate::net::features::receiver_features() as i64).into()));
+                    value.insert("model".into(), plist::Value::String(crate::net::mdns::GLOBAL_MODEL.into()));
+                    value.insert("sourceVersion".into(), plist::Value::String(crate::net::mdns::AP2_SRCVERS.into()));
+                    value.insert("protocolVersion".into(), plist::Value::String(crate::net::mdns::AP2_PROTOVERS.into()));
+                    update_info.insert("value".into(), plist::Value::Dictionary(value));
+                    let mut body = Vec::new();
+                    if plist::to_writer_binary(&mut body, &update_info).is_ok() {
+                        let rtsp = format!(
+                            "POST /command RTSP/1.0\r\nContent-Length: {}\r\nContent-Type: application/x-apple-binary-plist\r\nCSeq: 0\r\n\r\n",
+                            body.len()
+                        );
+                        let mut msg = rtsp.into_bytes();
+                        msg.extend_from_slice(&body);
+                        let _ = tx.send(msg);
+                        tracing::debug!("updateInfo queued for event channel");
+                    }
 
-            // Queue updateInfo so it's sent immediately when client connects
-            let mut update_info = plist::Dictionary::new();
-            update_info.insert("type".into(), plist::Value::String("updateInfo".into()));
-            let mut value = plist::Dictionary::new();
-            value.insert("statusFlags".into(), plist::Value::Integer((crate::net::mdns::AP2_STATUS_FLAGS as i64).into()));
-            value.insert("features".into(), plist::Value::Integer((crate::net::features::receiver_features() as i64).into()));
-            value.insert("model".into(), plist::Value::String(crate::net::mdns::GLOBAL_MODEL.into()));
-            value.insert("sourceVersion".into(), plist::Value::String(crate::net::mdns::AP2_SRCVERS.into()));
-            value.insert("protocolVersion".into(), plist::Value::String(crate::net::mdns::AP2_PROTOVERS.into()));
-            update_info.insert("value".into(), plist::Value::Dictionary(value));
-            let mut body = Vec::new();
-            if plist::to_writer_binary(&mut body, &update_info).is_ok() {
-                let rtsp = format!(
-                    "POST /command RTSP/1.0\r\nContent-Length: {}\r\nContent-Type: application/x-apple-binary-plist\r\nCSeq: 0\r\n\r\n",
-                    body.len()
-                );
-                let mut msg = rtsp.into_bytes();
-                msg.extend_from_slice(&body);
-                let _ = tx.send(msg);
-                tracing::debug!("updateInfo queued for event channel");
+                    let sender = crate::raop::event_channel::EventSender::from_tx(tx);
+                    tokio::runtime::Handle::current().spawn(async move {
+                        if let Ok((stream, addr)) = event_listener.accept().await {
+                            tracing::info!(%addr, "Event channel client connected");
+                            crate::raop::event_channel::EventChannel::handle_stream(
+                                stream, event_channel_cipher, rx
+                            ).await;
+                        }
+                    });
+                    sender
+                });
+                conn.event_sender = Some(event_sender);
             }
+        }
 
-            let sender = crate::raop::event_channel::EventSender::from_tx(tx);
-            tokio::runtime::Handle::current().spawn(async move {
-                if let Ok((stream, addr)) = event_listener.accept().await {
-                    tracing::info!(%addr, "Event channel client connected");
-                    crate::raop::event_channel::EventChannel::handle_stream(
-                        stream, event_channel_cipher, rx
-                    ).await;
-                }
-            });
-            sender
-        });
-        conn.event_sender = Some(event_sender);
+        // In legacy mode, event channel is not encrypted — return port 0 like UxPlay.
+        let event_port_resp = if conn.ap2_shared_secret.is_some() { event_port as u64 } else { 0 };
+        resp_dict.insert("eventPort".into(), plist::Value::Integer(event_port_resp.into()));
 
-        resp_dict.insert("eventPort".into(), plist::Value::Integer((event_port as u64).into()));
-        resp_dict.insert("timingPort".into(), plist::Value::Integer(0_i64.into()));
+        // Legacy mirror mode: create RTP handler early so we can return a timing port.
+        // The iPhone needs a valid timing port for NTP sync before it sends audio.
+        #[cfg(feature = "video")]
+        let timing_port = if !conn.is_ap2 && conn.ekey.is_some() {
+            tracing::debug!("Legacy video: creating early RTP for NTP timing");
+            let aes_key = conn.ekey.unwrap_or([0u8; 16]);
+            let aes_iv = conn.eiv.unwrap_or([0u8; 16]);
+            let fmtp = "96 352 0 16 40 10 14 2 255 0 0 44100".to_string();
+            conn.raop_rtp = Some(RaopRtp::new(
+                conn.handler.clone(),
+                crate::raop::rtp::RtpConfig {
+                    remote: conn.remote_socket.ip().to_string(),
+                    local_addr: local_ip_from(conn),
+                    rtpmap: "96 AppleLossless".to_string(),
+                    fmtp,
+                    aes_key,
+                    aes_iv,
+                    output_sample_rate: conn.output_sample_rate,
+                    remote_socket: conn.remote_socket,
+                },
+            ));
+            // Start with control_rport=0 for now — just to bind the timing socket.
+            let timing_rport = dict.get("timingPort")
+                .and_then(|v| v.as_unsigned_integer()).unwrap_or(0) as u16;
+            if let Some(rtp) = &mut conn.raop_rtp {
+                let (_cport, tport, _dport) = tokio::task::block_in_place(|| {
+                    tokio::runtime::Handle::current().block_on(
+                        rtp.start(true, 0, timing_rport)
+                    )
+                }).ok().unwrap_or((0, 0, 0));
+                tport
+            } else { 0 }
+        } else {
+            0
+        };
+        #[cfg(not(feature = "video"))]
+        let timing_port: u16 = 0;
+
+        resp_dict.insert("timingPort".into(), plist::Value::Integer((timing_port as u64).into()));
     }
 
     let mut buf = Vec::new();
     plist::to_writer_binary(&mut buf, &resp_dict).ok()?;
+    tracing::debug!(buf_len = buf.len(), "SETUP response");
     response.add_header("Content-Type", "application/x-apple-binary-plist");
     Some(buf)
 }

@@ -90,6 +90,8 @@ pub struct RtpConfig {
     pub aes_iv: [u8; 16],
     /// If set, resample decoded audio to this rate.
     pub output_sample_rate: Option<u32>,
+    /// Full socket address of the remote peer (preserves scope_id for link-local IPv6).
+    pub remote_socket: std::net::SocketAddr,
 }
 
 /// AP1 RTP streaming session.
@@ -119,11 +121,13 @@ pub struct RaopRtp {
     /// iPhone's control port (0 = no retransmits).
     control_rport: u16,
     /// Local control port (bound by us).
-    control_lport: u16,
+    pub(crate) control_lport: u16,
     /// Local timing port (bound by us).
-    timing_lport: u16,
+    pub(crate) timing_lport: u16,
     /// Local data port (bound by us).
-    data_lport: u16,
+    pub(crate) data_lport: u16,
+    /// Full socket address of the remote peer.
+    remote_socket: std::net::SocketAddr,
 }
 
 impl RaopRtp {
@@ -136,6 +140,7 @@ impl RaopRtp {
             remote: config.remote,
             local_addr: config.local_addr,
             output_sample_rate: config.output_sample_rate,
+            remote_socket: config.remote_socket,
             buffer: Arc::new(Mutex::new(buffer)),
             state: Arc::new(Mutex::new(RtpState {
                 volume: 0.0, volume_changed: false,
@@ -166,10 +171,10 @@ impl RaopRtp {
         &mut self,
         use_udp: bool,
         control_rport: u16,
-        _timing_rport: u16,
+        timing_rport: u16,
     ) -> Result<(u16, u16, u16), ShairplayError> {
         self.control_rport = control_rport;
-        info!(use_udp, control_rport, "AP1 RTP starting");
+        info!(use_udp, control_rport, timing_rport, remote = %self.remote, "AP1 RTP starting");
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
         self.shutdown_tx = Some(shutdown_tx);
 
@@ -181,6 +186,102 @@ impl RaopRtp {
             self.control_lport = csock.local_addr().map_err(NetworkError::Io)?.port();
             self.timing_lport = tsock.local_addr().map_err(NetworkError::Io)?.port();
             self.data_lport = dsock.local_addr().map_err(NetworkError::Io)?.port();
+
+            // Spawn NTP timing responder — echoes timing requests back with timestamps,
+            // and actively sends timing requests to the iPhone's timing port.
+            let remote_sockaddr = self.remote_socket;
+            tokio::spawn(async move {
+                let mut buf = [0u8; 128];
+
+                // Build remote timing address, preserving scope_id for link-local IPv6
+                let remote_timing: Option<std::net::SocketAddr> = if timing_rport > 0 {
+                    let mut addr = remote_sockaddr;
+                    addr.set_port(timing_rport);
+                    Some(addr)
+                } else {
+                    None
+                };
+
+                let ntp_now = || {
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default();
+                    let secs = (now.as_secs() + 0x83AA7E80) as u32;
+                    let frac = ((now.subsec_nanos() as u64) << 32) / 1_000_000_000;
+                    (secs, frac as u32)
+                };
+
+                let put_ntp = |buf: &mut [u8], off: usize, secs: u32, frac: u32| {
+                    buf[off..off+4].copy_from_slice(&secs.to_be_bytes());
+                    buf[off+4..off+8].copy_from_slice(&frac.to_be_bytes());
+                };
+
+                // Send initial timing requests to iPhone
+                if let Some(addr) = remote_timing {
+                    tracing::info!(%addr, "NTP: sending initial timing requests");
+                    for i in 0..3 {
+                        let mut req = [0u8; 32];
+                        req[0] = 0x80;
+                        req[1] = 0xd2;
+                        req[2] = 0x00;
+                        req[3] = 0x07;
+                        let (s, f) = ntp_now();
+                        put_ntp(&mut req, 24, s, f);
+                        match tsock.send_to(&req, addr).await {
+                            Ok(_) => tracing::debug!(i, "NTP: request sent"),
+                            Err(e) => tracing::warn!(i, %e, "NTP: send failed"),
+                        }
+                        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                    }
+                } else {
+                    tracing::warn!("NTP: no remote timing address");
+                }
+
+                loop {
+                    let timeout = tokio::time::sleep(std::time::Duration::from_secs(3));
+                    tokio::select! {
+                        result = tsock.recv_from(&mut buf) => {
+                            match result {
+                                Ok((len, addr)) if len >= 32 => {
+                                    let ptype = buf[1] & 0x7f;
+                                    tracing::debug!(len, ptype = format!("0x{ptype:02x}"), %addr, "NTP: received");
+                                    if ptype == 0x52 {
+                                        // Timing request from iPhone — send response
+                                        let mut resp = [0u8; 32];
+                                        resp[..len.min(32)].copy_from_slice(&buf[..len.min(32)]);
+                                        resp[1] = 0xd3;
+                                        resp[8..16].copy_from_slice(&buf[24..32]);
+                                        let (s, f) = ntp_now();
+                                        put_ntp(&mut resp, 16, s, f);
+                                        put_ntp(&mut resp, 24, s, f);
+                                        let _ = tsock.send_to(&resp, addr).await;
+                                        tracing::debug!(%addr, "NTP: response sent");
+                                    } else if ptype == 0x53 {
+                                        tracing::debug!("NTP: got timing response (ignored)");
+                                    }
+                                }
+                                Ok((len, addr)) => {
+                                    tracing::debug!(len, %addr, "NTP: short packet ignored");
+                                }
+                                Err(e) => { tracing::warn!(%e, "NTP: recv error"); break; }
+                            }
+                        }
+                        _ = timeout => {
+                            if let Some(addr) = remote_timing {
+                                let mut req = [0u8; 32];
+                                req[0] = 0x80;
+                                req[1] = 0xd2;
+                                req[2] = 0x00;
+                                req[3] = 0x07;
+                                let (s, f) = ntp_now();
+                                put_ntp(&mut req, 24, s, f);
+                                let _ = tsock.send_to(&req, addr).await;
+                                tracing::debug!(%addr, "NTP: keepalive sent");
+                            }
+                        }
+                    }
+                }
+            });
 
             let config = {
                 let buf = self.buffer.lock().await;

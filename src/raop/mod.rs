@@ -191,6 +191,7 @@ impl HttpdCallbacks for RaopShared {
             pairing: self.pairing.create_session(),
             local_addr: local_bytes,
             remote_addr: remote_bytes,
+            remote_socket: remote,
             nonce: digest::generate_nonce(MAX_NONCE_LEN),
             rsakey: self.rsakey.clone(),
             pairing_identity: self.pairing.clone(),
