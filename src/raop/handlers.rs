@@ -574,15 +574,19 @@ pub(crate) fn handle_setup_2(
     let dict = plist_val.as_dictionary()?;
     let keys: Vec<_> = dict.keys().collect();
     let has_streams = dict.get("streams").is_some();
-    tracing::debug!(?keys, has_streams, "SETUP plist");
+    let is_mirror = dict.get("isScreenMirroringSession").and_then(|v| v.as_boolean()).unwrap_or(false);
+    let has_ekey = dict.get("ekey").is_some();
+    let timing = dict.get("timingProtocol").and_then(|v| v.as_string()).unwrap_or("");
+    tracing::info!(?keys, has_streams, is_mirror, has_ekey, timing, "SETUP plist");
 
     let mut resp_dict = plist::Dictionary::new();
 
     if let Some(streams) = dict.get("streams").and_then(|v| v.as_array()) {
-        // Stream SETUP — type 96 (realtime) or type 103 (buffered)
+        // Stream SETUP — type 96 (realtime) or type 103 (buffered) or type 110 (video)
         let stream0 = streams.first()?.as_dictionary()?;
         let stream_type = stream0.get("type")?.as_unsigned_integer()?;
-        tracing::debug!(?stream0, "Stream SETUP plist");
+        let stream_keys: Vec<_> = stream0.keys().collect();
+        tracing::info!(stream_type, ?stream_keys, "Stream SETUP");
 
         let mut stream_resp = plist::Dictionary::new();
         stream_resp.insert("type".into(), plist::Value::Integer(stream_type.into()));
