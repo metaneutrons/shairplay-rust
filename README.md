@@ -27,7 +27,7 @@ A complete AirPlay audio and video receiver as a Rust library. Supports both cla
 | 🔊 | **Multichannel** | 5.1 and 7.1 AAC decode with ITU-R BS.775 mixdown to stereo |
 | 🔄 | **Resampling** | Automatic sample rate conversion via rubato |
 | 🔐 | **HomeKit pairing** | Transient (PIN 3939) and normal (persistent key storage) |
-| 📺 | **Video** | Screen mirroring — experimental, behind `video` feature gate |
+| 📺 | **Video** | Screen mirroring — work in progress, behind `video` feature gate |
 | 🌐 | **Cross-platform** | macOS (native Bonjour) + Linux (pure Rust mDNS) |
 | 🔒 | **Pure safe Rust** | `#![forbid(unsafe_code)]`, no C code in this crate¹ |
 | ⚡ | **Async** | Built on [tokio](https://tokio.rs) |
@@ -104,7 +104,7 @@ let mut server = RaopServer::builder()
 | *(default)* | — | AirPlay 1 only |
 | `resample` | rubato | Sample rate conversion + channel mixdown |
 | `ap2` | chacha20poly1305, hkdf, symphonia, … (implies `resample`) | Full AirPlay 2 audio |
-| `video` | (implies `ap2`) | Screen mirroring (experimental) |
+| `video` | (implies `ap2`) | Screen mirroring (work in progress — breaks AP2 audio) |
 
 ## Implementation Status
 
@@ -121,15 +121,19 @@ Full pipeline: SRP-6a pairing → encrypted RTSP → FairPlay → PTP timing →
 
 **Known issue:** ~10 second delay between selecting the AirPlay target and audio starting. The iPhone opens a Remote Control connection first and waits before starting audio. This appears to be related to companion-link integration that third-party receivers cannot replicate. Audio playback itself is fast once connected. See [AP2-STATUS.md](AP2-STATUS.md).
 
-### 🧪 Video (Screen Mirroring) — Experimental
+### 🧪 Video (Screen Mirroring) — Work in Progress
 
-Behind the `video` feature gate. Screen mirroring is working on iOS 18:
-decryption, H.264 decode, and display confirmed. The library receives
-encrypted video packets, decrypts them (AES-128-CTR with FairPlay key
-derivation), and delivers raw H.264 NAL units to the application.
+Behind the `video` feature gate. **This feature is not fully functional.**
 
-Uses UxPlay-compatible feature set (`0x527FFEE6`) — AP2 buffered audio
-is not available when video is enabled. See [AP2-STATUS.md](AP2-STATUS.md)
+The video feature switches to a UxPlay-compatible legacy feature set
+(`0x5A7FFEE6`) to receive screen mirroring data from iOS 18+. This
+disables AP2 audio — the iPhone falls back to legacy ALAC (type 96)
+which currently does not decode correctly in video mode. AP1 audio
+(non-mirroring) continues to work.
+
+Video decryption research is ongoing. The 3-stage FairPlay key derivation
+pipeline is implemented but not yet producing correct output. See
+[AP2-STATUS.md](AP2-STATUS.md) and [VIDEO-RESEARCH.md](VIDEO-RESEARCH.md)
 for details.
 
 ### 🔬 Remote Control — Research Complete
