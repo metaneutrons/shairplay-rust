@@ -91,8 +91,8 @@ let mut server = RaopServer::builder()
 | `.password()` | none | | HTTP Digest auth password |
 | `.max_clients()` | `10` | | Maximum concurrent connections |
 | `.bind()` | all interfaces | | Bind to specific IPs (multi-interface) |
-| `.output_sample_rate()` | source rate | | Resample all audio to this rate |
-| `.output_max_channels()` | source channels | | Mix down to this channel count |
+| `.output_sample_rate()` | source rate | `resample` | Resample all audio to this rate |
+| `.output_max_channels()` | source channels | `resample` | Mix down to this channel count |
 | `.pin()` | `"3939"` | `ap2` | PIN for HomeKit pairing |
 | `.pairing_store()` | `MemoryPairingStore` | `ap2` | Persistent key storage |
 | `.video_handler()` | none | `video` | Video session factory |

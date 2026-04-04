@@ -1,5 +1,9 @@
 //! AirPlay receiver that plays audio through the system's default output device.
 //!
+//! Demonstrates handling sample rate mismatches in the application layer:
+//! the library delivers audio at the source's native rate, and the example
+//! resamples to the output device's rate using rubato.
+//!
 //! Usage:
 //!   cargo run --example player
 //!   cargo run --example player -- --name "My Speaker"
@@ -7,12 +11,13 @@
 //!   cargo run --example player -- --bind 192.168.1.100 --bind fd00::1
 //!   cargo run --example player -- --persist state.json
 //!
-//! Then select "My Speaker" as AirPlay output on your iPhone/Mac.
+//! Then select the speaker as AirPlay output on your iPhone/Mac.
 
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use rubato::{SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction, Resampler};
 use std::net::IpAddr;
 use std::path::PathBuf;
 use shairplay::{AudioFormat, AudioHandler, AudioSession, BindConfig, RaopServer};
@@ -66,7 +71,7 @@ impl PairingStore for FilePairingStore {
         if let Ok(mut keys) = self.keys.lock() {
             keys.insert(device_id.to_string(), public_key);
             let state = PersistState {
-                mac: None, // MAC saved separately
+                mac: None,
                 #[cfg(feature = "ap2")]
                 paired_keys: keys.clone(),
             };
@@ -87,15 +92,11 @@ struct AudioRing {
 
 impl AudioRing {
     fn new() -> Self {
-        Self { buffer: VecDeque::with_capacity(48000 * 8 * 2) } // ~2s buffer, up to 7.1
+        Self { buffer: VecDeque::with_capacity(48000 * 4) }
     }
 
-    fn push_samples(&mut self, pcm: &[u8]) {
-        // PCM is F32LE interleaved
-        for chunk in pcm.chunks_exact(4) {
-            let sample = f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
-            self.buffer.push_back(sample);
-        }
+    fn push_samples(&mut self, samples: &[f32]) {
+        self.buffer.extend(samples);
     }
 
     fn pop_sample(&mut self) -> f32 {
@@ -105,23 +106,99 @@ impl AudioRing {
 
 struct Handler {
     ring: Arc<Mutex<AudioRing>>,
+    device_rate: u32,
+    device_channels: u16,
 }
 
 impl AudioHandler for Handler {
     fn audio_init(&self, format: AudioFormat) -> Box<dyn AudioSession> {
-        eprintln!("🎵 New stream: {}ch {}bit {}Hz codec={:?}", format.channels, format.bits, format.sample_rate, format.codec);
-        Box::new(Session { ring: self.ring.clone() })
+        eprintln!("🎵 New stream: {}ch {}bit {}Hz", format.channels, format.bits, format.sample_rate);
+
+        let resampler = if format.sample_rate != self.device_rate {
+            eprintln!("🔄 Resampling {}Hz → {}Hz (in example app)", format.sample_rate, self.device_rate);
+            let params = SincInterpolationParameters {
+                sinc_len: 256,
+                f_cutoff: 0.95,
+                interpolation: SincInterpolationType::Linear,
+                oversampling_factor: 256,
+                window: WindowFunction::BlackmanHarris2,
+            };
+            SincFixedIn::<f64>::new(
+                self.device_rate as f64 / format.sample_rate as f64,
+                2.0,
+                params,
+                1024,
+                format.channels as usize,
+            ).ok()
+        } else {
+            eprintln!("✅ Source rate matches device — no resampling needed");
+            None
+        };
+
+        Box::new(Session {
+            ring: self.ring.clone(),
+            resampler: resampler.map(Mutex::new),
+            source_channels: format.channels as usize,
+            device_channels: self.device_channels as usize,
+        })
     }
 }
 
 struct Session {
     ring: Arc<Mutex<AudioRing>>,
-
+    resampler: Option<Mutex<SincFixedIn<f64>>>,
+    source_channels: usize,
+    device_channels: usize,
 }
 
 impl AudioSession for Session {
     fn audio_process(&mut self, buffer: &[u8]) {
-        self.ring.lock().unwrap().push_samples(buffer);
+        // Decode F32LE bytes to samples
+        let samples: Vec<f32> = buffer.chunks_exact(4)
+            .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+            .collect();
+
+        let output = if let Some(ref rs) = self.resampler {
+            let mut rs = rs.lock().unwrap();
+            // Deinterleave into per-channel vectors
+            let mut channels: Vec<Vec<f64>> = vec![Vec::new(); self.source_channels];
+            for (i, &s) in samples.iter().enumerate() {
+                channels[i % self.source_channels].push(s as f64);
+            }
+            // Pad to resampler chunk size
+            let chunk = rs.input_frames_max();
+            for ch in &mut channels {
+                ch.resize(chunk, 0.0);
+            }
+            // Resample and re-interleave
+            match rs.process(&channels, None) {
+                Ok(resampled) => {
+                    let frames = resampled[0].len();
+                    let mut out = Vec::with_capacity(frames * self.source_channels);
+                    for i in 0..frames {
+                        for ch in &resampled {
+                            out.push(ch[i] as f32);
+                        }
+                    }
+                    out
+                }
+                Err(_) => samples,
+            }
+        } else {
+            samples
+        };
+
+        // Mix down to device channels if needed (simple: take first N channels)
+        let final_samples: Vec<f32> = if self.source_channels > self.device_channels {
+            output.chunks_exact(self.source_channels)
+                .flat_map(|frame| &frame[..self.device_channels])
+                .copied()
+                .collect()
+        } else {
+            output
+        };
+
+        self.ring.lock().unwrap().push_samples(&final_samples);
     }
 
     fn audio_set_volume(&mut self, volume: f32) {
@@ -151,7 +228,6 @@ impl Drop for Session {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Enable tracing output (set RUST_LOG=debug for verbose protocol logs)
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env()
             .unwrap_or_else(|_| "shairplay=info".parse().unwrap()))
@@ -169,15 +245,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let persist_path: Option<PathBuf> = args.iter().position(|a| a == "--persist")
         .map(|i| PathBuf::from(&args[i + 1]));
 
-    // Set up cpal audio output (fallback to /dev/null if no device)
+    // Detect output device and its native sample rate
     let host = cpal::default_host();
+    let (device_rate, device_channels) = host.default_output_device()
+        .and_then(|d| d.default_output_config().ok())
+        .map(|c| (c.sample_rate().0, c.channels()))
+        .unwrap_or((44100, 2));
+
     let (ring, _stream) = match host.default_output_device() {
         Some(device) => {
-            eprintln!("🔈 Output device: {}", device.name().unwrap_or_default());
+            eprintln!("🔈 Output device: {} ({}Hz, {}ch)",
+                device.name().unwrap_or_default(), device_rate, device_channels);
 
             let config = cpal::StreamConfig {
-                channels: 2,
-                sample_rate: cpal::SampleRate(44100),
+                channels: device_channels,
+                sample_rate: cpal::SampleRate(device_rate),
                 buffer_size: cpal::BufferSize::Default,
             };
 
@@ -196,16 +278,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 None,
             ) {
                 Ok(stream) => {
-                    if let Some(supported) = device.default_output_config().ok() {
-                        eprintln!("🎛️  Device config: {} ch, {} Hz, {:?}",
-                            supported.channels(), supported.sample_rate().0, supported.sample_format());
-                    }
                     stream.play()?;
                     (ring, Some(stream))
                 }
                 Err(e) => {
                     eprintln!("⚠️  Cannot open audio device ({e}) — PCM data will be discarded");
-                    (ring, None)
+                    (Arc::new(Mutex::new(AudioRing::new())), None)
                 }
             }
         }
@@ -240,7 +318,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    let handler = Arc::new(Handler { ring });
+    // Build server — no output_sample_rate(), resampling handled in this example
+    let handler = Arc::new(Handler { ring, device_rate, device_channels });
     let mut builder = RaopServer::builder();
     builder = builder.name(name).hwaddr(mac);
 

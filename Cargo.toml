@@ -37,7 +37,7 @@ chacha20poly1305 = { version = "0.10", optional = true }
 hkdf = { version = "0.12", optional = true }
 num-bigint = { version = "0.4", optional = true }
 uuid = { version = "1", features = ["v4"], optional = true }
-rubato = "0.15"
+rubato = { version = "0.15", optional = true }
 symphonia = { version = "0.5", optional = true, features = ["aac"] }
 
 # Error handling
@@ -55,7 +55,8 @@ gethostname = "0.5"
 
 [features]
 default = []
-ap2 = ["dep:chacha20poly1305", "dep:hkdf", "dep:num-bigint", "dep:uuid", "dep:symphonia"]
+resample = ["dep:rubato"]
+ap2 = ["resample", "dep:chacha20poly1305", "dep:hkdf", "dep:num-bigint", "dep:uuid", "dep:symphonia"]
 video = ["ap2"]
 
 [dev-dependencies]
@@ -63,6 +64,7 @@ tokio = { version = "1", features = ["test-util"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 serial_test = "3"
 cpal = "0.15"
+rubato = "0.15"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
