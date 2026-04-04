@@ -1,0 +1,8 @@
+#!/bin/sh
+# Pre-commit hook: run cargo fmt and stage formatted files
+cargo fmt --all -- --check >/dev/null 2>&1
+if [ $? -ne 0 ]; then
+    cargo fmt --all
+    echo "cargo fmt applied — re-add and commit again"
+    exit 1
+fi
