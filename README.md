@@ -104,7 +104,7 @@ let mut server = RaopServer::builder()
 | *(default)* | — | AirPlay 1 only |
 | `resample` | rubato | Sample rate conversion + channel mixdown |
 | `ap2` | chacha20poly1305, hkdf, symphonia, … (implies `resample`) | Full AirPlay 2 audio |
-| `video` | (implies `ap2`) | Screen mirroring (work in progress — breaks AP2 audio) |
+| `video` | (implies `ap2`) | Screen mirroring (work in progress — audio works, video decryption unsolved) |
 
 ## Implementation Status
 
@@ -123,13 +123,13 @@ Full pipeline: SRP-6a pairing → encrypted RTSP → FairPlay → PTP timing →
 
 ### 🧪 Video (Screen Mirroring) — Work in Progress
 
-Behind the `video` feature gate. **This feature is not fully functional.**
+Behind the `video` feature gate. **Audio works, video decryption does not.**
 
 The video feature switches to a UxPlay-compatible legacy feature set
-(`0x5A7FFEE6`) to receive screen mirroring data from iOS 18+. This
-disables AP2 audio — the iPhone falls back to legacy ALAC (type 96)
-which currently does not decode correctly in video mode. AP1 audio
-(non-mirroring) continues to work.
+(`0x5A7FFEE6`) to receive screen mirroring data from iOS 18+. AP2
+buffered audio is not available — the iPhone falls back to legacy ALAC
+(type 96) which is fully supported with FairPlay key decryption and
+NTP timing.
 
 Video decryption research is ongoing. The 3-stage FairPlay key derivation
 pipeline is implemented but not yet producing correct output. See
