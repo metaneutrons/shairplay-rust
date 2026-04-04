@@ -99,15 +99,6 @@ pub(crate) fn bind_addr_for(conn: &RaopConnection) -> String {
     };
     format!("{}:0", bind_ip)
 }
-/// No-op handler for unsupported RTSP methods.
-pub(crate) fn handle_none(
-    _conn: &mut RaopConnection,
-    _request: &HttpRequest,
-    _response: &mut HttpResponse,
-) -> Option<Vec<u8>> {
-    None
-}
-
 /// AP1 pair-setup: return Ed25519 public key.
 pub(crate) fn handle_pair_setup(
     conn: &mut RaopConnection,
