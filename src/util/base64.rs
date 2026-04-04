@@ -31,7 +31,6 @@ impl Base64 {
         b
     }
 
-
     /// Compute the encoded length for a given source length.
     /// Equivalent to base64_encoded_length (minus the NUL terminator).
     pub fn encoded_length(&self, src_len: usize) -> usize {
@@ -123,13 +122,12 @@ impl Base64 {
 
         // Calculate output length
         let mut outbuflen = inbuf.len() / 4 * 3;
-        if inbuf.len() >= 4
-            && inbuf[inbuf.len() - 1] == b'=' {
+        if inbuf.len() >= 4 && inbuf[inbuf.len() - 1] == b'=' {
+            outbuflen -= 1;
+            if inbuf[inbuf.len() - 2] == b'=' {
                 outbuflen -= 1;
-                if inbuf[inbuf.len() - 2] == b'=' {
-                    outbuflen -= 1;
-                }
             }
+        }
 
         let mut outbuf = Vec::with_capacity(outbuflen);
         let mut i = 0;
@@ -140,9 +138,7 @@ impl Base64 {
             let d = self.charmap[inbuf[i + 3] as usize];
             i += 4;
 
-            if a == BASE64_INVALID || b == BASE64_INVALID
-                || c == BASE64_INVALID || d == BASE64_INVALID
-            {
+            if a == BASE64_INVALID || b == BASE64_INVALID || c == BASE64_INVALID || d == BASE64_INVALID {
                 return None;
             }
             if a == BASE64_PADDING || b == BASE64_PADDING {
@@ -175,31 +171,54 @@ mod tests {
     use super::*;
 
     fn std_b64() -> Base64 {
-        Base64::new(b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/", true, true)
+        Base64::new(
+            b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/",
+            true,
+            true,
+        )
     }
 
     #[test]
-    fn encode_c_vector() { assert_eq!(std_b64().encode(b"Hello, AirPlay!"), "SGVsbG8sIEFpclBsYXkh"); }
+    fn encode_c_vector() {
+        assert_eq!(std_b64().encode(b"Hello, AirPlay!"), "SGVsbG8sIEFpclBsYXkh");
+    }
 
     #[test]
-    fn encode_empty() { assert_eq!(std_b64().encode(b""), ""); }
+    fn encode_empty() {
+        assert_eq!(std_b64().encode(b""), "");
+    }
 
     #[test]
-    fn encode_one_byte() { assert_eq!(std_b64().encode(&[0xff]), "/w=="); }
+    fn encode_one_byte() {
+        assert_eq!(std_b64().encode(&[0xff]), "/w==");
+    }
 
     #[test]
-    fn decode_roundtrip() { assert_eq!(std_b64().decode("SGVsbG8sIEFpclBsYXkh").unwrap(), b"Hello, AirPlay!"); }
+    fn decode_roundtrip() {
+        assert_eq!(std_b64().decode("SGVsbG8sIEFpclBsYXkh").unwrap(), b"Hello, AirPlay!");
+    }
 
     #[test]
-    fn decode_with_spaces() { assert_eq!(std_b64().decode("SGVs bG8s IEFp clBs YXkh").unwrap(), b"Hello, AirPlay!"); }
+    fn decode_with_spaces() {
+        assert_eq!(
+            std_b64().decode("SGVs bG8s IEFp clBs YXkh").unwrap(),
+            b"Hello, AirPlay!"
+        );
+    }
 
     #[test]
     fn nopad_encode_c_vector() {
-        let b = Base64::new(b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/", false, false);
+        let b = Base64::new(
+            b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/",
+            false,
+            false,
+        );
         assert_eq!(b.encode(b"AB"), "QUI");
         assert_eq!(b.encode(b"ABC"), "QUJD");
     }
 
     #[test]
-    fn decode_invalid() { assert!(std_b64().decode("!!!").is_none()); }
+    fn decode_invalid() {
+        assert!(std_b64().decode("!!!").is_none());
+    }
 }

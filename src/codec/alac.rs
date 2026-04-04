@@ -65,7 +65,11 @@ impl<'a> BitReader<'a> {
     }
 
     fn readbit(&mut self) -> u32 {
-        let result = if self.pos < self.buf.len() { self.buf[self.pos] as u32 } else { 0 };
+        let result = if self.pos < self.buf.len() {
+            self.buf[self.pos] as u32
+        } else {
+            0
+        };
         let result = (result << self.bit) >> 7 & 1;
         let new_acc = self.bit + 1;
         self.pos += (new_acc / 8) as usize;
@@ -81,7 +85,11 @@ impl<'a> BitReader<'a> {
 }
 
 fn count_leading_zeros(input: u32) -> u32 {
-    if input == 0 { 32 } else { input.leading_zeros() }
+    if input == 0 {
+        32
+    } else {
+        input.leading_zeros()
+    }
 }
 
 fn sign_extend_32(val: i32, bits: u32) -> i32 {
@@ -93,7 +101,13 @@ fn sign_extend_24(val: i32) -> i32 {
 }
 
 fn sign_only(v: i32) -> i32 {
-    if v < 0 { -1 } else if v > 0 { 1 } else { 0 }
+    if v < 0 {
+        -1
+    } else if v > 0 {
+        1
+    } else {
+        0
+    }
 }
 
 const RICE_THRESHOLD: u32 = 8;
@@ -140,19 +154,29 @@ fn entropy_rice_decode(
     while i < output_size {
         let k = {
             let v = 31i32 - rice.k_modifier as i32 - count_leading_zeros(((history >> 9) + 3) as u32) as i32;
-            if v < 0 { (v + rice.k_modifier as i32) as u32 } else { rice.k_modifier }
+            if v < 0 {
+                (v + rice.k_modifier as i32) as u32
+            } else {
+                rice.k_modifier
+            }
         };
 
         let decoded_value = entropy_decode_value(reader, read_sample_size, k, 0xFFFFFFFF) + sign_modifier;
         let final_value = {
             let v = (decoded_value + 1) / 2;
-            if decoded_value & 1 != 0 { -v } else { v }
+            if decoded_value & 1 != 0 {
+                -v
+            } else {
+                v
+            }
         };
         output[i] = final_value;
         sign_modifier = 0;
 
         history += decoded_value * rice.history_mult as i32 - ((history * rice.history_mult as i32) >> 9);
-        if decoded_value > 0xFFFF { history = 0xFFFF; }
+        if decoded_value > 0xFFFF {
+            history = 0xFFFF;
+        }
 
         if (history < 128) && (i + 1 < output_size) {
             sign_modifier = 1;
@@ -163,7 +187,9 @@ fn entropy_rice_decode(
                 output[i + 1..end].fill(0);
                 i = end - 1;
             }
-            if block_size > 0xFFFF { sign_modifier = 0; }
+            if block_size > 0xFFFF {
+                sign_modifier = 0;
+            }
             history = 0;
         }
         i += 1;
@@ -182,13 +208,17 @@ fn predictor_decompress_fir_adapt(
     buffer_out[0] = error_buffer[0];
 
     if predictor_coef_num == 0 {
-        if output_size <= 1 { return; }
+        if output_size <= 1 {
+            return;
+        }
         buffer_out[1..output_size].copy_from_slice(&error_buffer[1..output_size]);
         return;
     }
 
     if predictor_coef_num == 0x1f {
-        if output_size <= 1 { return; }
+        if output_size <= 1 {
+            return;
+        }
         for i in 0..output_size - 1 {
             buffer_out[i + 1] = sign_extend_32(buffer_out[i].wrapping_add(error_buffer[i + 1]), readsamplesize);
         }
@@ -243,7 +273,15 @@ fn predictor_decompress_fir_adapt(
     }
 }
 
-fn deinterlace_16(buf_a: &[i32], buf_b: &[i32], out: &mut [u8], num_channels: usize, num_samples: usize, shift: u8, leftweight: u8) {
+fn deinterlace_16(
+    buf_a: &[i32],
+    buf_b: &[i32],
+    out: &mut [u8],
+    num_channels: usize,
+    num_samples: usize,
+    shift: u8,
+    leftweight: u8,
+) {
     let _out_i16: &mut [i16] = {
         // Safe reinterpretation: out is aligned and sized for i16
         let _ptr = out.as_mut_ptr() as *mut i16;
@@ -358,18 +396,25 @@ impl AlacDecoder {
     /// Initialize the decoder with a 48-byte ALACSpecificConfig block.
     pub fn set_info(&mut self, config: &[u8]) {
         let mut p = 24; // skip: size(4) + frma(4) + alac(4) + size(4) + alac(4) + 0(4)
-        self.max_samples_per_frame = u32::from_be_bytes([config[p], config[p+1], config[p+2], config[p+3]]);
+        self.max_samples_per_frame = u32::from_be_bytes([config[p], config[p + 1], config[p + 2], config[p + 3]]);
         p += 4;
         p += 1; // 7a
-        self.sample_size_config = config[p]; p += 1;
-        self.rice_history_mult = config[p]; p += 1;
-        self.rice_initial_history = config[p]; p += 1;
-        self.rice_k_modifier = config[p]; p += 1;
+        self.sample_size_config = config[p];
+        p += 1;
+        self.rice_history_mult = config[p];
+        p += 1;
+        self.rice_initial_history = config[p];
+        p += 1;
+        self.rice_k_modifier = config[p];
+        p += 1;
         p += 1; // 7f
-        self.max_run = u16::from_be_bytes([config[p], config[p+1]]); p += 2;
-        self.max_frame_bytes = u32::from_be_bytes([config[p], config[p+1], config[p+2], config[p+3]]); p += 4;
-        self.avg_bit_rate = u32::from_be_bytes([config[p], config[p+1], config[p+2], config[p+3]]); p += 4;
-        self.sample_rate = u32::from_be_bytes([config[p], config[p+1], config[p+2], config[p+3]]);
+        self.max_run = u16::from_be_bytes([config[p], config[p + 1]]);
+        p += 2;
+        self.max_frame_bytes = u32::from_be_bytes([config[p], config[p + 1], config[p + 2], config[p + 3]]);
+        p += 4;
+        self.avg_bit_rate = u32::from_be_bytes([config[p], config[p + 1], config[p + 2], config[p + 3]]);
+        p += 4;
+        self.sample_rate = u32::from_be_bytes([config[p], config[p + 1], config[p + 2], config[p + 3]]);
         self.allocate_buffers();
     }
 
@@ -402,16 +447,26 @@ impl AlacDecoder {
     /// Decode an ALAC frame and return F32LE interleaved samples.
     pub fn decode_frame_f32(&mut self, input: &[u8]) -> Option<Vec<f32>> {
         let mut s16_buf = vec![0u8; 16384];
-        let len = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            self.decode_frame(input, &mut s16_buf)
-        })).unwrap_or(0);
-        if len == 0 { return None; }
-        Some(s16_buf[..len].chunks_exact(2)
-            .map(|c| i16::from_le_bytes([c[0], c[1]]) as f32 / 32768.0)
-            .collect())
+        let len = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.decode_frame(input, &mut s16_buf)))
+            .unwrap_or(0);
+        if len == 0 {
+            return None;
+        }
+        Some(
+            s16_buf[..len]
+                .chunks_exact(2)
+                .map(|c| i16::from_le_bytes([c[0], c[1]]) as f32 / 32768.0)
+                .collect(),
+        )
     }
 
-    fn decode_mono(&mut self, reader: &mut BitReader, output: &mut [u8], output_samples: &mut usize, output_size: &mut usize) {
+    fn decode_mono(
+        &mut self,
+        reader: &mut BitReader,
+        output: &mut [u8],
+        output_samples: &mut usize,
+        output_size: &mut usize,
+    ) {
         reader.readbits(4);
         reader.readbits(12);
         let has_size = reader.readbits(1);
@@ -434,15 +489,22 @@ impl AlacDecoder {
             let ricemodifier = reader.readbits(3);
             let predictor_coef_num = reader.readbits(5) as usize;
 
-            predictor_coef_table[..predictor_coef_num].iter_mut().for_each(|v| *v = reader.readbits(16) as i16);
+            predictor_coef_table[..predictor_coef_num]
+                .iter_mut()
+                .for_each(|v| *v = reader.readbits(16) as i16);
 
             if uncompressed_bytes > 0 {
-                self.uncompressed_bytes_buffer_a[..*output_samples].iter_mut().for_each(|v| *v = reader.readbits(uncompressed_bytes * 8) as i32);
+                self.uncompressed_bytes_buffer_a[..*output_samples]
+                    .iter_mut()
+                    .for_each(|v| *v = reader.readbits(uncompressed_bytes * 8) as i32);
             }
 
             entropy_rice_decode(
-                reader, &mut self.predicterror_buffer_a, *output_samples,
-                readsamplesize, &RiceParams {
+                reader,
+                &mut self.predicterror_buffer_a,
+                *output_samples,
+                readsamplesize,
+                &RiceParams {
                     initial_history: self.rice_initial_history as u32,
                     k_modifier: self.rice_k_modifier as u32,
                     history_mult: ricemodifier * self.rice_history_mult as u32 / 4,
@@ -451,9 +513,13 @@ impl AlacDecoder {
             );
 
             predictor_decompress_fir_adapt(
-                &self.predicterror_buffer_a.clone(), &mut self.outputsamples_buffer_a,
-                *output_samples, readsamplesize, &mut predictor_coef_table,
-                predictor_coef_num, prediction_quantitization as i32,
+                &self.predicterror_buffer_a.clone(),
+                &mut self.outputsamples_buffer_a,
+                *output_samples,
+                readsamplesize,
+                &mut predictor_coef_table,
+                predictor_coef_num,
+                prediction_quantitization as i32,
             );
         } else {
             if self.sample_size_config <= 16 {
@@ -497,7 +563,13 @@ impl AlacDecoder {
         }
     }
 
-    fn decode_stereo(&mut self, reader: &mut BitReader, output: &mut [u8], output_samples: &mut usize, output_size: &mut usize) {
+    fn decode_stereo(
+        &mut self,
+        reader: &mut BitReader,
+        output: &mut [u8],
+        output_samples: &mut usize,
+        output_size: &mut usize,
+    ) {
         reader.readbits(4);
         reader.readbits(12);
         let has_size = reader.readbits(1);
@@ -523,7 +595,9 @@ impl AlacDecoder {
             let ricemod_a = reader.readbits(3);
             let pred_num_a = reader.readbits(5) as usize;
             let mut pred_table_a = [0i16; 32];
-            pred_table_a[..pred_num_a].iter_mut().for_each(|v| *v = reader.readbits(16) as i16);
+            pred_table_a[..pred_num_a]
+                .iter_mut()
+                .for_each(|v| *v = reader.readbits(16) as i16);
 
             // Channel B
             let _pred_type_b = reader.readbits(4);
@@ -531,7 +605,9 @@ impl AlacDecoder {
             let ricemod_b = reader.readbits(3);
             let pred_num_b = reader.readbits(5) as usize;
             let mut pred_table_b = [0i16; 32];
-            pred_table_b[..pred_num_b].iter_mut().for_each(|v| *v = reader.readbits(16) as i16);
+            pred_table_b[..pred_num_b]
+                .iter_mut()
+                .for_each(|v| *v = reader.readbits(16) as i16);
 
             if uncompressed_bytes > 0 {
                 for i in 0..*output_samples {
@@ -542,8 +618,11 @@ impl AlacDecoder {
 
             // Decode channel A
             entropy_rice_decode(
-                reader, &mut self.predicterror_buffer_a, *output_samples,
-                readsamplesize, &RiceParams {
+                reader,
+                &mut self.predicterror_buffer_a,
+                *output_samples,
+                readsamplesize,
+                &RiceParams {
                     initial_history: self.rice_initial_history as u32,
                     k_modifier: self.rice_k_modifier as u32,
                     history_mult: ricemod_a * self.rice_history_mult as u32 / 4,
@@ -551,14 +630,22 @@ impl AlacDecoder {
                 },
             );
             predictor_decompress_fir_adapt(
-                &self.predicterror_buffer_a.clone(), &mut self.outputsamples_buffer_a,
-                *output_samples, readsamplesize, &mut pred_table_a, pred_num_a, pred_quant_a as i32,
+                &self.predicterror_buffer_a.clone(),
+                &mut self.outputsamples_buffer_a,
+                *output_samples,
+                readsamplesize,
+                &mut pred_table_a,
+                pred_num_a,
+                pred_quant_a as i32,
             );
 
             // Decode channel B
             entropy_rice_decode(
-                reader, &mut self.predicterror_buffer_b, *output_samples,
-                readsamplesize, &RiceParams {
+                reader,
+                &mut self.predicterror_buffer_b,
+                *output_samples,
+                readsamplesize,
+                &RiceParams {
                     initial_history: self.rice_initial_history as u32,
                     k_modifier: self.rice_k_modifier as u32,
                     history_mult: ricemod_b * self.rice_history_mult as u32 / 4,
@@ -566,8 +653,13 @@ impl AlacDecoder {
                 },
             );
             predictor_decompress_fir_adapt(
-                &self.predicterror_buffer_b.clone(), &mut self.outputsamples_buffer_b,
-                *output_samples, readsamplesize, &mut pred_table_b, pred_num_b, pred_quant_b as i32,
+                &self.predicterror_buffer_b.clone(),
+                &mut self.outputsamples_buffer_b,
+                *output_samples,
+                readsamplesize,
+                &mut pred_table_b,
+                pred_num_b,
+                pred_quant_b as i32,
             );
         } else {
             if self.sample_size_config <= 16 {
@@ -595,21 +687,28 @@ impl AlacDecoder {
         // Deinterlace and output
         match self.sample_size_config {
             16 => deinterlace_16(
-                &self.outputsamples_buffer_a, &self.outputsamples_buffer_b,
-                output, self.num_channels as usize, *output_samples,
-                interlacing_shift, interlacing_leftweight,
+                &self.outputsamples_buffer_a,
+                &self.outputsamples_buffer_b,
+                output,
+                self.num_channels as usize,
+                *output_samples,
+                interlacing_shift,
+                interlacing_leftweight,
             ),
-            24 => deinterlace_24(&Deinterlace24Params {
-                buf_a: &self.outputsamples_buffer_a,
-                buf_b: &self.outputsamples_buffer_b,
-                uncompressed_bytes,
-                uncomp_a: &self.uncompressed_bytes_buffer_a,
-                uncomp_b: &self.uncompressed_bytes_buffer_b,
-                num_channels: self.num_channels as usize,
-                num_samples: *output_samples,
-                shift: interlacing_shift,
-                leftweight: interlacing_leftweight,
-            }, output),
+            24 => deinterlace_24(
+                &Deinterlace24Params {
+                    buf_a: &self.outputsamples_buffer_a,
+                    buf_b: &self.outputsamples_buffer_b,
+                    uncompressed_bytes,
+                    uncomp_a: &self.uncompressed_bytes_buffer_a,
+                    uncomp_b: &self.uncompressed_bytes_buffer_b,
+                    num_channels: self.num_channels as usize,
+                    num_samples: *output_samples,
+                    shift: interlacing_shift,
+                    leftweight: interlacing_leftweight,
+                },
+                output,
+            ),
             _ => {}
         }
     }

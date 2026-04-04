@@ -19,8 +19,7 @@ pub struct RsaKey {
 impl RsaKey {
     /// Load an RSA private key from a PEM string. Equivalent to rsakey_init_pem.
     pub fn from_pem(pem: &str) -> Result<Self, CryptoError> {
-        let key = RsaPrivateKey::from_pkcs1_pem(pem)
-            .map_err(|e| CryptoError::RsaKey(e.to_string()))?;
+        let key = RsaPrivateKey::from_pkcs1_pem(pem).map_err(|e| CryptoError::RsaKey(e.to_string()))?;
         Ok(Self {
             key,
             base64: Base64::new(
@@ -36,13 +35,10 @@ impl RsaKey {
     /// Constructs: challenge_bytes || ip_addr || hw_addr (min 32 bytes),
     /// signs with PKCS#1 v1.5 type 1 padding (no hash OID prefix),
     /// returns base64-encoded signature.
-    pub fn sign_challenge(
-        &self,
-        b64_challenge: &str,
-        ip_addr: &[u8],
-        hw_addr: &[u8],
-    ) -> Result<String, CryptoError> {
-        let challenge = self.base64.decode(b64_challenge)
+    pub fn sign_challenge(&self, b64_challenge: &str, ip_addr: &[u8], hw_addr: &[u8]) -> Result<String, CryptoError> {
+        let challenge = self
+            .base64
+            .decode(b64_challenge)
             .ok_or_else(|| CryptoError::RsaKey("invalid base64 challenge".into()))?;
 
         // Build the data to sign: challenge + ip + hwaddr, min 32 bytes
@@ -67,8 +63,7 @@ impl RsaKey {
     /// Base64-decode and RSA-OAEP-decrypt (SHA-1) to extract an AES key.
     /// Equivalent to rsakey_decrypt.
     pub fn decrypt(&self, b64_input: &str) -> Result<Vec<u8>, CryptoError> {
-        let ciphertext = self.base64.decode(b64_input)
-            .ok_or(CryptoError::RsaDecrypt)?;
+        let ciphertext = self.base64.decode(b64_input).ok_or(CryptoError::RsaDecrypt)?;
 
         let key_len = self.key.n().bits() / 8;
         // Pad ciphertext to key length (matching C: memcpy to end of buffer)
@@ -77,14 +72,13 @@ impl RsaKey {
         padded[offset..offset + ciphertext.len()].copy_from_slice(&ciphertext);
 
         let padding = Oaep::new::<sha1::Sha1>();
-        self.key
-            .decrypt(padding, &padded)
-            .map_err(|_| CryptoError::RsaDecrypt)
+        self.key.decrypt(padding, &padded).map_err(|_| CryptoError::RsaDecrypt)
     }
 
     /// Base64-decode only (no decryption). Equivalent to rsakey_decode.
     pub fn decode(&self, b64_input: &str) -> Result<Vec<u8>, CryptoError> {
-        self.base64.decode(b64_input)
+        self.base64
+            .decode(b64_input)
             .ok_or_else(|| CryptoError::RsaKey("invalid base64 input".into()))
     }
 }

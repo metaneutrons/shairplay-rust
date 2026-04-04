@@ -4,8 +4,8 @@
 //! The cipher maintains partial block state across packets (streaming mode).
 
 use aes::Aes128;
-use ctr::Ctr128BE;
 use ctr::cipher::{KeyIvInit, StreamCipher};
+use ctr::Ctr128BE;
 
 /// Streaming AES-128-CTR cipher that maintains state across packets.
 pub struct VideoCipher {

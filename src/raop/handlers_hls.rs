@@ -1,7 +1,7 @@
 //! HLS HTTP handlers — /play, /playback-info, /scrub, /rate, /stop, /server-info.
 
-use crate::proto::http::{HttpRequest, HttpResponse};
 use super::handlers::RaopConnection;
+use crate::proto::http::{HttpRequest, HttpResponse};
 
 /// `GET /server-info` — server capabilities for HLS mode.
 pub(crate) fn handle_server_info(
@@ -9,7 +9,9 @@ pub(crate) fn handle_server_info(
     _request: &HttpRequest,
     response: &mut HttpResponse,
 ) -> Option<Vec<u8>> {
-    let mac = conn.hwaddr.iter()
+    let mac = conn
+        .hwaddr
+        .iter()
         .map(|b| format!("{b:02X}"))
         .collect::<Vec<_>>()
         .join(":");
@@ -18,10 +20,16 @@ pub(crate) fn handle_server_info(
     // Bits 0-6 + 9: video, photo, FairPlay DRM, volume, HLS, slideshow, unknown, audio
     dict.insert("features".into(), plist::Value::Integer(0x27F_i64.into()));
     dict.insert("macAddress".into(), plist::Value::String(mac.clone()));
-    dict.insert("model".into(), plist::Value::String(crate::net::mdns::GLOBAL_MODEL.into()));
+    dict.insert(
+        "model".into(),
+        plist::Value::String(crate::net::mdns::GLOBAL_MODEL.into()),
+    );
     dict.insert("osBuildVersion".into(), plist::Value::String("12B435".into()));
     dict.insert("protovers".into(), plist::Value::String("1.0".into()));
-    dict.insert("srcvers".into(), plist::Value::String(crate::net::mdns::AP2_SRCVERS.into()));
+    dict.insert(
+        "srcvers".into(),
+        plist::Value::String(crate::net::mdns::AP2_SRCVERS.into()),
+    );
     dict.insert("vv".into(), plist::Value::Integer(2_i64.into()));
     dict.insert("deviceid".into(), plist::Value::String(mac));
 
@@ -42,12 +50,9 @@ pub(crate) fn handle_play(
     let dict = plist_val.as_dictionary()?;
 
     let url = dict.get("Content-Location").and_then(|v| v.as_string())?;
-    let start_pos = dict.get("Start-Position")
-        .and_then(|v| v.as_real())
-        .unwrap_or(0.0) as f32;
+    let start_pos = dict.get("Start-Position").and_then(|v| v.as_real()).unwrap_or(0.0) as f32;
 
-    let session_id = request.header("X-Apple-Session-ID")
-        .map(|s| s.to_string());
+    let session_id = request.header("X-Apple-Session-ID").map(|s| s.to_string());
 
     tracing::info!(%url, start_pos, "HLS play request");
 
@@ -88,17 +93,19 @@ pub(crate) fn handle_playback_info(
     let mut loaded = plist::Dictionary::new();
     loaded.insert("start".into(), plist::Value::Real(position));
     loaded.insert("duration".into(), plist::Value::Real(duration - position));
-    dict.insert("loadedTimeRanges".into(), plist::Value::Array(vec![
-        plist::Value::Dictionary(loaded),
-    ]));
+    dict.insert(
+        "loadedTimeRanges".into(),
+        plist::Value::Array(vec![plist::Value::Dictionary(loaded)]),
+    );
 
     // seekableTimeRanges
     let mut seekable = plist::Dictionary::new();
     seekable.insert("start".into(), plist::Value::Real(0.0));
     seekable.insert("duration".into(), plist::Value::Real(duration));
-    dict.insert("seekableTimeRanges".into(), plist::Value::Array(vec![
-        plist::Value::Dictionary(seekable),
-    ]));
+    dict.insert(
+        "seekableTimeRanges".into(),
+        plist::Value::Array(vec![plist::Value::Dictionary(seekable)]),
+    );
 
     let mut buf = Vec::new();
     plist::to_writer_xml(&mut buf, &plist::Value::Dictionary(dict)).ok()?;

@@ -13,14 +13,7 @@ fn md5_to_hex(hash: &[u8; 16]) -> String {
 
 /// Compute the Digest auth response hash.
 /// response = MD5(MD5(username:realm:password):nonce:MD5(method:uri))
-fn get_response(
-    username: &str,
-    realm: &str,
-    password: &str,
-    nonce: &str,
-    method: &str,
-    uri: &str,
-) -> String {
+fn get_response(username: &str, realm: &str, password: &str, nonce: &str, method: &str, uri: &str) -> String {
     // HA1 = MD5(username:realm:password)
     let mut h = Md5::new();
     h.update(username.as_bytes());

@@ -10,14 +10,14 @@
 //! - **Delivery** (std::thread): timed playout using anchor-based scheduling
 
 use std::collections::BTreeMap;
-use std::sync::{Arc, Mutex, Condvar};
-use tokio::net::{TcpListener, TcpStream};
+use std::sync::{Arc, Condvar, Mutex};
 use tokio::io::AsyncReadExt;
+use tokio::net::{TcpListener, TcpStream};
 use tracing::{debug, info, warn};
 
-use crate::codec::aac::{AudioSsrc, AacDecoder};
+use crate::codec::aac::{AacDecoder, AudioSsrc};
 use crate::error::NetworkError;
-use crate::raop::{AudioHandler, AudioFormat, AudioCodec};
+use crate::raop::{AudioCodec, AudioFormat, AudioHandler};
 
 /// RTP header length in bytes.
 const RTP_HEADER_LEN: usize = 12;
@@ -140,7 +140,11 @@ impl BufferedAudioProcessor {
                 let (lock, cvar) = &*state3;
                 let mut s = lock.lock().unwrap();
                 match cmd {
-                    PlayoutCommand::SetRate { anchor_rtp, anchor_time_ns: _, rate } => {
+                    PlayoutCommand::SetRate {
+                        anchor_rtp,
+                        anchor_time_ns: _,
+                        rate,
+                    } => {
                         s.anchor_rtp = anchor_rtp;
                         let was_paused = s.rate == 0;
                         s.rate = rate;
@@ -154,13 +158,18 @@ impl BufferedAudioProcessor {
                                 s.anchor_rtp = first_ts.wrapping_sub(lead_frames);
                             }
                             s.anchor_local_ns = now_ns();
-                            let stale: Vec<u32> = s.buffer.keys()
+                            let stale: Vec<u32> = s
+                                .buffer
+                                .keys()
                                 .filter(|&&ts| (s.anchor_rtp.wrapping_sub(ts) as i32) > 0)
-                                .copied().collect();
+                                .copied()
+                                .collect();
                             if !stale.is_empty() {
                                 debug!(discarded = stale.len(), "Discarded stale frames");
                             }
-                            for k in stale { s.buffer.remove(&k); }
+                            for k in stale {
+                                s.buffer.remove(&k);
+                            }
                             if was_paused {
                                 info!(anchor_rtp, "Playout started");
                             }
@@ -168,10 +177,15 @@ impl BufferedAudioProcessor {
                         cvar.notify_all();
                     }
                     PlayoutCommand::Flush { from_seq, until_seq } => {
-                        let keys: Vec<u32> = s.buffer.keys()
+                        let keys: Vec<u32> = s
+                            .buffer
+                            .keys()
                             .filter(|&&ts| ts >= from_seq && ts <= until_seq)
-                            .copied().collect();
-                        for k in &keys { s.buffer.remove(k); }
+                            .copied()
+                            .collect();
+                        for k in &keys {
+                            s.buffer.remove(k);
+                        }
                         debug!(flushed = keys.len(), "Flushed");
                     }
                     PlayoutCommand::Stop => {
@@ -180,8 +194,10 @@ impl BufferedAudioProcessor {
                         cvar.notify_all();
                         break;
                     }
-                    cmd @ (PlayoutCommand::Volume(_) | PlayoutCommand::Metadata(_) |
-                           PlayoutCommand::Coverart(_) | PlayoutCommand::Progress { .. }) => {
+                    cmd @ (PlayoutCommand::Volume(_)
+                    | PlayoutCommand::Metadata(_)
+                    | PlayoutCommand::Coverart(_)
+                    | PlayoutCommand::Progress { .. }) => {
                         s.pending_meta.push(cmd);
                         cvar.notify_all();
                     }
@@ -195,7 +211,10 @@ impl BufferedAudioProcessor {
         tokio::spawn(async move {
             let (stream, addr) = match self.listener.accept().await {
                 Ok(s) => s,
-                Err(e) => { warn!("Buffered audio accept failed: {e}"); return; }
+                Err(e) => {
+                    warn!("Buffered audio accept failed: {e}");
+                    return;
+                }
             };
             info!(%addr, "Buffered audio client connected");
             receive_loop(stream, &shk, output_config, state4).await;
@@ -212,7 +231,7 @@ async fn receive_loop(
     output_config: OutputConfig,
     state: Arc<(Mutex<PlayoutState>, Condvar)>,
 ) {
-    use chacha20poly1305::{ChaCha20Poly1305, KeyInit, aead::Aead, Nonce, aead::Payload};
+    use chacha20poly1305::{aead::Aead, aead::Payload, ChaCha20Poly1305, KeyInit, Nonce};
 
     let cipher = ChaCha20Poly1305::new(shk.into());
     let mut len_buf = [0u8; 2];
@@ -223,13 +242,21 @@ async fn receive_loop(
     let mut output_channels: u8 = 2;
 
     loop {
-        if stream.read_exact(&mut len_buf).await.is_err() { break; }
+        if stream.read_exact(&mut len_buf).await.is_err() {
+            break;
+        }
         let total_len = u16::from_be_bytes(len_buf) as usize;
-        if total_len < 2 { break; }
+        if total_len < 2 {
+            break;
+        }
 
         let mut packet = vec![0u8; total_len - 2];
-        if stream.read_exact(&mut packet).await.is_err() { break; }
-        if packet.len() <= RTP_HEADER_LEN + NONCE_TRAIL_LEN { continue; }
+        if stream.read_exact(&mut packet).await.is_err() {
+            break;
+        }
+        if packet.len() <= RTP_HEADER_LEN + NONCE_TRAIL_LEN {
+            continue;
+        }
 
         let timestamp = u32::from_be_bytes([packet[4], packet[5], packet[6], packet[7]]);
         let ssrc_val = u32::from_be_bytes([packet[8], packet[9], packet[10], packet[11]]);
@@ -248,9 +275,7 @@ async fn receive_loop(
             }
 
             let target_sr = output_config.sample_rate.unwrap_or(src_sr);
-            let target_ch = output_config.max_channels
-                .map(|max| src_ch.min(max))
-                .unwrap_or(src_ch);
+            let target_ch = output_config.max_channels.map(|max| src_ch.min(max)).unwrap_or(src_ch);
 
             stream_resampler = crate::codec::resample::StreamResampler::new(src_sr, target_sr, target_ch as usize);
             if stream_resampler.is_some() {
@@ -276,9 +301,18 @@ async fn receive_loop(
         let aad = packet[4..12].to_vec();
         let ciphertext = &packet[RTP_HEADER_LEN..pkt_len - NONCE_TRAIL_LEN];
 
-        let plaintext = match cipher.decrypt(Nonce::from_slice(&nonce), Payload { msg: ciphertext, aad: &aad }) {
+        let plaintext = match cipher.decrypt(
+            Nonce::from_slice(&nonce),
+            Payload {
+                msg: ciphertext,
+                aad: &aad,
+            },
+        ) {
             Ok(p) => p,
-            Err(_) => { debug!("Audio decrypt failed"); continue; }
+            Err(_) => {
+                debug!("Audio decrypt failed");
+                continue;
+            }
         };
 
         // Decode
@@ -290,7 +324,8 @@ async fn receive_loop(
 
         if let Some(pcm_data) = pcm {
             // Convert bytes to f32 samples for processing
-            let mut samples: Vec<f32> = pcm_data.chunks_exact(4)
+            let mut samples: Vec<f32> = pcm_data
+                .chunks_exact(4)
                 .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
                 .collect();
 
@@ -328,7 +363,9 @@ fn delivery_loop(
         while !s.stopped && (s.rate == 0 || s.buffer.is_empty()) {
             s = cvar.wait(s).unwrap();
         }
-        if s.stopped { break; }
+        if s.stopped {
+            break;
+        }
 
         // Lazy init or reinit session on format change
         if session.is_none() || s.format_changed {
@@ -348,13 +385,16 @@ fn delivery_loop(
         let elapsed_frames = (elapsed_ns as u128 * s.sample_rate as u128 / 1_000_000_000) as u32;
         let target_rtp = s.anchor_rtp.wrapping_add(elapsed_frames);
 
-        let ready: Vec<(u32, Vec<f32>)> = s.buffer
+        let ready: Vec<(u32, Vec<f32>)> = s
+            .buffer
             .iter()
             .filter(|(&ts, _)| (target_rtp.wrapping_sub(ts) as i32) >= 0)
             .map(|(&ts, data)| (ts, data.clone()))
             .collect();
 
-        for (ts, _) in &ready { s.buffer.remove(ts); }
+        for (ts, _) in &ready {
+            s.buffer.remove(ts);
+        }
         let meta: Vec<PlayoutCommand> = s.pending_meta.drain(..).collect();
         drop(s);
 

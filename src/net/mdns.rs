@@ -106,16 +106,19 @@ impl AirPlayServiceInfo {
             ("model".into(), GLOBAL_MODEL.into()),
         ];
 
-        Self { raop_name, airplay_name: name.to_string(), port, raop_txt, airplay_txt }
+        Self {
+            raop_name,
+            airplay_name: name.to_string(),
+            port,
+            raop_txt,
+            airplay_txt,
+        }
     }
 
     /// Create AP2 service info with full AirPlay 2 feature flags.
     /// `pk_hex` is the hex-encoded Ed25519 public key, `pi` is the pairing identifier (UUID).
     #[cfg(feature = "ap2")]
-    pub fn new_airplay2(
-        name: &str, port: u16, hwaddr: &[u8], password: bool,
-        pk_hex: &str, pi: &str,
-    ) -> Self {
+    pub fn new_airplay2(name: &str, port: u16, hwaddr: &[u8], password: bool, pk_hex: &str, pi: &str) -> Self {
         let hw_raop = util::hwaddr_raop(hwaddr);
         let hw_airplay = util::hwaddr_airplay(hwaddr);
         let raop_name = format!("{}@{}", hw_raop, name);
@@ -162,7 +165,13 @@ impl AirPlayServiceInfo {
             ("fv".into(), AP2_FW_VERSION.into()),
         ];
 
-        Self { raop_name, airplay_name: name.to_string(), port, raop_txt, airplay_txt }
+        Self {
+            raop_name,
+            airplay_name: name.to_string(),
+            port,
+            raop_txt,
+            airplay_txt,
+        }
     }
 }
 
@@ -187,7 +196,10 @@ pub struct MdnsService {
 impl MdnsService {
     /// Create a new mDNS service manager.
     pub fn new() -> Result<Self, NetworkError> {
-        Ok(Self { _raop_reg: None, _airplay_reg: None })
+        Ok(Self {
+            _raop_reg: None,
+            _airplay_reg: None,
+        })
     }
 
     /// Register the _raop._tcp mDNS service.
@@ -215,9 +227,13 @@ impl MdnsService {
     }
 
     /// Unregister the _raop._tcp mDNS service.
-    pub fn unregister_raop(&mut self) { self._raop_reg = None; }
+    pub fn unregister_raop(&mut self) {
+        self._raop_reg = None;
+    }
     /// Unregister the _airplay._tcp mDNS service.
-    pub fn unregister_airplay(&mut self) { self._airplay_reg = None; }
+    pub fn unregister_airplay(&mut self) {
+        self._airplay_reg = None;
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -242,9 +258,12 @@ pub struct MdnsService {
 impl MdnsService {
     /// Create a new mDNS service manager.
     pub fn new() -> Result<Self, NetworkError> {
-        let daemon = mdns_sd::ServiceDaemon::new()
-            .map_err(|e| NetworkError::Mdns(format!("{e}")))?;
-        Ok(Self { daemon, raop_fullname: None, airplay_fullname: None })
+        let daemon = mdns_sd::ServiceDaemon::new().map_err(|e| NetworkError::Mdns(format!("{e}")))?;
+        Ok(Self {
+            daemon,
+            raop_fullname: None,
+            airplay_fullname: None,
+        })
     }
 
     /// Register the _raop._tcp mDNS service.
@@ -256,9 +275,12 @@ impl MdnsService {
             "",
             info.port,
             txt_map(&info.raop_txt),
-        ).map_err(|e| NetworkError::Mdns(format!("{e}")))?;
+        )
+        .map_err(|e| NetworkError::Mdns(format!("{e}")))?;
         self.raop_fullname = Some(svc.get_fullname().to_string());
-        self.daemon.register(svc).map_err(|e| NetworkError::Mdns(format!("{e}")))?;
+        self.daemon
+            .register(svc)
+            .map_err(|e| NetworkError::Mdns(format!("{e}")))?;
         tracing::info!(name = %info.raop_name, port = info.port, "mDNS: _raop._tcp registered");
         Ok(())
     }
@@ -272,9 +294,12 @@ impl MdnsService {
             "",
             info.port,
             txt_map(&info.airplay_txt),
-        ).map_err(|e| NetworkError::Mdns(format!("{e}")))?;
+        )
+        .map_err(|e| NetworkError::Mdns(format!("{e}")))?;
         self.airplay_fullname = Some(svc.get_fullname().to_string());
-        self.daemon.register(svc).map_err(|e| NetworkError::Mdns(format!("{e}")))?;
+        self.daemon
+            .register(svc)
+            .map_err(|e| NetworkError::Mdns(format!("{e}")))?;
         tracing::info!(name = %info.airplay_name, port = info.port, "mDNS: _airplay._tcp registered");
         Ok(())
     }
@@ -310,8 +335,11 @@ mod tests {
     #[test]
     fn ap2_raop_txt_has_required_fields() {
         let info = AirPlayServiceInfo::new_airplay2(
-            "Test Speaker", 7000, &[0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF],
-            false, "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+            "Test Speaker",
+            7000,
+            &[0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF],
+            false,
+            "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
             "12345678-1234-1234-1234-123456789abc",
         );
 
@@ -320,9 +348,9 @@ mod tests {
         // AP2 _raop._tcp must have these fields (matching shairport-sync)
         assert_eq!(find("vn"), Some("65537")); // AP2 version, not "3"
         assert_eq!(find("tp"), Some("TCP,UDP")); // TCP for AP1 fallback, UDP for AP2
-        assert!(find("ft").unwrap().contains(","));  // features has hi,lo
-        assert!(find("pk").is_some());         // Ed25519 public key
-        assert!(find("sf").is_some());         // status flags
+        assert!(find("ft").unwrap().contains(",")); // features has hi,lo
+        assert!(find("pk").is_some()); // Ed25519 public key
+        assert!(find("sf").is_some()); // status flags
         assert_eq!(find("cn"), Some("0,1"));
         assert_eq!(find("da"), Some("true"));
         assert_eq!(find("pw"), Some("false"));
@@ -331,8 +359,12 @@ mod tests {
     #[test]
     fn ap2_airplay_txt_has_required_fields() {
         let info = AirPlayServiceInfo::new_airplay2(
-            "Test Speaker", 7000, &[0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF],
-            false, "abcd1234", "my-uuid-here",
+            "Test Speaker",
+            7000,
+            &[0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF],
+            false,
+            "abcd1234",
+            "my-uuid-here",
         );
 
         let find = |key: &str| info.airplay_txt.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str());
@@ -353,8 +385,12 @@ mod tests {
     #[test]
     fn ap2_raop_name_format() {
         let info = AirPlayServiceInfo::new_airplay2(
-            "My Speaker", 5000, &[0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC],
-            false, "pk", "pi",
+            "My Speaker",
+            5000,
+            &[0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC],
+            false,
+            "pk",
+            "pi",
         );
         assert_eq!(info.raop_name, "123456789ABC@My Speaker");
         assert_eq!(info.airplay_name, "My Speaker");

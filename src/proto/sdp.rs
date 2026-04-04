@@ -74,27 +74,51 @@ impl Sdp {
     }
 
     /// SDP version (v=).
-    pub fn version(&self) -> Option<&str> { self.version.as_deref() }
+    pub fn version(&self) -> Option<&str> {
+        self.version.as_deref()
+    }
     /// Session origin (o=).
-    pub fn origin(&self) -> Option<&str> { self.origin.as_deref() }
+    pub fn origin(&self) -> Option<&str> {
+        self.origin.as_deref()
+    }
     /// Session name (s=).
-    pub fn session(&self) -> Option<&str> { self.session.as_deref() }
+    pub fn session(&self) -> Option<&str> {
+        self.session.as_deref()
+    }
     /// Connection address (c=). Used to determine IPv4/IPv6.
-    pub fn connection(&self) -> Option<&str> { self.connection.as_deref() }
+    pub fn connection(&self) -> Option<&str> {
+        self.connection.as_deref()
+    }
     /// Timing (t=).
-    pub fn time(&self) -> Option<&str> { self.time.as_deref() }
+    pub fn time(&self) -> Option<&str> {
+        self.time.as_deref()
+    }
     /// Media description (m=).
-    pub fn media(&self) -> Option<&str> { self.media.as_deref() }
+    pub fn media(&self) -> Option<&str> {
+        self.media.as_deref()
+    }
     /// RTP map (a=rtpmap).
-    pub fn rtpmap(&self) -> Option<&str> { self.rtpmap.as_deref() }
+    pub fn rtpmap(&self) -> Option<&str> {
+        self.rtpmap.as_deref()
+    }
     /// Format parameters (a=fmtp). Contains ALAC config.
-    pub fn fmtp(&self) -> Option<&str> { self.fmtp.as_deref() }
+    pub fn fmtp(&self) -> Option<&str> {
+        self.fmtp.as_deref()
+    }
     /// RSA-encrypted AES key (a=rsaaeskey).
-    pub fn rsaaeskey(&self) -> Option<&str> { self.rsaaeskey.as_deref() }
+    pub fn rsaaeskey(&self) -> Option<&str> {
+        self.rsaaeskey.as_deref()
+    }
     /// FairPlay-encrypted AES key (a=fpaeskey).
-    pub fn fpaeskey(&self) -> Option<&str> { self.fpaeskey.as_deref() }
+    pub fn fpaeskey(&self) -> Option<&str> {
+        self.fpaeskey.as_deref()
+    }
     /// AES initialization vector (a=aesiv).
-    pub fn aesiv(&self) -> Option<&str> { self.aesiv.as_deref() }
+    pub fn aesiv(&self) -> Option<&str> {
+        self.aesiv.as_deref()
+    }
     /// Minimum latency (a=min-latency).
-    pub fn min_latency(&self) -> Option<&str> { self.min_latency.as_deref() }
+    pub fn min_latency(&self) -> Option<&str> {
+        self.min_latency.as_deref()
+    }
 }

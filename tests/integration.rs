@@ -1,10 +1,10 @@
 //! Integration tests: start a real RaopServer, connect via TCP, exercise the RTSP protocol.
 //! Tests are serialized to avoid mDNS registration conflicts.
 
+use serial_test::serial;
 use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
-use serial_test::serial;
 
 use shairplay::{AudioFormat, AudioHandler, AudioSession, RaopServer};
 
@@ -19,7 +19,9 @@ struct TestSession {
 impl AudioHandler for TestHandler {
     fn audio_init(&self, format: AudioFormat) -> Box<dyn AudioSession> {
         self.inits.lock().unwrap().push(format);
-        Box::new(TestSession { samples: Arc::new(Mutex::new(Vec::new())) })
+        Box::new(TestSession {
+            samples: Arc::new(Mutex::new(Vec::new())),
+        })
     }
 }
 
@@ -29,14 +31,11 @@ impl AudioSession for TestSession {
     }
 }
 
-
-
 async fn start_server() -> (RaopServer, u16, Arc<Mutex<Vec<AudioFormat>>>) {
     let inits = Arc::new(Mutex::new(Vec::new()));
     let handler = Arc::new(TestHandler { inits: inits.clone() });
     let mut server = RaopServer::builder()
         .name("IntegrationTest")
-        
         .hwaddr([0x00, 0x11, 0x22, 0x33, 0x44, 0x55])
         .port(0) // auto-assign
         .build(handler)
@@ -63,7 +62,10 @@ async fn server_start_stop() {
     let info = server.service_info();
     assert_eq!(info.port, port);
     assert_eq!(info.airplay_name, "IntegrationTest");
-    assert_eq!(info.raop_txt.iter().find(|(k,_)| k == "cn").map(|(_,v)| v.as_str()), Some("0,1"));
+    assert_eq!(
+        info.raop_txt.iter().find(|(k, _)| k == "cn").map(|(_, v)| v.as_str()),
+        Some("0,1")
+    );
 
     server.stop().await;
     assert!(!server.is_running());
@@ -139,10 +141,11 @@ async fn fp_setup_returns_142_bytes() {
 #[tokio::test]
 #[serial]
 async fn unauthorized_without_password_header() {
-    let handler = Arc::new(TestHandler { inits: Arc::new(Mutex::new(Vec::new())) });
+    let handler = Arc::new(TestHandler {
+        inits: Arc::new(Mutex::new(Vec::new())),
+    });
     let mut server = RaopServer::builder()
         .name("AuthTest")
-        
         .hwaddr([0xAA; 6])
         .port(0)
         .password("secret123")
@@ -193,10 +196,10 @@ async fn teardown_closes_connection() {
 
     // Server must close the connection after TEARDOWN
     let mut buf = [0u8; 64];
-    let n = tokio::time::timeout(
-        std::time::Duration::from_secs(2),
-        stream.read(&mut buf),
-    ).await.expect("server did not close connection within 2s").unwrap();
+    let n = tokio::time::timeout(std::time::Duration::from_secs(2), stream.read(&mut buf))
+        .await
+        .expect("server did not close connection within 2s")
+        .unwrap();
     assert_eq!(n, 0, "expected EOF after TEARDOWN");
 
     server.stop().await;
@@ -207,9 +210,9 @@ async fn teardown_closes_connection() {
 #[cfg(feature = "ap2")]
 mod ap2_tests {
     use super::*;
-    use shairplay::crypto::tlv::{TlvValues, TlvType};
-    use shairplay::crypto::pairing_homekit;
     use num_bigint::BigUint;
+    use shairplay::crypto::pairing_homekit;
+    use shairplay::crypto::tlv::{TlvType, TlvValues};
 
     #[tokio::test]
     #[serial]
@@ -235,7 +238,11 @@ mod ap2_tests {
         let mut buf = vec![0u8; 8192];
         let n = stream.read(&mut buf).await.unwrap();
         let resp = String::from_utf8_lossy(&buf[..n]);
-        assert!(resp.contains("200 OK"), "M2 should be 200, got: {}", &resp[..resp.len().min(100)]);
+        assert!(
+            resp.contains("200 OK"),
+            "M2 should be 200, got: {}",
+            &resp[..resp.len().min(100)]
+        );
 
         // Parse M2 response body — find the body after \r\n\r\n
         let header_end = resp.find("\r\n\r\n").unwrap() + 4;
@@ -260,7 +267,8 @@ mod ap2_tests {
 
         // Helper to send RTSP and read response
         async fn rtsp_post(stream: &mut TcpStream, url: &str, cseq: u32, body: &[u8]) -> (String, Vec<u8>) {
-            let req = format!(
+            let req =
+                format!(
                 "POST {} RTSP/1.0\r\nCSeq: {}\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\n\r\n",
                 url, cseq, body.len()
             );
@@ -306,24 +314,48 @@ mod ap2_tests {
         let big_b = BigUint::from_bytes_be(pk_b_bytes);
 
         // SRP math (simplified — same as pairing_homekit self-test)
-        use sha2::{Sha512, Digest};
-        fn to_bytes_be(n: &BigUint) -> Vec<u8> { let b = n.to_bytes_be(); if b.is_empty() { vec![0] } else { b } }
+        use sha2::{Digest, Sha512};
+        fn to_bytes_be(n: &BigUint) -> Vec<u8> {
+            let b = n.to_bytes_be();
+            if b.is_empty() {
+                vec![0]
+            } else {
+                b
+            }
+        }
         fn to_padded(n: &BigUint, len: usize) -> Vec<u8> {
             let b = n.to_bytes_be();
-            if b.len() >= len { b } else { let mut p = vec![0u8; len - b.len()]; p.extend(&b); p }
+            if b.len() >= len {
+                b
+            } else {
+                let mut p = vec![0u8; len - b.len()];
+                p.extend(&b);
+                p
+            }
         }
-        fn sha512(d: &[u8]) -> [u8; 64] { let mut h = Sha512::new(); h.update(d); h.finalize().into() }
+        fn sha512(d: &[u8]) -> [u8; 64] {
+            let mut h = Sha512::new();
+            h.update(d);
+            h.finalize().into()
+        }
         fn h_nn_pad(n1: &BigUint, n2: &BigUint, l: usize) -> BigUint {
-            let mut b = Vec::new(); b.extend(&to_padded(n1, l)); b.extend(&to_padded(n2, l));
+            let mut b = Vec::new();
+            b.extend(&to_padded(n1, l));
+            b.extend(&to_padded(n2, l));
             BigUint::from_bytes_be(&sha512(&b))
         }
 
         let k = h_nn_pad(&n, &g, 384);
         let u = h_nn_pad(&big_a, &big_b, 384);
 
-        let mut h = Sha512::new(); h.update(b"Pair-Setup"); h.update(b":"); h.update(b"3939");
+        let mut h = Sha512::new();
+        h.update(b"Pair-Setup");
+        h.update(b":");
+        h.update(b"3939");
         let ucp = h.finalize();
-        let mut buf2 = Vec::new(); buf2.extend(&to_bytes_be(&salt_bn)); buf2.extend(&ucp);
+        let mut buf2 = Vec::new();
+        buf2.extend(&to_bytes_be(&salt_bn));
+        buf2.extend(&ucp);
         let x = BigUint::from_bytes_be(&sha512(&buf2));
 
         let gx = g.modpow(&x, &n);
@@ -336,11 +368,16 @@ mod ap2_tests {
         let h_n = sha512(&to_bytes_be(&n));
         let h_g = sha512(&to_bytes_be(&g));
         let mut h_xor = [0u8; 64];
-        for i in 0..64 { h_xor[i] = h_n[i] ^ h_g[i]; }
+        for i in 0..64 {
+            h_xor[i] = h_n[i] ^ h_g[i];
+        }
         let h_i = sha512(b"Pair-Setup");
         let mut h = Sha512::new();
-        h.update(&h_xor); h.update(&h_i); h.update(&to_bytes_be(&salt_bn));
-        h.update(&to_bytes_be(&big_a)); h.update(&to_bytes_be(&big_b));
+        h.update(&h_xor);
+        h.update(&h_i);
+        h.update(&to_bytes_be(&salt_bn));
+        h.update(&to_bytes_be(&big_a));
+        h.update(&to_bytes_be(&big_b));
         h.update(&session_key);
         let client_m: [u8; 64] = h.finalize().into();
 
@@ -361,7 +398,9 @@ mod ap2_tests {
         // Verify server proof
         let server_proof = m4.get_type(TlvType::Proof).unwrap();
         let mut h = Sha512::new();
-        h.update(&to_bytes_be(&big_a)); h.update(&client_m); h.update(&session_key);
+        h.update(&to_bytes_be(&big_a));
+        h.update(&client_m);
+        h.update(&session_key);
         let expected_hamk: [u8; 64] = h.finalize().into();
         assert_eq!(server_proof, &expected_hamk[..], "Server proof should match");
 

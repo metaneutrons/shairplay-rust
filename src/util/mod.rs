@@ -4,7 +4,6 @@ pub mod base64;
 
 use std::fmt::Write;
 
-
 /// Format a hardware address for RAOP service name: "AABBCCDDEEFF" (uppercase hex, no separators).
 /// Equivalent to utils_hwaddr_raop.
 pub fn hwaddr_raop(hwaddr: &[u8]) -> String {
@@ -39,6 +38,9 @@ mod tests {
 
     #[test]
     fn hwaddr_airplay_c_vector() {
-        assert_eq!(hwaddr_airplay(&[0x48, 0x5d, 0x60, 0x7c, 0xee, 0x22]), "48:5d:60:7c:ee:22");
+        assert_eq!(
+            hwaddr_airplay(&[0x48, 0x5d, 0x60, 0x7c, 0xee, 0x22]),
+            "48:5d:60:7c:ee:22"
+        );
     }
 }

@@ -24,7 +24,9 @@ pub trait HlsSession: Send {
     /// Playback rate: 0.0 = paused, 1.0 = normal.
     fn rate(&self) -> f32;
     /// Whether the player is ready to play.
-    fn ready(&self) -> bool { true }
+    fn ready(&self) -> bool {
+        true
+    }
     /// Seek to a position in seconds.
     fn seek(&mut self, position: f32);
     /// Set playback rate (0.0 = pause, 1.0 = play).
@@ -41,7 +43,10 @@ pub(crate) struct HlsState {
 
 impl HlsState {
     pub fn new() -> Arc<Mutex<Self>> {
-        Arc::new(Mutex::new(Self { session: None, session_id: None }))
+        Arc::new(Mutex::new(Self {
+            session: None,
+            session_id: None,
+        }))
     }
 }
 
@@ -56,12 +61,25 @@ mod tests {
     }
 
     impl HlsSession for MockSession {
-        fn duration(&self) -> f32 { 120.0 }
-        fn position(&self) -> f32 { self.pos }
-        fn rate(&self) -> f32 { self.rate }
-        fn seek(&mut self, position: f32) { self.pos = position; }
-        fn set_rate(&mut self, rate: f32) { self.rate = rate; }
-        fn stop(&mut self) { self.stopped = true; self.rate = 0.0; }
+        fn duration(&self) -> f32 {
+            120.0
+        }
+        fn position(&self) -> f32 {
+            self.pos
+        }
+        fn rate(&self) -> f32 {
+            self.rate
+        }
+        fn seek(&mut self, position: f32) {
+            self.pos = position;
+        }
+        fn set_rate(&mut self, rate: f32) {
+            self.rate = rate;
+        }
+        fn stop(&mut self) {
+            self.stopped = true;
+            self.rate = 0.0;
+        }
     }
 
     #[test]
@@ -75,7 +93,11 @@ mod tests {
         // Simulate /play
         {
             let mut s = state.lock().unwrap();
-            s.session = Some(Box::new(MockSession { pos: 0.0, rate: 1.0, stopped: false }));
+            s.session = Some(Box::new(MockSession {
+                pos: 0.0,
+                rate: 1.0,
+                stopped: false,
+            }));
             s.session_id = Some("test-123".into());
         }
 

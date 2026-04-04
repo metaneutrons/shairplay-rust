@@ -5,8 +5,8 @@
 //! The consumer dequeues packets in order, with silence substitution for missing
 //! packets and optional retransmit requests for gaps.
 
-use aes::cipher::{BlockDecryptMut, KeyIvInit};
 use crate::codec::alac::{AlacConfig, AlacDecoder};
+use aes::cipher::{BlockDecryptMut, KeyIvInit};
 
 /// AES-128 key length in bytes.
 pub const RAOP_AESKEY_LEN: usize = 16;
@@ -53,7 +53,9 @@ fn seqnum_cmp(s1: u16, s2: u16) -> i16 {
 /// Format: "96 <frame_length> <compat_version> <bit_depth> <pb> <mb> <kb> <channels> <max_run> <max_frame_bytes> <avg_bitrate> <sample_rate>"
 fn parse_fmtp(fmtp: &str) -> Option<AlacConfig> {
     let vals: Vec<&str> = fmtp.split(' ').collect();
-    if vals.len() < 12 { return None; }
+    if vals.len() < 12 {
+        return None;
+    }
     let p = |i: usize| vals[i].parse::<u32>().unwrap_or(0);
     Some(AlacConfig {
         frame_length: p(1),
@@ -119,17 +121,11 @@ impl RaopBuffer {
     ///
     /// `fmtp` is parsed to determine ALAC frame size, channel count, and sample rate.
     /// The ALAC decoder is initialized immediately.
-    pub fn new(
-        _rtpmap: &str,
-        fmtp: &str,
-        aes_key: &[u8; RAOP_AESKEY_LEN],
-        aes_iv: &[u8; RAOP_AESIV_LEN],
-    ) -> Self {
+    pub fn new(_rtpmap: &str, fmtp: &str, aes_key: &[u8; RAOP_AESKEY_LEN], aes_iv: &[u8; RAOP_AESIV_LEN]) -> Self {
         let config = parse_fmtp(fmtp).expect("invalid fmtp");
         // ALAC outputs S16LE; we convert to F32 (one f32 per sample).
-        let s16_buffer_size = config.frame_length as usize
-            * config.num_channels as usize
-            * config.bit_depth as usize / 8;
+        let s16_buffer_size =
+            config.frame_length as usize * config.num_channels as usize * config.bit_depth as usize / 8;
         let audio_buffer_size = s16_buffer_size / 2; // num samples
 
         let mut alac = AlacDecoder::new(config.bit_depth as i32, config.num_channels as i32);
@@ -138,8 +134,12 @@ impl RaopBuffer {
 
         let entries = (0..RAOP_BUFFER_LENGTH)
             .map(|_| BufferEntry {
-                available: false, flags: 0, entry_type: 0, seqnum: 0,
-                timestamp: 0, ssrc: 0,
+                available: false,
+                flags: 0,
+                entry_type: 0,
+                seqnum: 0,
+                timestamp: 0,
+                ssrc: 0,
                 audio_buffer: vec![0.0f32; audio_buffer_size],
                 audio_buffer_len: 0,
             })
@@ -170,7 +170,9 @@ impl RaopBuffer {
     /// flushed to avoid stalling on lost packets.
     pub fn queue(&mut self, data: &[u8], use_seqnum: bool) -> i32 {
         let datalen = data.len();
-        if !(12..=RAOP_PACKET_LEN).contains(&datalen) { return -1; }
+        if !(12..=RAOP_PACKET_LEN).contains(&datalen) {
+            return -1;
+        }
 
         // Extract sequence number from RTP header bytes 2-3 (big-endian).
         let seqnum = if use_seqnum {
@@ -180,7 +182,9 @@ impl RaopBuffer {
         };
 
         // Drop packets older than our current window.
-        if !self.is_empty && seqnum_cmp(seqnum, self.first_seqnum) < 0 { return 0; }
+        if !self.is_empty && seqnum_cmp(seqnum, self.first_seqnum) < 0 {
+            return 0;
+        }
         // If too far ahead, flush the buffer to resync.
         if seqnum_cmp(seqnum, self.first_seqnum.wrapping_add(RAOP_BUFFER_LENGTH as u16)) >= 0 {
             self.flush(seqnum as i32);
@@ -207,12 +211,10 @@ impl RaopBuffer {
         let mut packet_buf = vec![0u8; payload.len()];
 
         if encrypted_len > 0 {
-            let decryptor = Aes128CbcDec::new(
-                self.aeskey[..].into(),
-                self.aesiv[..].into(),
-            );
+            let decryptor = Aes128CbcDec::new(self.aeskey[..].into(), self.aesiv[..].into());
             let mut encrypted = payload[..encrypted_len].to_vec();
-            decryptor.decrypt_padded_mut::<aes::cipher::block_padding::NoPadding>(&mut encrypted)
+            decryptor
+                .decrypt_padded_mut::<aes::cipher::block_padding::NoPadding>(&mut encrypted)
                 .unwrap_or(&[]);
             packet_buf[..encrypted_len].copy_from_slice(&encrypted);
         }
@@ -222,8 +224,11 @@ impl RaopBuffer {
         let mut s16_buf = vec![0u8; self.audio_buffer_size * 2];
         let output_size = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             self.alac.decode_frame(&packet_buf, &mut s16_buf)
-        })).unwrap_or(0);
-        if output_size == 0 { return 0; }
+        }))
+        .unwrap_or(0);
+        if output_size == 0 {
+            return 0;
+        }
         let num_samples = output_size / 2;
         for i in 0..num_samples {
             let s = i16::from_le_bytes([s16_buf[i * 2], s16_buf[i * 2 + 1]]);
@@ -251,7 +256,9 @@ impl RaopBuffer {
     /// is full), substitutes silence for the missing frame.
     pub fn dequeue(&mut self, no_resend: bool) -> Option<&[f32]> {
         let buflen = seqnum_cmp(self.last_seqnum, self.first_seqnum) as i32 + 1;
-        if self.is_empty || buflen <= 0 { return None; }
+        if self.is_empty || buflen <= 0 {
+            return None;
+        }
 
         let idx = self.first_seqnum as usize % RAOP_BUFFER_LENGTH;
         // Wait for retransmit unless buffer is full or retransmits are disabled.
@@ -279,15 +286,21 @@ impl RaopBuffer {
     /// then calls the callback with the starting sequence number and count
     /// of consecutive missing packets.
     pub fn handle_resends(&self, resend_cb: &ResendCallback) {
-        if seqnum_cmp(self.first_seqnum, self.last_seqnum) >= 0 { return; }
+        if seqnum_cmp(self.first_seqnum, self.last_seqnum) >= 0 {
+            return;
+        }
 
         let mut seqnum = self.first_seqnum;
         while seqnum_cmp(seqnum, self.last_seqnum) < 0 {
             let idx = seqnum as usize % RAOP_BUFFER_LENGTH;
-            if self.entries[idx].available { break; }
+            if self.entries[idx].available {
+                break;
+            }
             seqnum = seqnum.wrapping_add(1);
         }
-        if seqnum_cmp(seqnum, self.first_seqnum) == 0 { return; }
+        if seqnum_cmp(seqnum, self.first_seqnum) == 0 {
+            return;
+        }
         let count = seqnum_cmp(seqnum, self.first_seqnum) as u16;
         resend_cb(self.first_seqnum, count);
     }

@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
-use tokio::sync::{Semaphore, watch};
+use tokio::sync::{watch, Semaphore};
 
 use crate::error::NetworkError;
 use crate::proto::http::{HttpRequest, HttpResponse};
@@ -42,13 +42,19 @@ pub struct BindConfig {
 
 impl Default for BindConfig {
     fn default() -> Self {
-        Self { bind_addrs: Vec::new(), port: 5000, auto_port: true }
+        Self {
+            bind_addrs: Vec::new(),
+            port: 5000,
+            auto_port: true,
+        }
     }
 }
 
 impl BindConfig {
     /// Create a new default bind configuration.
-    pub fn new() -> Self { Self::default() }
+    pub fn new() -> Self {
+        Self::default()
+    }
 
     /// Set specific addresses to bind to. Replaces any previous addresses.
     pub fn addrs(mut self, addrs: impl IntoIterator<Item = IpAddr>) -> Self {
@@ -92,7 +98,9 @@ pub trait ConnectionHandler: Send {
     }
 
     /// Whether the connection is in encrypted mode.
-    fn is_encrypted(&self) -> bool { false }
+    fn is_encrypted(&self) -> bool {
+        false
+    }
 
     /// Called after a response is written. Activates pending encryption.
     fn after_response(&mut self) {}

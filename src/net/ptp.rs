@@ -38,9 +38,9 @@ pub struct PtpClockInfo {
     /// IEEE 1588 clock identity of the current master.
     pub master_clock_id: u64,
     /// Local time (ns) when offset was last calculated.
-    pub local_time: u64,           // ns, when offset was last calculated
+    pub local_time: u64, // ns, when offset was last calculated
     /// Add to local time to get master time (ns).
-    pub offset: u64,               // add to local time to get master time
+    pub offset: u64, // add to local time to get master time
     /// Local time (ns) when this master was first seen.
     pub mastership_start_time: u64, // ns
 }
@@ -51,12 +51,18 @@ pub struct PtpClock {
     info: Arc<RwLock<PtpClockInfo>>,
 }
 
-impl Default for PtpClock { fn default() -> Self { Self::new() } }
+impl Default for PtpClock {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl PtpClock {
     /// Create a new instance with default state.
     pub fn new() -> Self {
-        Self { info: Arc::new(RwLock::new(PtpClockInfo::default())) }
+        Self {
+            info: Arc::new(RwLock::new(PtpClockInfo::default())),
+        }
     }
 
     /// Get a snapshot of the current clock state.
@@ -76,7 +82,9 @@ impl PtpClock {
     /// Get current master time in nanoseconds.
     pub fn master_time_now(&self) -> Option<u64> {
         let info = self.info.read().unwrap();
-        if info.master_clock_id == 0 { return None; }
+        if info.master_clock_id == 0 {
+            return None;
+        }
         let now = now_ns();
         Some(now.wrapping_add(info.offset))
     }
@@ -85,9 +93,13 @@ impl PtpClock {
 /// Parse a PTP Follow_Up message and extract the preciseOriginTimestamp.
 /// Returns (clock_id, precise_origin_timestamp_ns, correction_field_ns).
 pub fn parse_follow_up(buf: &[u8]) -> Option<(u64, u64, i64)> {
-    if buf.len() < 54 { return None; }
+    if buf.len() < 54 {
+        return None;
+    }
     let msg_type = PtpMessageType::from(buf[0]);
-    if msg_type != PtpMessageType::FollowUp { return None; }
+    if msg_type != PtpMessageType::FollowUp {
+        return None;
+    }
 
     // Clock identity: bytes 20..28
     let clock_id = u64::from_be_bytes(buf[20..28].try_into().ok()?);
@@ -108,9 +120,13 @@ pub fn parse_follow_up(buf: &[u8]) -> Option<(u64, u64, i64)> {
 
 /// Parse a PTP Announce message and extract the clock identity.
 pub fn parse_announce(buf: &[u8]) -> Option<u64> {
-    if buf.len() < 64 { return None; }
+    if buf.len() < 64 {
+        return None;
+    }
     let msg_type = PtpMessageType::from(buf[0]);
-    if msg_type != PtpMessageType::Announce { return None; }
+    if msg_type != PtpMessageType::Announce {
+        return None;
+    }
     let clock_id = u64::from_be_bytes(buf[20..28].try_into().ok()?);
     Some(clock_id)
 }
@@ -123,12 +139,21 @@ pub struct OffsetSmoother {
     initialized: bool,
 }
 
-impl Default for OffsetSmoother { fn default() -> Self { Self::new() } }
+impl Default for OffsetSmoother {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl OffsetSmoother {
     /// Create a new instance with default state.
     pub fn new() -> Self {
-        Self { previous_offset: 0, previous_time: 0, mastership_start: 0, initialized: false }
+        Self {
+            previous_offset: 0,
+            previous_time: 0,
+            mastership_start: 0,
+            initialized: false,
+        }
     }
 
     /// Process a new offset sample. Returns the smoothed offset.
@@ -172,7 +197,10 @@ impl OffsetSmoother {
 }
 
 fn now_ns() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos() as u64
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos() as u64
 }
 
 #[cfg(test)]
@@ -184,7 +212,7 @@ mod tests {
         // Construct a minimal Follow_Up message (54 bytes)
         let mut buf = vec![0u8; 54];
         buf[0] = 0x08; // Follow_Up type
-        // Clock identity at bytes 20..28
+                       // Clock identity at bytes 20..28
         buf[20..28].copy_from_slice(&0xAABBCCDD11223344u64.to_be_bytes());
         // Correction field at bytes 8..16 (0 for simplicity)
         // preciseOriginTimestamp at bytes 34..44
@@ -261,7 +289,12 @@ impl PtpAnchor {
         // Convert network time to nanoseconds (frac is 64-bit fixed point, MSB = 0.5)
         let frac_ns = ((network_frac >> 32) * 1_000_000_000) >> 32;
         let network_time_ns = network_secs * 1_000_000_000 + frac_ns;
-        Self { clock_id, anchor_rtp: rtp_time, anchor_network_time_ns: network_time_ns, sample_rate }
+        Self {
+            clock_id,
+            anchor_rtp: rtp_time,
+            anchor_network_time_ns: network_time_ns,
+            sample_rate,
+        }
     }
 
     /// Given a PTP clock offset, compute the local time (ns) when an RTP frame should play.

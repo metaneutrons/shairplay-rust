@@ -93,11 +93,7 @@ impl PairingSession {
     }
 
     /// Perform the ECDH handshake. Equivalent to pairing_session_handshake.
-    pub fn handshake(
-        &mut self,
-        ecdh_key: &[u8; 32],
-        ed_key: &[u8; 32],
-    ) -> Result<(), CryptoError> {
+    pub fn handshake(&mut self, ecdh_key: &[u8; 32], ed_key: &[u8; 32]) -> Result<(), CryptoError> {
         if self.status == Status::Finished {
             return Err(CryptoError::PairingHandshake("already finished".into()));
         }
@@ -164,8 +160,7 @@ impl PairingSession {
         sig_msg[..32].copy_from_slice(&self.ecdh_theirs);
         sig_msg[32..].copy_from_slice(&self.ecdh_ours);
 
-        let verifying_key = VerifyingKey::from_bytes(&self.ed_theirs)
-            .map_err(|_| CryptoError::PairingVerify)?;
+        let verifying_key = VerifyingKey::from_bytes(&self.ed_theirs).map_err(|_| CryptoError::PairingVerify)?;
         let sig = Signature::from_bytes(&sig_buf);
         verifying_key
             .verify(&sig_msg, &sig)

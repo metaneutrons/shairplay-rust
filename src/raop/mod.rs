@@ -5,8 +5,6 @@ pub mod buffer;
 pub mod buffered_audio;
 #[cfg(feature = "ap2")]
 pub mod event_channel;
-#[cfg(feature = "ap2")]
-pub mod realtime_audio;
 pub mod handlers;
 #[cfg(feature = "ap2")]
 pub mod handlers_ap2;
@@ -14,6 +12,8 @@ pub mod handlers_ap2;
 pub mod handlers_hls;
 #[cfg(feature = "hls")]
 pub mod hls;
+#[cfg(feature = "ap2")]
+pub mod realtime_audio;
 pub mod rtp;
 mod rtsp;
 #[cfg(feature = "video")]
@@ -278,9 +278,13 @@ impl ConnectionHandler for RaopConnectionHandler {
 
     fn is_encrypted(&self) -> bool {
         #[cfg(feature = "ap2")]
-        { self.cipher.is_some() }
+        {
+            self.cipher.is_some()
+        }
         #[cfg(not(feature = "ap2"))]
-        { false }
+        {
+            false
+        }
     }
 
     fn after_response(&mut self) {
@@ -326,7 +330,8 @@ const AIRPORT_KEY: &str = include_str!("../../airport.key");
 fn airport_rsakey() -> Arc<RsaKey> {
     use std::sync::OnceLock;
     static KEY: OnceLock<Arc<RsaKey>> = OnceLock::new();
-    KEY.get_or_init(|| Arc::new(RsaKey::from_pem(AIRPORT_KEY).expect("built-in airport.key is invalid"))).clone()
+    KEY.get_or_init(|| Arc::new(RsaKey::from_pem(AIRPORT_KEY).expect("built-in airport.key is invalid")))
+        .clone()
 }
 
 pub use crate::net::server::BindConfig;
@@ -379,54 +384,78 @@ impl RaopServerBuilder {
     }
 
     /// Set the maximum number of concurrent connections. Default: 10.
-    pub fn max_clients(mut self, n: usize) -> Self { self.max_clients = n; self }
+    pub fn max_clients(mut self, n: usize) -> Self {
+        self.max_clients = n;
+        self
+    }
     /// Set the 6-byte hardware address for mDNS registration.
-    pub fn hwaddr(mut self, addr: impl Into<Vec<u8>>) -> Self { self.hwaddr = Some(addr.into()); self }
+    pub fn hwaddr(mut self, addr: impl Into<Vec<u8>>) -> Self {
+        self.hwaddr = Some(addr.into());
+        self
+    }
     /// Set an optional HTTP Digest authentication password.
-    pub fn password(mut self, pw: impl Into<String>) -> Self { self.password = Some(pw.into()); self }
+    pub fn password(mut self, pw: impl Into<String>) -> Self {
+        self.password = Some(pw.into());
+        self
+    }
     /// Set the RTSP listening port. Default: 5000.
-    pub fn port(mut self, port: u16) -> Self { self.bind.port = port; self }
+    pub fn port(mut self, port: u16) -> Self {
+        self.bind.port = port;
+        self
+    }
     /// Set full bind configuration (address, port, auto-sensing, IPv6).
-    pub fn bind(mut self, config: BindConfig) -> Self { self.bind = config; self }
+    pub fn bind(mut self, config: BindConfig) -> Self {
+        self.bind = config;
+        self
+    }
     /// Set the AirPlay display name. Default: "Shairplay".
-    pub fn name(mut self, name: impl Into<String>) -> Self { self.name = name.into(); self }
+    pub fn name(mut self, name: impl Into<String>) -> Self {
+        self.name = name.into();
+        self
+    }
 
     /// Set a pairing store for persisting device keys across restarts.
     /// Without this, iPhones must re-pair on every server restart.
     #[cfg(feature = "ap2")]
     pub fn pairing_store(mut self, store: Arc<dyn PairingStore>) -> Self {
-        self.pairing_store = Some(store); self
+        self.pairing_store = Some(store);
+        self
     }
 
     /// Set the desired output sample rate. The library resamples to this rate.
     /// Default: source native rate (no resampling).
     pub fn output_sample_rate(mut self, rate: u32) -> Self {
-        self.output_sample_rate = Some(rate); self
+        self.output_sample_rate = Some(rate);
+        self
     }
 
     /// Set the maximum output channels. Sources with more channels are mixed down.
     /// Sources with fewer channels are passed through (no upmixing).
     /// Default: pass through native channel count.
     pub fn output_max_channels(mut self, channels: u8) -> Self {
-        self.output_max_channels = Some(channels); self
+        self.output_max_channels = Some(channels);
+        self
     }
 
     #[cfg(feature = "ap2")]
     /// Set the HomeKit pairing PIN. Default: "3939".
     pub fn pin(mut self, pin: impl Into<String>) -> Self {
-        self.pin = Some(pin.into()); self
+        self.pin = Some(pin.into());
+        self
     }
 
     #[cfg(feature = "video")]
     /// Set a video handler for screen mirroring (experimental).
     pub fn video_handler(mut self, handler: Arc<dyn crate::raop::video::VideoHandler>) -> Self {
-        self.video_handler = Some(handler); self
+        self.video_handler = Some(handler);
+        self
     }
 
     #[cfg(feature = "hls")]
     /// Set an HLS handler for YouTube/video URL playback.
     pub fn hls_handler(mut self, handler: Arc<dyn crate::raop::hls::HlsHandler>) -> Self {
-        self.hls_handler = Some(handler); self
+        self.hls_handler = Some(handler);
+        self
     }
 
     /// Build the server with the given audio handler.
@@ -442,7 +471,9 @@ impl RaopServerBuilder {
             password: self.password.unwrap_or_default(),
             handler,
             #[cfg(feature = "ap2")]
-            pairing_store: self.pairing_store.unwrap_or_else(|| Arc::new(MemoryPairingStore::default())),
+            pairing_store: self
+                .pairing_store
+                .unwrap_or_else(|| Arc::new(MemoryPairingStore::default())),
             output_sample_rate: self.output_sample_rate,
             output_max_channels: self.output_max_channels,
             #[cfg(feature = "ap2")]
@@ -560,7 +591,11 @@ impl DacpRemoteControl {
         let mut client = crate::dacp::DacpClient::new(dacp_id, active_remote);
         let ip = match remote_addr.len() {
             4 => std::net::IpAddr::V4(std::net::Ipv4Addr::new(
-                remote_addr[0], remote_addr[1], remote_addr[2], remote_addr[3])),
+                remote_addr[0],
+                remote_addr[1],
+                remote_addr[2],
+                remote_addr[3],
+            )),
             16 => {
                 let mut octets = [0u8; 16];
                 octets.copy_from_slice(remote_addr);
@@ -589,17 +624,22 @@ impl RemoteControl for DacpRemoteControl {
                     RemoteCommand::Stop => self.client.stop().await,
                 }
             })
-        }).map_err(|e| crate::error::ShairplayError::Network(
-            crate::error::NetworkError::Io(std::io::Error::other(e.to_string()))
-        ))
+        })
+        .map_err(|e| {
+            crate::error::ShairplayError::Network(crate::error::NetworkError::Io(std::io::Error::other(e.to_string())))
+        })
     }
 
     fn available_commands(&self) -> Vec<RemoteCommand> {
         vec![
-            RemoteCommand::Play, RemoteCommand::Pause,
-            RemoteCommand::NextTrack, RemoteCommand::PreviousTrack,
-            RemoteCommand::SetVolume(0), RemoteCommand::ToggleShuffle,
-            RemoteCommand::ToggleRepeat, RemoteCommand::Stop,
+            RemoteCommand::Play,
+            RemoteCommand::Pause,
+            RemoteCommand::NextTrack,
+            RemoteCommand::PreviousTrack,
+            RemoteCommand::SetVolume(0),
+            RemoteCommand::ToggleShuffle,
+            RemoteCommand::ToggleRepeat,
+            RemoteCommand::Stop,
         ]
     }
 }

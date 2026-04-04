@@ -11,7 +11,7 @@ use crate::raop::rtp::RaopRtp;
 use crate::raop::AudioHandler;
 
 #[cfg(feature = "ap2")]
-use crate::crypto::pairing_homekit::{SrpServer, PairVerifyServer};
+use crate::crypto::pairing_homekit::{PairVerifyServer, SrpServer};
 
 /// Per-connection state for RTSP handler dispatch. Equivalent to raop_conn_t.
 pub(crate) struct RaopConnection {
@@ -110,7 +110,9 @@ pub(crate) fn handle_pair_setup(
     response: &mut HttpResponse,
 ) -> Option<Vec<u8>> {
     let data = request.data()?;
-    if data.len() != 32 { return None; }
+    if data.len() != 32 {
+        return None;
+    }
     let public_key = conn.pairing_identity.public_key();
     response.add_header("Content-Type", "application/octet-stream");
     Some(public_key.to_vec())
@@ -123,11 +125,15 @@ pub(crate) fn handle_pair_verify(
     response: &mut HttpResponse,
 ) -> Option<Vec<u8>> {
     let data = request.data()?;
-    if data.len() < 4 { return None; }
+    if data.len() < 4 {
+        return None;
+    }
 
     match data[0] {
         1 => {
-            if data.len() != 4 + 32 + 32 { return None; }
+            if data.len() != 4 + 32 + 32 {
+                return None;
+            }
             let ecdh_key: &[u8; 32] = data[4..36].try_into().ok()?;
             let ed_key: &[u8; 32] = data[36..68].try_into().ok()?;
             let _ = conn.pairing.handshake(ecdh_key, ed_key);
@@ -140,7 +146,9 @@ pub(crate) fn handle_pair_verify(
             Some(resp)
         }
         0 => {
-            if data.len() != 4 + 64 { return None; }
+            if data.len() != 4 + 64 {
+                return None;
+            }
             let sig: &[u8; 64] = data[4..68].try_into().ok()?;
             if conn.pairing.finish(sig).is_err() {
                 response.set_disconnect(true);
@@ -181,9 +189,15 @@ pub(crate) fn handle_options(
     response: &mut HttpResponse,
 ) -> Option<Vec<u8>> {
     #[cfg(feature = "ap2")]
-    response.add_header("Public", "ANNOUNCE, SETUP, RECORD, PAUSE, FLUSH, FLUSHBUFFERED, TEARDOWN, OPTIONS, POST, GET, PUT");
+    response.add_header(
+        "Public",
+        "ANNOUNCE, SETUP, RECORD, PAUSE, FLUSH, FLUSHBUFFERED, TEARDOWN, OPTIONS, POST, GET, PUT",
+    );
     #[cfg(not(feature = "ap2"))]
-    response.add_header("Public", "ANNOUNCE, SETUP, RECORD, PAUSE, FLUSH, TEARDOWN, OPTIONS, GET_PARAMETER, SET_PARAMETER");
+    response.add_header(
+        "Public",
+        "ANNOUNCE, SETUP, RECORD, PAUSE, FLUSH, TEARDOWN, OPTIONS, GET_PARAMETER, SET_PARAMETER",
+    );
     None
 }
 
@@ -222,10 +236,14 @@ pub(crate) fn handle_announce(
     };
 
     let key_bytes = key_bytes?;
-    if key_bytes.len() >= 16 { aeskey.copy_from_slice(&key_bytes[..16]); }
+    if key_bytes.len() >= 16 {
+        aeskey.copy_from_slice(&key_bytes[..16]);
+    }
 
     let iv_bytes = conn.rsakey.decode(aesiv_str).ok()?;
-    if iv_bytes.len() >= 16 { aesiv.copy_from_slice(&iv_bytes[..16]); }
+    if iv_bytes.len() >= 16 {
+        aesiv.copy_from_slice(&iv_bytes[..16]);
+    }
 
     // Destroy existing RTP session if any
     conn.raop_rtp = None;
@@ -240,7 +258,7 @@ pub(crate) fn handle_announce(
             aes_key: aeskey,
             aes_iv: aesiv,
             output_sample_rate: conn.output_sample_rate,
-                    remote_socket: conn.remote_socket,
+            remote_socket: conn.remote_socket,
         },
     ));
 
@@ -260,10 +278,7 @@ pub(crate) fn handle_setup(
     tracing::debug!(transport, "AP1 SETUP");
 
     // Check for DACP remote control headers
-    if let (Some(dacp_id), Some(active_remote)) = (
-        request.header("DACP-ID"),
-        request.header("Active-Remote"),
-    ) {
+    if let (Some(dacp_id), Some(active_remote)) = (request.header("DACP-ID"), request.header("Active-Remote")) {
         if let Some(rtp) = &conn.raop_rtp {
             rtp.set_remote_control_id(dacp_id, active_remote);
         }
@@ -288,10 +303,9 @@ pub(crate) fn handle_setup(
         // For now, use tokio::runtime::Handle to block
 
         let (cport, tport, dport) = tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(
-                rtp.start(use_udp, remote_cport, remote_tport)
-            )
-        }).ok()?;
+            tokio::runtime::Handle::current().block_on(rtp.start(use_udp, remote_cport, remote_tport))
+        })
+        .ok()?;
 
         let transport_resp = if use_udp {
             format!(
@@ -316,7 +330,9 @@ pub(crate) fn handle_get_parameter(
     response: &mut HttpResponse,
 ) -> Option<Vec<u8>> {
     let content_type = request.header("Content-Type")?;
-    if content_type != "text/parameters" { return None; }
+    if content_type != "text/parameters" {
+        return None;
+    }
 
     let data = request.data()?;
     let text = std::str::from_utf8(data).ok()?;
@@ -344,7 +360,10 @@ pub(crate) fn handle_set_parameter(
             "text/parameters" => {
                 let text = std::str::from_utf8(data).ok()?;
                 if let Some(rest) = text.strip_prefix("volume: ") {
-                    rest.trim().parse::<f32>().ok().map(crate::raop::buffered_audio::PlayoutCommand::Volume)
+                    rest.trim()
+                        .parse::<f32>()
+                        .ok()
+                        .map(crate::raop::buffered_audio::PlayoutCommand::Volume)
                 } else if let Some(rest) = text.strip_prefix("progress: ") {
                     let p: Vec<&str> = rest.trim().split('/').collect();
                     if p.len() == 3 {
@@ -353,8 +372,12 @@ pub(crate) fn handle_set_parameter(
                             current: p[1].parse().unwrap_or(0),
                             end: p[2].parse().unwrap_or(0),
                         })
-                    } else { None }
-                } else { None }
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
             }
             "image/jpeg" | "image/png" => Some(crate::raop::buffered_audio::PlayoutCommand::Coverart(data.to_vec())),
             "application/x-dmap-tagged" => Some(crate::raop::buffered_audio::PlayoutCommand::Metadata(data.to_vec())),
@@ -397,4 +420,3 @@ pub(crate) fn handle_set_parameter(
 }
 
 // --- AirPlay 2 handlers ---
-

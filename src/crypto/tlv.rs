@@ -200,7 +200,7 @@ mod tests {
         tlv.add(3, &pk);
         let encoded = tlv.encode();
         assert_eq!(encoded.len(), 304); // 2+255 + 2+45
-        // First chunk header
+                                        // First chunk header
         assert_eq!(encoded[0], 3);
         assert_eq!(encoded[1], 255);
         // Second chunk header

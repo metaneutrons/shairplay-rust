@@ -40,7 +40,13 @@ impl AudioSsrc {
 
     /// Whether this format uses AAC encoding.
     pub fn is_aac(self) -> bool {
-        matches!(self, Self::Aac44100F24Stereo | Self::Aac48000F24Stereo | Self::Aac48000F24Surround51 | Self::Aac48000F24Surround71)
+        matches!(
+            self,
+            Self::Aac44100F24Stereo
+                | Self::Aac48000F24Stereo
+                | Self::Aac48000F24Surround51
+                | Self::Aac48000F24Surround71
+        )
     }
 
     /// Source sample rate for this format.
@@ -154,8 +160,8 @@ pub struct AacDecoder {
 impl AacDecoder {
     /// Create a new decoder for the given format.
     pub fn new(sample_rate: u32, channels: u8) -> Result<Self, String> {
-        use symphonia::core::codecs::{CodecParameters, DecoderOptions, CODEC_TYPE_AAC};
         use symphonia::core::audio::Channels;
+        use symphonia::core::codecs::{CodecParameters, DecoderOptions, CODEC_TYPE_AAC};
 
         let mut params = CodecParameters::new();
         params.for_codec(CODEC_TYPE_AAC).with_sample_rate(sample_rate);
@@ -163,11 +169,24 @@ impl AacDecoder {
         let ch = match channels {
             1 => Channels::FRONT_CENTRE,
             2 => Channels::FRONT_LEFT | Channels::FRONT_RIGHT,
-            6 => Channels::FRONT_LEFT | Channels::FRONT_RIGHT | Channels::FRONT_CENTRE
-                | Channels::REAR_LEFT | Channels::REAR_RIGHT | Channels::LFE1,
-            8 => Channels::FRONT_LEFT | Channels::FRONT_RIGHT | Channels::FRONT_CENTRE
-                | Channels::SIDE_LEFT | Channels::SIDE_RIGHT
-                | Channels::REAR_LEFT | Channels::REAR_RIGHT | Channels::LFE1,
+            6 => {
+                Channels::FRONT_LEFT
+                    | Channels::FRONT_RIGHT
+                    | Channels::FRONT_CENTRE
+                    | Channels::REAR_LEFT
+                    | Channels::REAR_RIGHT
+                    | Channels::LFE1
+            }
+            8 => {
+                Channels::FRONT_LEFT
+                    | Channels::FRONT_RIGHT
+                    | Channels::FRONT_CENTRE
+                    | Channels::SIDE_LEFT
+                    | Channels::SIDE_RIGHT
+                    | Channels::REAR_LEFT
+                    | Channels::REAR_RIGHT
+                    | Channels::LFE1
+            }
             _ => Channels::FRONT_LEFT | Channels::FRONT_RIGHT,
         };
         params.with_channels(ch);
@@ -176,7 +195,11 @@ impl AacDecoder {
             .make(&params, &DecoderOptions::default())
             .map_err(|e| format!("AAC decoder init failed: {e}"))?;
 
-        Ok(Self { decoder, sample_rate, channels })
+        Ok(Self {
+            decoder,
+            sample_rate,
+            channels,
+        })
     }
 
     /// Decode a raw AAC frame (without ADTS header) to interleaved F32 PCM.
@@ -199,7 +222,11 @@ impl AacDecoder {
     }
 
     /// Source sample rate for this format.
-    pub fn sample_rate(&self) -> u32 { self.sample_rate }
+    pub fn sample_rate(&self) -> u32 {
+        self.sample_rate
+    }
     /// Number of audio channels for this format.
-    pub fn channels(&self) -> u8 { self.channels }
+    pub fn channels(&self) -> u8 {
+        self.channels
+    }
 }

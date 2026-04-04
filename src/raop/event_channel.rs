@@ -3,8 +3,8 @@
 //! After initial SETUP, the client connects to the event TCP port.
 //! All traffic is encrypted with ChaCha20-Poly1305 using HKDF-derived keys.
 
-use tokio::net::{TcpListener, TcpStream};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
 use tracing::{debug, info, warn};
 
@@ -25,7 +25,9 @@ impl EventSender {
 
     /// Send a plaintext message (will be encrypted before transmission).
     pub fn send(&self, data: Vec<u8>) -> Result<(), NetworkError> {
-        self.tx.send(data).map_err(|_| NetworkError::Mdns("event channel closed".into()))
+        self.tx
+            .send(data)
+            .map_err(|_| NetworkError::Mdns("event channel closed".into()))
     }
 }
 
@@ -52,7 +54,10 @@ impl EventChannel {
 
         let (stream, addr) = match self.listener.accept().await {
             Ok(s) => s,
-            Err(e) => { warn!("Event channel accept failed: {e}"); return sender; }
+            Err(e) => {
+                warn!("Event channel accept failed: {e}");
+                return sender;
+            }
         };
         info!(%addr, "Event channel client connected");
 
@@ -61,11 +66,7 @@ impl EventChannel {
     }
 
     /// Handle a connected event channel stream (public for use from handlers).
-    pub async fn handle_stream(
-        stream: TcpStream,
-        channel: EncryptedChannel,
-        cmd_rx: mpsc::UnboundedReceiver<Vec<u8>>,
-    ) {
+    pub async fn handle_stream(stream: TcpStream, channel: EncryptedChannel, cmd_rx: mpsc::UnboundedReceiver<Vec<u8>>) {
         Self::handle(stream, channel, cmd_rx).await;
     }
 

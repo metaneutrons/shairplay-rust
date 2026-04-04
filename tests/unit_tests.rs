@@ -47,7 +47,8 @@ fn sdp_missing_fields() {
 fn http_parse_rtsp_request() {
     let mut req = HttpRequest::new();
     // Real Apple devices send RTSP/1.0 — parser must handle it
-    req.add_data(b"OPTIONS * RTSP/1.0\r\nCSeq: 1\r\nApple-Challenge: dGVzdA==\r\n\r\n").unwrap();
+    req.add_data(b"OPTIONS * RTSP/1.0\r\nCSeq: 1\r\nApple-Challenge: dGVzdA==\r\n\r\n")
+        .unwrap();
     assert!(req.is_complete());
     assert_eq!(req.method(), Some("OPTIONS"));
     assert_eq!(req.url(), Some("*"));
@@ -78,7 +79,8 @@ fn http_incremental_parse() {
 #[test]
 fn http_request_with_body() {
     let mut req = HttpRequest::new();
-    req.add_data(b"POST /fp-setup RTSP/1.0\r\nContent-Length: 4\r\n\r\nABCD").unwrap();
+    req.add_data(b"POST /fp-setup RTSP/1.0\r\nContent-Length: 4\r\n\r\nABCD")
+        .unwrap();
     assert!(req.is_complete());
     assert_eq!(req.data(), Some(b"ABCD".as_ref()));
 }
@@ -111,13 +113,27 @@ fn http_response_disconnect() {
 fn digest_valid_auth() {
     // C reference: digest_response = c5b03993ddeeb6f209c5aa08d2aa30d8
     let auth = "Digest username=\"user\", realm=\"airplay\", nonce=\"abc123\", uri=\"/\", response=\"c5b03993ddeeb6f209c5aa08d2aa30d8\"";
-    assert!(digest::is_valid("airplay", "pass", "abc123", "OPTIONS", "/", Some(auth)));
+    assert!(digest::is_valid(
+        "airplay",
+        "pass",
+        "abc123",
+        "OPTIONS",
+        "/",
+        Some(auth)
+    ));
 }
 
 #[test]
 fn digest_wrong_password() {
     let auth = "Digest username=\"user\", realm=\"airplay\", nonce=\"abc123\", uri=\"/\", response=\"c5b03993ddeeb6f209c5aa08d2aa30d8\"";
-    assert!(!digest::is_valid("airplay", "wrong", "abc123", "OPTIONS", "/", Some(auth)));
+    assert!(!digest::is_valid(
+        "airplay",
+        "wrong",
+        "abc123",
+        "OPTIONS",
+        "/",
+        Some(auth)
+    ));
 }
 
 #[test]
@@ -162,18 +178,29 @@ fn plist_reject_garbage() {
 // ============================================================
 #[test]
 fn aes_ctr_48_bytes() {
-    let key = [0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x08,0x09,0x0a,0x0b,0x0c,0x0d,0x0e,0x0f,0x10];
-    let nonce = [0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x01];
+    let key = [
+        0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10,
+    ];
+    let nonce = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+    ];
     let mut data: Vec<u8> = (0..48).collect();
     let mut aes = AesCtr::new(&key, &nonce);
     aes.encrypt(&mut data);
-    assert_eq!(hex::encode(&data), "9a7b041aaec7986b1722564c5fd886fc043d43dabb39e7ce36902ddfe7dc93659233f84a755459b2712ee0fd90d32645");
+    assert_eq!(
+        hex::encode(&data),
+        "9a7b041aaec7986b1722564c5fd886fc043d43dabb39e7ce36902ddfe7dc93659233f84a755459b2712ee0fd90d32645"
+    );
 }
 
 #[test]
 fn aes_ctr_streaming_matches_oneshot() {
-    let key = [0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x08,0x09,0x0a,0x0b,0x0c,0x0d,0x0e,0x0f,0x10];
-    let nonce = [0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x01];
+    let key = [
+        0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10,
+    ];
+    let nonce = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+    ];
     let plain: Vec<u8> = (0..48).collect();
 
     // One-shot
@@ -192,8 +219,12 @@ fn aes_ctr_streaming_matches_oneshot() {
 
 #[test]
 fn aes_ctr_7_bytes() {
-    let key = [0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x08,0x09,0x0a,0x0b,0x0c,0x0d,0x0e,0x0f,0x10];
-    let nonce = [0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x01];
+    let key = [
+        0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10,
+    ];
+    let nonce = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+    ];
     let mut data: Vec<u8> = (0..7).collect();
     AesCtr::new(&key, &nonce).encrypt(&mut data);
     assert_eq!(hex::encode(&data), "9a7b041aaec798");
@@ -215,9 +246,7 @@ fn aes_ctr_symmetric() {
 // Hwaddr — vectors from C utils_hwaddr_raop/airplay
 // ============================================================
 #[test]
-
 #[test]
-
 // ============================================================
 // Pairing — full handshake roundtrip
 // ============================================================
@@ -275,7 +304,9 @@ fn fairplay_handshake_response() {
     let mut fp = FairPlay::new();
     let mut req = [0u8; 164];
     req[4] = 0x03;
-    for i in 144..164 { req[i] = i as u8; }
+    for i in 144..164 {
+        req[i] = i as u8;
+    }
     let res = fp.handshake(&req).unwrap();
     assert_eq!(&res[..4], b"FPLY");
     assert_eq!(&res[12..32], &req[144..164]); // echo bytes
@@ -302,7 +333,7 @@ fn alac_init_and_set_info() {
     info[30] = 40; // pb
     info[31] = 10; // mb
     info[32] = 14; // kb
-    info[33] = 2;  // channels
+    info[33] = 2; // channels
     info[34..36].copy_from_slice(&255u16.to_be_bytes());
     info[44..48].copy_from_slice(&44100u32.to_be_bytes());
     alac.set_info(&info);
@@ -351,16 +382,34 @@ fn rtp_buffer_reject_short_packet() {
 fn service_info_txt_records() {
     let info = AirPlayServiceInfo::new("TestSpeaker", 5000, &[0x48, 0x5d, 0x60, 0x7c, 0xee, 0x22], false);
     assert_eq!(info.raop_name, "485D607CEE22@TestSpeaker");
-    assert_eq!(info.raop_txt.iter().find(|(k,_)| k == "ch").map(|(_,v)| v.as_str()), Some("2"));
-    assert_eq!(info.raop_txt.iter().find(|(k,_)| k == "sr").map(|(_,v)| v.as_str()), Some("44100"));
-    assert_eq!(info.raop_txt.iter().find(|(k,_)| k == "pw").map(|(_,v)| v.as_str()), Some("false"));
-    assert_eq!(info.airplay_txt.iter().find(|(k,_)| k == "model").map(|(_,v)| v.as_str()), Some("AppleTV2,1"));
+    assert_eq!(
+        info.raop_txt.iter().find(|(k, _)| k == "ch").map(|(_, v)| v.as_str()),
+        Some("2")
+    );
+    assert_eq!(
+        info.raop_txt.iter().find(|(k, _)| k == "sr").map(|(_, v)| v.as_str()),
+        Some("44100")
+    );
+    assert_eq!(
+        info.raop_txt.iter().find(|(k, _)| k == "pw").map(|(_, v)| v.as_str()),
+        Some("false")
+    );
+    assert_eq!(
+        info.airplay_txt
+            .iter()
+            .find(|(k, _)| k == "model")
+            .map(|(_, v)| v.as_str()),
+        Some("AppleTV2,1")
+    );
 }
 
 #[test]
 fn service_info_with_password() {
     let info = AirPlayServiceInfo::new("Test", 5000, &[0; 6], true);
-    assert_eq!(info.raop_txt.iter().find(|(k,_)| k == "pw").map(|(_,v)| v.as_str()), Some("true"));
+    assert_eq!(
+        info.raop_txt.iter().find(|(k, _)| k == "pw").map(|(_, v)| v.as_str()),
+        Some("true")
+    );
 }
 
 // ============================================================
@@ -382,7 +431,7 @@ mod ap2_tests {
 
     #[test]
     fn c_vector_audio_packet_decrypt() {
-        use chacha20poly1305::{ChaCha20Poly1305, KeyInit, aead::Aead, Nonce, aead::Payload};
+        use chacha20poly1305::{aead::Aead, aead::Payload, ChaCha20Poly1305, KeyInit, Nonce};
 
         let packet = hex_decode("809a000193eda3fd160000004ea11b7fc9f1c33dbf860ff8ae0b52a18df7c4cbe6066082bdc97419157558ec76f55c1e2bc54b119bf70102030405060708");
 
@@ -399,17 +448,16 @@ mod ap2_tests {
         // Ciphertext+tag: packet[12..len-8]
         let ciphertext = &packet[12..pkt_len - 8];
 
-        let plaintext = cipher.decrypt(
-            Nonce::from_slice(&nonce),
-            Payload { msg: ciphertext, aad },
-        ).expect("decryption should succeed");
+        let plaintext = cipher
+            .decrypt(Nonce::from_slice(&nonce), Payload { msg: ciphertext, aad })
+            .expect("decryption should succeed");
 
         assert_eq!(std::str::from_utf8(&plaintext).unwrap(), "Hello AAC frame data here!");
     }
 
     #[test]
     fn audio_packet_wrong_key_fails() {
-        use chacha20poly1305::{ChaCha20Poly1305, KeyInit, aead::Aead, Nonce, aead::Payload};
+        use chacha20poly1305::{aead::Aead, aead::Payload, ChaCha20Poly1305, KeyInit, Nonce};
 
         let packet = hex_decode("809a000193eda3fd160000004ea11b7fc9f1c33dbf860ff8ae0b52a18df7c4cbe6066082bdc97419157558ec76f55c1e2bc54b119bf70102030405060708");
 
@@ -422,7 +470,9 @@ mod ap2_tests {
         let aad = &packet[4..12];
         let ciphertext = &packet[12..pkt_len - 8];
 
-        assert!(cipher.decrypt(Nonce::from_slice(&nonce), Payload { msg: ciphertext, aad }).is_err());
+        assert!(cipher
+            .decrypt(Nonce::from_slice(&nonce), Payload { msg: ciphertext, aad })
+            .is_err());
     }
 
     // --- Buffered audio length-prefix framing ---
@@ -506,7 +556,10 @@ mod ap2_tests {
     fn c_vector_server_keypair() {
         let (_, vk) = shairplay::crypto::pairing_homekit::server_keypair("AABBCCDD1122");
         let pk_hex: String = vk.as_bytes().iter().map(|b| format!("{:02x}", b)).collect();
-        assert_eq!(pk_hex, "f336effeaedc188558f1046a97fe5db67cf9c7c1736d9201fb9821985eedf7c1");
+        assert_eq!(
+            pk_hex,
+            "f336effeaedc188558f1046a97fe5db67cf9c7c1736d9201fb9821985eedf7c1"
+        );
     }
 
     // --- C-verified: PTP anchor time conversion (from rtsp.c SETRATEANCHORTI) ---
@@ -530,12 +583,12 @@ mod ap2_tests {
     }
 
     fn hex_decode(s: &str) -> Vec<u8> {
-        (0..s.len()).step_by(2)
-            .map(|i| u8::from_str_radix(&s[i..i+2], 16).unwrap())
+        (0..s.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
             .collect()
     }
 }
-
 
 // --- Channel mixdown tests ---
 
@@ -693,8 +746,15 @@ mod playout_tests {
     #[test]
     fn playout_command_variants() {
         // Just verify the enum is constructible (compile-time check)
-        let _ = PlayoutCommand::SetRate { anchor_rtp: 0, anchor_time_ns: 0, rate: 1 };
-        let _ = PlayoutCommand::Flush { from_seq: 0, until_seq: 100 };
+        let _ = PlayoutCommand::SetRate {
+            anchor_rtp: 0,
+            anchor_time_ns: 0,
+            rate: 1,
+        };
+        let _ = PlayoutCommand::Flush {
+            from_seq: 0,
+            until_seq: 100,
+        };
         let _ = PlayoutCommand::Stop;
     }
 }

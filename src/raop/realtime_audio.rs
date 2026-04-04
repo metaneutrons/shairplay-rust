@@ -7,9 +7,9 @@ use std::sync::Arc;
 use tokio::net::UdpSocket;
 use tracing::{debug, info, warn};
 
-use chacha20poly1305::{ChaCha20Poly1305, KeyInit, aead::Aead, Nonce, aead::Payload};
+use chacha20poly1305::{aead::Aead, aead::Payload, ChaCha20Poly1305, KeyInit, Nonce};
 
-use crate::raop::{AudioHandler, AudioFormat, AudioCodec};
+use crate::raop::{AudioCodec, AudioFormat, AudioHandler};
 
 #[cfg(feature = "resample")]
 use crate::codec::resample::StreamResampler;
@@ -26,12 +26,7 @@ pub struct OutputConfig {
 }
 
 /// Run the realtime audio receiver loop.
-pub async fn run(
-    socket: UdpSocket,
-    shk: [u8; 32],
-    handler: Arc<dyn AudioHandler>,
-    output_config: OutputConfig,
-) {
+pub async fn run(socket: UdpSocket, shk: [u8; 32], handler: Arc<dyn AudioHandler>, output_config: OutputConfig) {
     let cipher = ChaCha20Poly1305::new((&shk).into());
     let mut buf = vec![0u8; 4096];
     let mut decoder: Option<crate::codec::alac::AlacDecoder> = None;
@@ -49,11 +44,16 @@ pub async fn run(
         let n = match socket.recv(&mut buf).await {
             Ok(0) => break,
             Ok(n) => n,
-            Err(e) => { warn!("Realtime audio recv error: {e}"); break; }
+            Err(e) => {
+                warn!("Realtime audio recv error: {e}");
+                break;
+            }
         };
 
         let packet = &buf[..n];
-        if packet.len() <= RTP_HEADER_LEN + NONCE_TRAIL_LEN { continue; }
+        if packet.len() <= RTP_HEADER_LEN + NONCE_TRAIL_LEN {
+            continue;
+        }
 
         // Lazy init decoder + session on first packet
         if session.is_none() {
@@ -85,12 +85,12 @@ pub async fn run(
         let aad = &packet[4..12];
         let ciphertext = &packet[RTP_HEADER_LEN..pkt_len - NONCE_TRAIL_LEN];
 
-        let alac_data = match cipher.decrypt(
-            Nonce::from_slice(&nonce),
-            Payload { msg: ciphertext, aad },
-        ) {
+        let alac_data = match cipher.decrypt(Nonce::from_slice(&nonce), Payload { msg: ciphertext, aad }) {
             Ok(p) => p,
-            Err(_) => { debug!("Realtime audio decrypt failed"); continue; }
+            Err(_) => {
+                debug!("Realtime audio decrypt failed");
+                continue;
+            }
         };
 
         // Decode ALAC → f32 PCM

@@ -27,56 +27,143 @@ struct Route {
 const ROUTES: &[Route] = &[
     // --- Authentication & DRM ---
     #[cfg(feature = "ap2")]
-    Route { method: "POST", path: "/pair-setup",  handler: handlers_ap2::handle_pair_setup_ap2 },
+    Route {
+        method: "POST",
+        path: "/pair-setup",
+        handler: handlers_ap2::handle_pair_setup_ap2,
+    },
     #[cfg(not(feature = "ap2"))]
-    Route { method: "POST", path: "/pair-setup",  handler: handlers::handle_pair_setup },
+    Route {
+        method: "POST",
+        path: "/pair-setup",
+        handler: handlers::handle_pair_setup,
+    },
     #[cfg(feature = "ap2")]
-    Route { method: "POST", path: "/pair-verify", handler: handlers_ap2::handle_pair_verify_ap2 },
+    Route {
+        method: "POST",
+        path: "/pair-verify",
+        handler: handlers_ap2::handle_pair_verify_ap2,
+    },
     #[cfg(not(feature = "ap2"))]
-    Route { method: "POST", path: "/pair-verify", handler: handlers::handle_pair_verify },
-    Route { method: "POST", path: "/fp-setup",    handler: handlers::handle_fp_setup },
-
+    Route {
+        method: "POST",
+        path: "/pair-verify",
+        handler: handlers::handle_pair_verify,
+    },
+    Route {
+        method: "POST",
+        path: "/fp-setup",
+        handler: handlers::handle_fp_setup,
+    },
     // --- AP2 POST endpoints ---
     #[cfg(feature = "ap2")]
-    Route { method: "POST", path: "/feedback",    handler: handlers_ap2::handle_feedback },
+    Route {
+        method: "POST",
+        path: "/feedback",
+        handler: handlers_ap2::handle_feedback,
+    },
     #[cfg(feature = "ap2")]
-    Route { method: "POST", path: "/command",     handler: handlers_ap2::handle_command },
+    Route {
+        method: "POST",
+        path: "/command",
+        handler: handlers_ap2::handle_command,
+    },
     #[cfg(feature = "ap2")]
-    Route { method: "POST", path: "/audioMode",   handler: handlers_ap2::handle_audiomode },
-
+    Route {
+        method: "POST",
+        path: "/audioMode",
+        handler: handlers_ap2::handle_audiomode,
+    },
     // --- Standard RTSP methods ---
-    Route { method: "OPTIONS",       path: "*", handler: handlers::handle_options },
-    Route { method: "ANNOUNCE",      path: "*", handler: handlers::handle_announce },
-    Route { method: "GET_PARAMETER", path: "*", handler: handlers::handle_get_parameter },
-    Route { method: "SET_PARAMETER", path: "*", handler: handlers::handle_set_parameter },
-
+    Route {
+        method: "OPTIONS",
+        path: "*",
+        handler: handlers::handle_options,
+    },
+    Route {
+        method: "ANNOUNCE",
+        path: "*",
+        handler: handlers::handle_announce,
+    },
+    Route {
+        method: "GET_PARAMETER",
+        path: "*",
+        handler: handlers::handle_get_parameter,
+    },
+    Route {
+        method: "SET_PARAMETER",
+        path: "*",
+        handler: handlers::handle_set_parameter,
+    },
     // --- AP2 RTSP methods ---
     #[cfg(feature = "ap2")]
-    Route { method: "SETRATEANCHORTIME", path: "*", handler: handlers_ap2::handle_setrateanchortime },
+    Route {
+        method: "SETRATEANCHORTIME",
+        path: "*",
+        handler: handlers_ap2::handle_setrateanchortime,
+    },
     #[cfg(feature = "ap2")]
-    Route { method: "SETPEERS",          path: "*", handler: handlers_ap2::handle_setpeers },
+    Route {
+        method: "SETPEERS",
+        path: "*",
+        handler: handlers_ap2::handle_setpeers,
+    },
     #[cfg(feature = "ap2")]
-    Route { method: "SETPEERSX",         path: "*", handler: handlers_ap2::handle_setpeers },
+    Route {
+        method: "SETPEERSX",
+        path: "*",
+        handler: handlers_ap2::handle_setpeers,
+    },
     #[cfg(feature = "ap2")]
-    Route { method: "FLUSHBUFFERED",     path: "*", handler: handlers_ap2::handle_flushbuffered },
-
+    Route {
+        method: "FLUSHBUFFERED",
+        path: "*",
+        handler: handlers_ap2::handle_flushbuffered,
+    },
     // --- Info ---
     #[cfg(feature = "ap2")]
-    Route { method: "GET", path: "/info", handler: handlers_ap2::handle_get_info },
-
+    Route {
+        method: "GET",
+        path: "/info",
+        handler: handlers_ap2::handle_get_info,
+    },
     // --- HLS (HTTP Live Streaming) ---
     #[cfg(feature = "hls")]
-    Route { method: "GET",  path: "/server-info",   handler: handlers_hls::handle_server_info },
+    Route {
+        method: "GET",
+        path: "/server-info",
+        handler: handlers_hls::handle_server_info,
+    },
     #[cfg(feature = "hls")]
-    Route { method: "POST", path: "/play",          handler: handlers_hls::handle_play },
+    Route {
+        method: "POST",
+        path: "/play",
+        handler: handlers_hls::handle_play,
+    },
     #[cfg(feature = "hls")]
-    Route { method: "GET",  path: "/playback-info",  handler: handlers_hls::handle_playback_info },
+    Route {
+        method: "GET",
+        path: "/playback-info",
+        handler: handlers_hls::handle_playback_info,
+    },
     #[cfg(feature = "hls")]
-    Route { method: "POST", path: "/stop",          handler: handlers_hls::handle_stop },
+    Route {
+        method: "POST",
+        path: "/stop",
+        handler: handlers_hls::handle_stop,
+    },
     #[cfg(feature = "hls")]
-    Route { method: "POST", path: "/scrub",         handler: handlers_hls::handle_scrub },
+    Route {
+        method: "POST",
+        path: "/scrub",
+        handler: handlers_hls::handle_scrub,
+    },
     #[cfg(feature = "hls")]
-    Route { method: "POST", path: "/rate",          handler: handlers_hls::handle_rate },
+    Route {
+        method: "POST",
+        path: "/rate",
+        handler: handlers_hls::handle_rate,
+    },
 ];
 
 /// Dispatch an RTSP request: authenticate, resolve route, call handler, build response.
@@ -119,12 +206,7 @@ pub(crate) fn dispatch(conn: &mut RaopConnection, request: &HttpRequest) -> Http
 /// Resolve the handler for a request. Checks the route table first,
 /// then falls back to special-case handlers for methods that need
 /// custom routing logic (SETUP, RECORD, FLUSH, TEARDOWN).
-fn resolve_handler(
-    conn: &mut RaopConnection,
-    request: &HttpRequest,
-    method: &str,
-    url: &str,
-) -> Option<Handler> {
+fn resolve_handler(conn: &mut RaopConnection, request: &HttpRequest, method: &str, url: &str) -> Option<Handler> {
     // 1. Check static route table (exact path or prefix match for query-string routes)
     for route in ROUTES {
         if route.method == method {
@@ -139,7 +221,10 @@ fn resolve_handler(
     match method {
         "SETUP" => resolve_setup(conn, request),
         "RECORD" => resolve_record(conn),
-        "FLUSH" => { handle_flush_inline(conn, request); None }
+        "FLUSH" => {
+            handle_flush_inline(conn, request);
+            None
+        }
         "TEARDOWN" => Some(handle_teardown as Handler),
         _ => {
             tracing::debug!(method, url, "Unhandled RTSP method");
@@ -185,11 +270,7 @@ fn handle_flush_inline(conn: &mut RaopConnection, request: &HttpRequest) {
 }
 
 /// TEARDOWN: stop RTP, stop buffered audio, close connection.
-fn handle_teardown(
-    conn: &mut RaopConnection,
-    _request: &HttpRequest,
-    response: &mut HttpResponse,
-) -> Option<Vec<u8>> {
+fn handle_teardown(conn: &mut RaopConnection, _request: &HttpRequest, response: &mut HttpResponse) -> Option<Vec<u8>> {
     response.add_header("Connection", "close");
     response.set_disconnect(true);
     if let Some(mut rtp) = conn.raop_rtp.take() {

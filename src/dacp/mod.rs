@@ -130,25 +130,28 @@ impl DacpClient {
     /// Set volume (0–100).
     pub async fn set_volume(&self, volume: u8) -> Result<(), NetworkError> {
         let vol = volume.min(100);
-        self.command(&format!("/ctrl-int/1/setproperty?dmcp.volume={vol}")).await
+        self.command(&format!("/ctrl-int/1/setproperty?dmcp.volume={vol}"))
+            .await
     }
 
     /// Set shuffle state (true = on).
     pub async fn set_shuffle(&self, on: bool) -> Result<(), NetworkError> {
         let v = if on { 1 } else { 0 };
-        self.command(&format!("/ctrl-int/1/setproperty?dacp.shufflestate={v}")).await
+        self.command(&format!("/ctrl-int/1/setproperty?dacp.shufflestate={v}"))
+            .await
     }
 
     /// Set repeat state (0 = off, 1 = single, 2 = all).
     pub async fn set_repeat(&self, state: u8) -> Result<(), NetworkError> {
-        self.command(&format!("/ctrl-int/1/setproperty?dacp.repeatstate={state}")).await
+        self.command(&format!("/ctrl-int/1/setproperty?dacp.repeatstate={state}"))
+            .await
     }
 
     /// Send a raw DACP command (GET request with Active-Remote header).
     pub async fn command(&self, path: &str) -> Result<(), NetworkError> {
-        let addr = self.addr.ok_or_else(|| {
-            NetworkError::Mdns("DACP not discovered yet — call discover() first".into())
-        })?;
+        let addr = self
+            .addr
+            .ok_or_else(|| NetworkError::Mdns("DACP not discovered yet — call discover() first".into()))?;
 
         let mut stream = TcpStream::connect(addr).await?;
         let request = format!(

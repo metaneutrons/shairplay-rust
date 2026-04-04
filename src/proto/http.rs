@@ -70,17 +70,12 @@ impl HttpRequest {
                 self.url = req.path.map(|p| p.to_string());
 
                 for h in req.headers.iter() {
-                    self.headers.insert(
-                        h.name.to_string(),
-                        String::from_utf8_lossy(h.value).to_string(),
-                    );
+                    self.headers
+                        .insert(h.name.to_string(), String::from_utf8_lossy(h.value).to_string());
                 }
 
                 // Extract Content-Length
-                self.content_length = self
-                    .headers
-                    .get("Content-Length")
-                    .and_then(|v| v.parse::<usize>().ok());
+                self.content_length = self.headers.get("Content-Length").and_then(|v| v.parse::<usize>().ok());
 
                 self.headers_complete = true;
 
@@ -111,7 +106,9 @@ impl HttpRequest {
 
     /// Return any bytes in the buffer beyond the complete request.
     pub fn take_leftover(&mut self) -> Vec<u8> {
-        if !self.complete { return Vec::new(); }
+        if !self.complete {
+            return Vec::new();
+        }
         let needed = self.content_length.unwrap_or(0);
         if self.buffer.len() > needed {
             self.buffer[needed..].to_vec()
@@ -213,7 +210,9 @@ impl HttpResponse {
     }
 
     /// The HTTP status code.
-    pub fn status_code(&self) -> u16 { self.code }
+    pub fn status_code(&self) -> u16 {
+        self.code
+    }
 
     /// Whether the connection should be closed after this response.
     pub fn get_disconnect(&self) -> bool {
@@ -227,5 +226,7 @@ impl HttpResponse {
 }
 
 impl Default for HttpRequest {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }

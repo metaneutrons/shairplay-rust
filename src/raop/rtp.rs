@@ -16,12 +16,12 @@ use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 
 use tokio::net::UdpSocket;
-use tokio::sync::{Mutex, watch};
-use tracing::{info, debug};
+use tokio::sync::{watch, Mutex};
+use tracing::{debug, info};
 
 use crate::error::{NetworkError, ShairplayError};
 use crate::raop::buffer::{RaopBuffer, RAOP_PACKET_LEN};
-use crate::raop::{AudioHandler, AudioFormat, AudioCodec};
+use crate::raop::{AudioCodec, AudioFormat, AudioHandler};
 
 /// Sentinel value for [`RtpState::flush`] indicating no flush is pending.
 const NO_FLUSH: i32 = -42;
@@ -32,9 +32,7 @@ const NO_FLUSH: i32 = -42;
 /// packets from a different address than the RTSP connection used.
 fn rtp_bind_addr(local: IpAddr) -> IpAddr {
     match local {
-        IpAddr::V6(v6) if (v6.segments()[0] & 0xffc0) == 0xfe80 => {
-            IpAddr::V6(std::net::Ipv6Addr::UNSPECIFIED)
-        }
+        IpAddr::V6(v6) if (v6.segments()[0] & 0xffc0) == 0xfe80 => IpAddr::V6(std::net::Ipv6Addr::UNSPECIFIED),
         other => other,
     }
 }
@@ -143,10 +141,14 @@ impl RaopRtp {
             remote_socket: config.remote_socket,
             buffer: Arc::new(Mutex::new(buffer)),
             state: Arc::new(Mutex::new(RtpState {
-                volume: 0.0, volume_changed: false,
-                metadata: None, coverart: None,
-                dacp_id: None, active_remote: None,
-                progress: None, flush: NO_FLUSH,
+                volume: 0.0,
+                volume_changed: false,
+                metadata: None,
+                coverart: None,
+                dacp_id: None,
+                active_remote: None,
+                progress: None,
+                flush: NO_FLUSH,
             })),
             shutdown_tx: None,
             control_rport: 0,
@@ -197,17 +199,27 @@ impl RaopRtp {
                 let buf = self.buffer.lock().await;
                 buf.config().clone()
             };
-            let mut session = self.handler.audio_init(AudioFormat { codec: AudioCodec::Pcm,
-                bits: 32, channels: config.num_channels,
+            let mut session = self.handler.audio_init(AudioFormat {
+                codec: AudioCodec::Pcm,
+                bits: 32,
+                channels: config.num_channels,
                 sample_rate: config.sample_rate,
             });
 
             #[cfg(feature = "resample")]
             let mut resampler = if let Some(target) = self.output_sample_rate {
                 if target != config.sample_rate {
-                    crate::codec::resample::StreamResampler::new(config.sample_rate, target, config.num_channels as usize)
-                } else { None }
-            } else { None };
+                    crate::codec::resample::StreamResampler::new(
+                        config.sample_rate,
+                        target,
+                        config.num_channels as usize,
+                    )
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
 
             let buffer = self.buffer.clone();
             let state = self.state.clone();
@@ -232,8 +244,12 @@ impl RaopRtp {
                             session.audio_flush();
                             st.flush = NO_FLUSH;
                         }
-                        if let Some(m) = st.metadata.take() { session.audio_set_metadata(&m); }
-                        if let Some(c) = st.coverart.take() { session.audio_set_coverart(&c); }
+                        if let Some(m) = st.metadata.take() {
+                            session.audio_set_metadata(&m);
+                        }
+                        if let Some(c) = st.coverart.take() {
+                            session.audio_set_coverart(&c);
+                        }
                         if let (Some(d), Some(a)) = (st.dacp_id.take(), st.active_remote.take()) {
                             let addr_bytes = remote_addr_bytes(&remote_for_task);
                             session.audio_remote_control_id(&d, &a, addr_bytes.as_slice());
@@ -285,24 +301,36 @@ impl RaopRtp {
             });
         } else {
             // TCP interleaved mode: single connection, `$`-prefixed framing.
-            let listener = tokio::net::TcpListener::bind(SocketAddr::new(rtp_bind_addr(self.local_addr), 0)).await.map_err(NetworkError::Io)?;
+            let listener = tokio::net::TcpListener::bind(SocketAddr::new(rtp_bind_addr(self.local_addr), 0))
+                .await
+                .map_err(NetworkError::Io)?;
             self.data_lport = listener.local_addr().map_err(NetworkError::Io)?.port();
 
             let config = {
                 let buf = self.buffer.lock().await;
                 buf.config().clone()
             };
-            let mut session = self.handler.audio_init(AudioFormat { codec: AudioCodec::Pcm,
-                bits: 32, channels: config.num_channels,
+            let mut session = self.handler.audio_init(AudioFormat {
+                codec: AudioCodec::Pcm,
+                bits: 32,
+                channels: config.num_channels,
                 sample_rate: self.output_sample_rate.unwrap_or(config.sample_rate),
             });
 
             #[cfg(feature = "resample")]
             let mut resampler = if let Some(target) = self.output_sample_rate {
                 if target != config.sample_rate {
-                    crate::codec::resample::StreamResampler::new(config.sample_rate, target, config.num_channels as usize)
-                } else { None }
-            } else { None };
+                    crate::codec::resample::StreamResampler::new(
+                        config.sample_rate,
+                        target,
+                        config.num_channels as usize,
+                    )
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
 
             let buffer = self.buffer.clone();
             let state = self.state.clone();
@@ -329,12 +357,27 @@ impl RaopRtp {
                     // Drain pending events.
                     {
                         let mut st = state.lock().await;
-                        if st.volume_changed { session.audio_set_volume(st.volume); st.volume_changed = false; }
-                        if st.flush != NO_FLUSH { buffer.lock().await.flush(st.flush); session.audio_flush(); st.flush = NO_FLUSH; }
-                        if let Some(m) = st.metadata.take() { session.audio_set_metadata(&m); }
-                        if let Some(c) = st.coverart.take() { session.audio_set_coverart(&c); }
-                        if let (Some(d), Some(a)) = (st.dacp_id.take(), st.active_remote.take()) { session.audio_remote_control_id(&d, &a, remote_addr_bytes(&remote_for_tcp).as_slice()); }
-                        if let Some((s, c, e)) = st.progress.take() { session.audio_set_progress(s, c, e); }
+                        if st.volume_changed {
+                            session.audio_set_volume(st.volume);
+                            st.volume_changed = false;
+                        }
+                        if st.flush != NO_FLUSH {
+                            buffer.lock().await.flush(st.flush);
+                            session.audio_flush();
+                            st.flush = NO_FLUSH;
+                        }
+                        if let Some(m) = st.metadata.take() {
+                            session.audio_set_metadata(&m);
+                        }
+                        if let Some(c) = st.coverart.take() {
+                            session.audio_set_coverart(&c);
+                        }
+                        if let (Some(d), Some(a)) = (st.dacp_id.take(), st.active_remote.take()) {
+                            session.audio_remote_control_id(&d, &a, remote_addr_bytes(&remote_for_tcp).as_slice());
+                        }
+                        if let Some((s, c, e)) = st.progress.take() {
+                            session.audio_set_progress(s, c, e);
+                        }
                     }
 
                     tokio::select! {
@@ -394,7 +437,9 @@ impl RaopRtp {
         debug!(bytes = data.len(), "Track metadata received");
         let d = data.to_vec();
         let state = self.state.clone();
-        tokio::spawn(async move { state.lock().await.metadata = Some(d); });
+        tokio::spawn(async move {
+            state.lock().await.metadata = Some(d);
+        });
     }
 
     /// Queue album artwork for delivery to the AudioSession.
@@ -402,7 +447,9 @@ impl RaopRtp {
         debug!(bytes = data.len(), "Cover art received");
         let d = data.to_vec();
         let state = self.state.clone();
-        tokio::spawn(async move { state.lock().await.coverart = Some(d); });
+        tokio::spawn(async move {
+            state.lock().await.coverart = Some(d);
+        });
     }
 
     /// Set DACP remote control identifiers. Triggers remote control discovery
@@ -424,14 +471,18 @@ impl RaopRtp {
     pub fn set_progress(&self, start: u32, curr: u32, end: u32) {
         debug!(start, curr, end, "Playback progress");
         let state = self.state.clone();
-        tokio::spawn(async move { state.lock().await.progress = Some((start, curr, end)); });
+        tokio::spawn(async move {
+            state.lock().await.progress = Some((start, curr, end));
+        });
     }
 
     /// Request a buffer flush up to the given sequence number.
     /// Pass -1 to flush everything.
     pub fn flush(&self, next_seq: i32) {
         let state = self.state.clone();
-        tokio::spawn(async move { state.lock().await.flush = next_seq; });
+        tokio::spawn(async move {
+            state.lock().await.flush = next_seq;
+        });
     }
 
     /// Stop the receive task and flush the buffer.
@@ -462,8 +513,8 @@ pub(crate) fn spawn_ntp_responder(tsock: tokio::net::UdpSocket, remote_timing: s
         };
 
         let put_ntp = |buf: &mut [u8], off: usize, secs: u32, frac: u32| {
-            buf[off..off+4].copy_from_slice(&secs.to_be_bytes());
-            buf[off+4..off+8].copy_from_slice(&frac.to_be_bytes());
+            buf[off..off + 4].copy_from_slice(&secs.to_be_bytes());
+            buf[off + 4..off + 8].copy_from_slice(&frac.to_be_bytes());
         };
 
         // Send initial timing requests to iPhone

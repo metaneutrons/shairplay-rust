@@ -157,22 +157,22 @@ pub fn receiver_features() -> u64 {
     {
         use AirPlayFeature::*;
         let mut val = features_from(&[
-            SupportsAirPlayPhoto,             // bit 1
-            SupportsAirPlayVideoFairPlay,     // bit 2
-            SupportsAirPlaySlideshow,         // bit 5
+            SupportsAirPlayPhoto,              // bit 1
+            SupportsAirPlayVideoFairPlay,      // bit 2
+            SupportsAirPlaySlideshow,          // bit 5
             SupportsAirPlayVideoVolumeControl, // bit 6
-            SupportsAirPlayScreen,            // bit 7
-            SupportsAirPlayAudio,             // bit 9
-            AudioRedundant,                   // bit 11
-            Authentication4,                  // bit 14
-            MetadataArtwork,                  // bit 15
-            MetadataProgress,                 // bit 16
-            MetadataNowPlayingDaap,           // bit 17
-            AudioFormats0,                    // bit 18
-            AudioFormats1,                    // bit 19
-            AudioFormats2,                    // bit 20
-            AudioFormats3,                    // bit 21
-            HasUnifiedAdvertiserInfo,         // bit 30
+            SupportsAirPlayScreen,             // bit 7
+            SupportsAirPlayAudio,              // bit 9
+            AudioRedundant,                    // bit 11
+            Authentication4,                   // bit 14
+            MetadataArtwork,                   // bit 15
+            MetadataProgress,                  // bit 16
+            MetadataNowPlayingDaap,            // bit 17
+            AudioFormats0,                     // bit 18
+            AudioFormats1,                     // bit 19
+            AudioFormats2,                     // bit 20
+            AudioFormats3,                     // bit 21
+            HasUnifiedAdvertiserInfo,          // bit 30
         ]);
         // Bits without enum variants (from UxPlay's 0x527FFEE6)
         val |= (1 << 10) | (1 << 12) | (1 << 13) | (1 << 22) | (1 << 25) | (1 << 28);
@@ -182,21 +182,21 @@ pub fn receiver_features() -> u64 {
     #[cfg(not(feature = "video"))]
     {
         let bits: Vec<AirPlayFeature> = vec![
-            SupportsAirPlayAudio,         // bit 9
-            AudioRedundant,               // bit 11
-            Authentication4,              // bit 14 — FairPlay
-            MetadataProgress,             // bit 16
-            AudioFormats0,                // bit 18
-            AudioFormats1,                // bit 19
-            HasUnifiedAdvertiserInfo,     // bit 30
-            SupportsUnifiedMediaControl,  // bit 38
-            SupportsBufferedAudio,        // bit 40
-            SupportsPtp,                  // bit 41
-            SupportsHkPairingAndAccessControl,       // bit 46
-            SupportsCoreUtilsPairingAndEncryption,   // bit 48
-            AudioFormats2,                    // bit 20
-            AudioFormats4,                    // bit 22
-            SupportsTransientPairing,         // bit 47
+            SupportsAirPlayAudio,                  // bit 9
+            AudioRedundant,                        // bit 11
+            Authentication4,                       // bit 14 — FairPlay
+            MetadataProgress,                      // bit 16
+            AudioFormats0,                         // bit 18
+            AudioFormats1,                         // bit 19
+            HasUnifiedAdvertiserInfo,              // bit 30
+            SupportsUnifiedMediaControl,           // bit 38
+            SupportsBufferedAudio,                 // bit 40
+            SupportsPtp,                           // bit 41
+            SupportsHkPairingAndAccessControl,     // bit 46
+            SupportsCoreUtilsPairingAndEncryption, // bit 48
+            AudioFormats2,                         // bit 20
+            AudioFormats4,                         // bit 22
+            SupportsTransientPairing,              // bit 47
         ];
 
         features_from(&bits)

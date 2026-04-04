@@ -25,31 +25,52 @@ pub enum PlistValue {
 impl PlistValue {
     /// Extract as boolean.
     pub fn as_bool(&self) -> Option<bool> {
-        match self { PlistValue::Boolean(v) => Some(*v), _ => None }
+        match self {
+            PlistValue::Boolean(v) => Some(*v),
+            _ => None,
+        }
     }
     /// Extract as integer.
     pub fn as_integer(&self) -> Option<i64> {
-        match self { PlistValue::Integer(v) => Some(*v), _ => None }
+        match self {
+            PlistValue::Integer(v) => Some(*v),
+            _ => None,
+        }
     }
     /// Extract as floating-point number.
     pub fn as_real(&self) -> Option<f64> {
-        match self { PlistValue::Real(v) => Some(*v), _ => None }
+        match self {
+            PlistValue::Real(v) => Some(*v),
+            _ => None,
+        }
     }
     /// Extract as raw byte data.
     pub fn as_data(&self) -> Option<&[u8]> {
-        match self { PlistValue::Data(v) => Some(v), _ => None }
+        match self {
+            PlistValue::Data(v) => Some(v),
+            _ => None,
+        }
     }
     /// Extract as string.
     pub fn as_string(&self) -> Option<&str> {
-        match self { PlistValue::String(v) => Some(v), _ => None }
+        match self {
+            PlistValue::String(v) => Some(v),
+            _ => None,
+        }
     }
     /// Extract as array.
     pub fn as_array(&self) -> Option<&[PlistValue]> {
-        match self { PlistValue::Array(v) => Some(v), _ => None }
+        match self {
+            PlistValue::Array(v) => Some(v),
+            _ => None,
+        }
     }
     /// Extract as dictionary.
     pub fn as_dict(&self) -> Option<&HashMap<String, PlistValue>> {
-        match self { PlistValue::Dict(v) => Some(v), _ => None }
+        match self {
+            PlistValue::Dict(v) => Some(v),
+            _ => None,
+        }
     }
     /// Look up a key in a dictionary value.
     pub fn dict_get(&self, key: &str) -> Option<&PlistValue> {
@@ -69,9 +90,7 @@ fn from_plist_value(val: plist::Value) -> PlistValue {
         plist::Value::Real(r) => PlistValue::Real(r),
         plist::Value::Data(d) => PlistValue::Data(d),
         plist::Value::String(s) => PlistValue::String(s),
-        plist::Value::Array(a) => {
-            PlistValue::Array(a.into_iter().map(from_plist_value).collect())
-        }
+        plist::Value::Array(a) => PlistValue::Array(a.into_iter().map(from_plist_value).collect()),
         plist::Value::Dictionary(d) => {
             let map = d.into_iter().map(|(k, v)| (k, from_plist_value(v))).collect();
             PlistValue::Dict(map)
@@ -90,9 +109,7 @@ fn to_plist_value(val: &PlistValue) -> plist::Value {
         PlistValue::Real(r) => plist::Value::Real(*r),
         PlistValue::Data(d) => plist::Value::Data(d.clone()),
         PlistValue::String(s) => plist::Value::String(s.clone()),
-        PlistValue::Array(a) => {
-            plist::Value::Array(a.iter().map(to_plist_value).collect())
-        }
+        PlistValue::Array(a) => plist::Value::Array(a.iter().map(to_plist_value).collect()),
         PlistValue::Dict(d) => {
             let dict: plist::Dictionary = d.iter().map(|(k, v)| (k.clone(), to_plist_value(v))).collect();
             plist::Value::Dictionary(dict)

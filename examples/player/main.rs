@@ -18,8 +18,8 @@ use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use rubato::{Async, FixedAsync, Resampler, SincInterpolationParameters, SincInterpolationType, WindowFunction};
 use rubato::audioadapter_buffers::direct::SequentialSliceOfVecs;
+use rubato::{Async, FixedAsync, Resampler, SincInterpolationParameters, SincInterpolationType, WindowFunction};
 
 /// Simple streaming resampler for the example app (uses rubato directly).
 struct ExampleResampler {
@@ -31,19 +31,32 @@ struct ExampleResampler {
 
 impl ExampleResampler {
     fn new(from_rate: u32, to_rate: u32, channels: usize) -> Option<Self> {
-        if from_rate == to_rate { return None; }
+        if from_rate == to_rate {
+            return None;
+        }
         let params = SincInterpolationParameters {
-            sinc_len: 64, f_cutoff: 0.95,
+            sinc_len: 64,
+            f_cutoff: 0.95,
             interpolation: SincInterpolationType::Linear,
             oversampling_factor: 128,
             window: WindowFunction::BlackmanHarris2,
         };
         let chunk_size = 128;
         let resampler = Async::<f32>::new_sinc(
-            to_rate as f64 / from_rate as f64, 1.0, &params,
-            chunk_size, channels, FixedAsync::Input,
-        ).ok()?;
-        Some(Self { resampler, channels, chunk_size, pending: Vec::new() })
+            to_rate as f64 / from_rate as f64,
+            1.0,
+            &params,
+            chunk_size,
+            channels,
+            FixedAsync::Input,
+        )
+        .ok()?;
+        Some(Self {
+            resampler,
+            channels,
+            chunk_size,
+            pending: Vec::new(),
+        })
     }
 
     fn process(&mut self, input: &[f32]) -> Vec<f32> {
@@ -53,9 +66,12 @@ impl ExampleResampler {
         while self.pending.len() >= samples_per_chunk {
             let chunk: Vec<f32> = self.pending.drain(..samples_per_chunk).collect();
             let mut ch_vecs: Vec<Vec<f32>> = (0..self.channels)
-                .map(|_| Vec::with_capacity(self.chunk_size)).collect();
+                .map(|_| Vec::with_capacity(self.chunk_size))
+                .collect();
             for frame in chunk.chunks_exact(self.channels) {
-                for (ch, &s) in frame.iter().enumerate() { ch_vecs[ch].push(s); }
+                for (ch, &s) in frame.iter().enumerate() {
+                    ch_vecs[ch].push(s);
+                }
             }
             if let Ok(input) = SequentialSliceOfVecs::new(&ch_vecs, self.channels, self.chunk_size) {
                 if let Ok(result) = self.resampler.process(&input, 0, None) {
@@ -66,9 +82,9 @@ impl ExampleResampler {
         output
     }
 }
+use shairplay::{AudioFormat, AudioHandler, AudioSession, BindConfig, RaopServer};
 use std::net::IpAddr;
 use std::path::PathBuf;
-use shairplay::{AudioFormat, AudioHandler, AudioSession, BindConfig, RaopServer};
 
 #[cfg(feature = "ap2")]
 use shairplay::PairingStore;
@@ -90,7 +106,8 @@ impl shairplay::HlsHandler for MpvHlsHandler {
         if start_position > 0.0 {
             cmd.arg(format!("--start={start_position}"));
         }
-        let child = cmd.stdin(std::process::Stdio::null())
+        let child = cmd
+            .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .spawn();
@@ -122,15 +139,26 @@ struct MpvHlsSession {
 
 #[cfg(feature = "hls")]
 impl shairplay::HlsSession for MpvHlsSession {
-    fn duration(&self) -> f32 { 0.0 } // unknown for live/streaming
-    fn position(&self) -> f32 { self.start.elapsed().as_secs_f32() }
-    fn rate(&self) -> f32 { f32::from_bits(self.rate.load(std::sync::atomic::Ordering::Relaxed)) }
-    fn seek(&mut self, _position: f32) { /* mpv subprocess doesn't support seek via API */ }
+    fn duration(&self) -> f32 {
+        0.0
+    } // unknown for live/streaming
+    fn position(&self) -> f32 {
+        self.start.elapsed().as_secs_f32()
+    }
+    fn rate(&self) -> f32 {
+        f32::from_bits(self.rate.load(std::sync::atomic::Ordering::Relaxed))
+    }
+    fn seek(&mut self, _position: f32) { /* mpv subprocess doesn't support seek via API */
+    }
     fn set_rate(&mut self, rate: f32) {
         self.rate.store(rate.to_bits(), std::sync::atomic::Ordering::Relaxed);
-        if rate == 0.0 { self.kill_child(); }
+        if rate == 0.0 {
+            self.kill_child();
+        }
     }
-    fn stop(&mut self) { self.kill_child(); }
+    fn stop(&mut self) {
+        self.kill_child();
+    }
 }
 
 #[cfg(feature = "hls")]
@@ -149,7 +177,9 @@ impl MpvHlsSession {
 
 #[cfg(feature = "hls")]
 impl Drop for MpvHlsSession {
-    fn drop(&mut self) { self.kill_child(); }
+    fn drop(&mut self) {
+        self.kill_child();
+    }
 }
 
 /// Persistent device identity + paired keys, stored as JSON.
@@ -185,7 +215,10 @@ struct FilePairingStore {
 #[cfg(feature = "ap2")]
 impl FilePairingStore {
     fn new(path: PathBuf, keys: std::collections::HashMap<String, [u8; 32]>) -> Self {
-        Self { path, keys: std::sync::Mutex::new(keys) }
+        Self {
+            path,
+            keys: std::sync::Mutex::new(keys),
+        }
     }
 }
 
@@ -219,7 +252,9 @@ struct AudioRing {
 
 impl AudioRing {
     fn new() -> Self {
-        Self { buffer: VecDeque::with_capacity(48000 * 4) }
+        Self {
+            buffer: VecDeque::with_capacity(48000 * 4),
+        }
     }
 
     fn push_samples(&mut self, samples: &[f32]) {
@@ -240,14 +275,23 @@ struct Handler {
 
 impl AudioHandler for Handler {
     fn audio_init(&self, format: AudioFormat) -> Box<dyn AudioSession> {
-        eprintln!("🎵 New stream: {}ch {}bit {}Hz", format.channels, format.bits, format.sample_rate);
+        eprintln!(
+            "🎵 New stream: {}ch {}bit {}Hz",
+            format.channels, format.bits, format.sample_rate
+        );
 
         let resampler = if self.use_resample && format.sample_rate != self.device_rate {
-            eprintln!("🔄 Resampling {}Hz → {}Hz (in example app)", format.sample_rate, self.device_rate);
+            eprintln!(
+                "🔄 Resampling {}Hz → {}Hz (in example app)",
+                format.sample_rate, self.device_rate
+            );
             ExampleResampler::new(format.sample_rate, self.device_rate, format.channels as usize)
         } else {
             if format.sample_rate != self.device_rate {
-                eprintln!("⚠️  Source {}Hz ≠ device {}Hz — use --resample to convert", format.sample_rate, self.device_rate);
+                eprintln!(
+                    "⚠️  Source {}Hz ≠ device {}Hz — use --resample to convert",
+                    format.sample_rate, self.device_rate
+                );
             } else {
                 eprintln!("✅ Source rate matches device — no resampling needed");
             }
@@ -281,7 +325,8 @@ impl AudioSession for Session {
 
         // Mix down to device channels if needed
         let final_samples: Vec<f32> = if self.source_channels > self.device_channels {
-            samples.chunks_exact(self.source_channels)
+            samples
+                .chunks_exact(self.source_channels)
                 .flat_map(|frame| &frame[..self.device_channels])
                 .copied()
                 .collect()
@@ -307,34 +352,46 @@ impl Drop for Session {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env()
-            .unwrap_or_else(|_| "shairplay=info".parse().unwrap()))
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "shairplay=info".parse().unwrap()),
+        )
         .with_target(false)
         .init();
 
     let args: Vec<String> = std::env::args().collect();
-    let name = args.iter().position(|a| a == "--name")
+    let name = args
+        .iter()
+        .position(|a| a == "--name")
         .map(|i| args[i + 1].as_str())
         .unwrap_or("Shairplay Rust");
-    let bind_addrs: Vec<IpAddr> = args.iter().enumerate()
+    let bind_addrs: Vec<IpAddr> = args
+        .iter()
+        .enumerate()
         .filter(|(_, a)| *a == "--bind")
         .filter_map(|(i, _)| args.get(i + 1)?.parse().ok())
         .collect();
-    let persist_path: Option<PathBuf> = args.iter().position(|a| a == "--persist")
+    let persist_path: Option<PathBuf> = args
+        .iter()
+        .position(|a| a == "--persist")
         .map(|i| PathBuf::from(&args[i + 1]));
     let use_resample = args.iter().any(|a| a == "--resample");
 
     // Detect output device and its native sample rate
     let host = cpal::default_host();
-    let (device_rate, device_channels) = host.default_output_device()
+    let (device_rate, device_channels) = host
+        .default_output_device()
         .and_then(|d| d.default_output_config().ok())
         .map(|c| (c.sample_rate(), c.channels()))
         .unwrap_or((44100, 2));
 
     let (ring, _stream) = match host.default_output_device() {
         Some(device) => {
-            eprintln!("🔈 Output device: {} ({}Hz, {}ch)",
-                device.description().map(|d| d.name().to_string()).unwrap_or_default(), device_rate, device_channels);
+            eprintln!(
+                "🔈 Output device: {} ({}Hz, {}ch)",
+                device.description().map(|d| d.name().to_string()).unwrap_or_default(),
+                device_rate,
+                device_channels
+            );
 
             let config = cpal::StreamConfig {
                 channels: device_channels,
@@ -376,8 +433,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut state = persist_path.as_ref().map(PersistState::load).unwrap_or_default();
     let mac = match state.mac {
         Some(mac) => {
-            eprintln!("🔑 Device MAC: {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x} (persistent)",
-                mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+            eprintln!(
+                "🔑 Device MAC: {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x} (persistent)",
+                mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
+            );
             mac
         }
         None => {
@@ -387,18 +446,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             state.mac = Some(mac);
             if let Some(path) = &persist_path {
                 state.save(path);
-                eprintln!("🔑 Device MAC: {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x} (saved to {})",
-                    mac[0], mac[1], mac[2], mac[3], mac[4], mac[5], path.display());
+                eprintln!(
+                    "🔑 Device MAC: {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x} (saved to {})",
+                    mac[0],
+                    mac[1],
+                    mac[2],
+                    mac[3],
+                    mac[4],
+                    mac[5],
+                    path.display()
+                );
             } else {
-                eprintln!("🔑 Device MAC: {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x} (random, use --persist to save)",
-                    mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+                eprintln!(
+                    "🔑 Device MAC: {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x} (random, use --persist to save)",
+                    mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
+                );
             }
             mac
         }
     };
 
     // Build server — no output_sample_rate(), resampling handled in this example
-    let handler = Arc::new(Handler { ring, device_rate, device_channels, use_resample });
+    let handler = Arc::new(Handler {
+        ring,
+        device_rate,
+        device_channels,
+        use_resample,
+    });
     let mut builder = RaopServer::builder();
     builder = builder.name(name).hwaddr(mac);
 
@@ -434,8 +508,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     server.start().await?;
 
-    let mode = if cfg!(feature = "ap2") { "AirPlay 2" } else { "AirPlay 1 (Classic)" };
-    eprintln!("✅ {} server '{}' running on port {}", mode, name, server.service_info().port);
+    let mode = if cfg!(feature = "ap2") {
+        "AirPlay 2"
+    } else {
+        "AirPlay 1 (Classic)"
+    };
+    eprintln!(
+        "✅ {} server '{}' running on port {}",
+        mode,
+        name,
+        server.service_info().port
+    );
     eprintln!("   Select it as AirPlay output on your Apple device");
     #[cfg(feature = "ap2")]
     eprintln!("🔐 PIN: 3939 (enter on iPhone when prompted)");

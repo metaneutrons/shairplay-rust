@@ -6,7 +6,10 @@
 //! The block_len (plaintext size) is used as AAD. Max block size is 1024 bytes.
 //! Nonce: `[0,0,0,0, counter_u64_LE]`, counter increments per block.
 
-use chacha20poly1305::{ChaCha20Poly1305, KeyInit, aead::{Aead, Payload}};
+use chacha20poly1305::{
+    aead::{Aead, Payload},
+    ChaCha20Poly1305, KeyInit,
+};
 use hkdf::Hkdf;
 use sha2::Sha512;
 
@@ -47,10 +50,15 @@ impl CipherContext {
             let block_len = (chunk.len() as u16).to_le_bytes();
             let nonce = self.nonce();
 
-            let ct = cipher.encrypt(
-                (&nonce).into(),
-                Payload { msg: chunk, aad: &block_len },
-            ).map_err(|_| CryptoError::Aes("ChaCha20 encrypt failed".into()))?;
+            let ct = cipher
+                .encrypt(
+                    (&nonce).into(),
+                    Payload {
+                        msg: chunk,
+                        aad: &block_len,
+                    },
+                )
+                .map_err(|_| CryptoError::Aes("ChaCha20 encrypt failed".into()))?;
 
             // ct includes ciphertext + 16-byte tag appended by the AEAD
             out.extend_from_slice(&block_len);
@@ -78,10 +86,15 @@ impl CipherContext {
             let ct_with_tag = &ciphertext[pos + 2..pos + 2 + block_len + TAG_LEN];
             let nonce = self.nonce();
 
-            let pt = cipher.decrypt(
-                (&nonce).into(),
-                Payload { msg: ct_with_tag, aad: &block_len_bytes },
-            ).map_err(|_| CryptoError::Aes("ChaCha20 decrypt failed".into()))?;
+            let pt = cipher
+                .decrypt(
+                    (&nonce).into(),
+                    Payload {
+                        msg: ct_with_tag,
+                        aad: &block_len_bytes,
+                    },
+                )
+                .map_err(|_| CryptoError::Aes("ChaCha20 decrypt failed".into()))?;
 
             plain.extend_from_slice(&pt);
             pos += frame_len;
@@ -103,8 +116,10 @@ impl EncryptedChannel {
     /// Create from shared secret + HKDF salt/info pairs for write and read keys.
     pub fn new(
         shared_secret: &[u8],
-        write_salt: &str, write_info: &str,
-        read_salt: &str, read_info: &str,
+        write_salt: &str,
+        write_info: &str,
+        read_salt: &str,
+        read_info: &str,
     ) -> Result<Self, CryptoError> {
         let mut write_key = [0u8; 32];
         let mut read_key = [0u8; 32];
@@ -127,8 +142,10 @@ impl EncryptedChannel {
     pub fn control(shared_secret: &[u8]) -> Result<Self, CryptoError> {
         Self::new(
             shared_secret,
-            "Control-Salt", "Control-Read-Encryption-Key",
-            "Control-Salt", "Control-Write-Encryption-Key",
+            "Control-Salt",
+            "Control-Read-Encryption-Key",
+            "Control-Salt",
+            "Control-Write-Encryption-Key",
         )
     }
 
@@ -136,8 +153,10 @@ impl EncryptedChannel {
     pub fn events(shared_secret: &[u8]) -> Result<Self, CryptoError> {
         Self::new(
             shared_secret,
-            "Events-Salt", "Events-Write-Encryption-Key",
-            "Events-Salt", "Events-Read-Encryption-Key",
+            "Events-Salt",
+            "Events-Write-Encryption-Key",
+            "Events-Salt",
+            "Events-Read-Encryption-Key",
         )
     }
 }
