@@ -247,6 +247,8 @@ impl RaopRtp {
                                             if let Some(ref mut rs) = resampler {
                                                 let resampled = rs.process(samples);
                                                 session.audio_process(&resampled);
+                                            } else {
+                                                session.audio_process(samples);
                                             }
                                             #[cfg(not(feature = "resample"))]
                                             session.audio_process(samples);
@@ -343,6 +345,8 @@ impl RaopRtp {
                                             if let Some(ref mut rs) = resampler {
                                                 let resampled = rs.process(samples);
                                                 session.audio_process(&resampled);
+                                            } else {
+                                                session.audio_process(samples);
                                             }
                                             #[cfg(not(feature = "resample"))]
                                             session.audio_process(samples);
