@@ -72,9 +72,19 @@ fn local_ip_from(conn: &RaopConnection) -> std::net::IpAddr {
 }
 
 /// Returns a bind address string matching the connection's local interface.
+/// Returns a bind address string for sub-listeners (buffered audio, event channel, etc.).
+/// Uses the specific local IP for routable addresses (respects BindConfig).
+/// Falls back to unspecified for link-local IPv6.
 #[cfg(feature = "ap2")]
 fn bind_addr_for(conn: &RaopConnection) -> String {
-    format!("{}:0", local_ip_from(conn))
+    let ip = local_ip_from(conn);
+    let bind_ip = match ip {
+        std::net::IpAddr::V6(v6) if (v6.segments()[0] & 0xffc0) == 0xfe80 => {
+            std::net::IpAddr::V6(std::net::Ipv6Addr::UNSPECIFIED)
+        }
+        other => other,
+    };
+    format!("{}:0", bind_ip)
 }
 /// No-op handler for unsupported RTSP methods.
 pub(crate) fn handle_none(

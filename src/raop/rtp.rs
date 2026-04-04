@@ -26,6 +26,19 @@ use crate::raop::{AudioHandler, AudioFormat, AudioCodec};
 /// Sentinel value for [`RtpState::flush`] indicating no flush is pending.
 const NO_FLUSH: i32 = -42;
 
+/// Determine the bind address for RTP sockets.
+/// Uses the specific local IP for routable addresses (respects BindConfig).
+/// Falls back to unspecified for link-local IPv6 — the iPhone may send RTP
+/// packets from a different address than the RTSP connection used.
+fn rtp_bind_addr(local: IpAddr) -> IpAddr {
+    match local {
+        IpAddr::V6(v6) if (v6.segments()[0] & 0xffc0) == 0xfe80 => {
+            IpAddr::V6(std::net::Ipv6Addr::UNSPECIFIED)
+        }
+        other => other,
+    }
+}
+
 /// Parse the SDP `c=` remote address to raw IP bytes for DACP callbacks.
 /// Handles "IP6 ::1" prefix and IPv4-mapped IPv6 addresses.
 fn remote_addr_bytes(remote: &str) -> Vec<u8> {
@@ -161,7 +174,7 @@ impl RaopRtp {
         self.shutdown_tx = Some(shutdown_tx);
 
         if use_udp {
-            let bind_addr = SocketAddr::new(self.local_addr, 0);
+            let bind_addr = SocketAddr::new(rtp_bind_addr(self.local_addr), 0);
             let csock = UdpSocket::bind(bind_addr).await.map_err(NetworkError::Io)?;
             let tsock = UdpSocket::bind(bind_addr).await.map_err(NetworkError::Io)?;
             let dsock = UdpSocket::bind(bind_addr).await.map_err(NetworkError::Io)?;
@@ -261,7 +274,7 @@ impl RaopRtp {
             });
         } else {
             // TCP interleaved mode: single connection, `$`-prefixed framing.
-            let listener = tokio::net::TcpListener::bind(SocketAddr::new(self.local_addr, 0)).await.map_err(NetworkError::Io)?;
+            let listener = tokio::net::TcpListener::bind(SocketAddr::new(rtp_bind_addr(self.local_addr), 0)).await.map_err(NetworkError::Io)?;
             self.data_lport = listener.local_addr().map_err(NetworkError::Io)?.port();
 
             let config = {
