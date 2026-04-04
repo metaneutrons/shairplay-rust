@@ -1,8 +1,11 @@
 //! Sample rate conversion and channel mixdown for AirPlay audio.
 
+use rubato::{Async, FixedAsync, Resampler, SincInterpolationParameters, SincInterpolationType, WindowFunction};
+use rubato::audioadapter_buffers::direct::SequentialSliceOfVecs;
+
 /// Persistent F32 resampler for streaming audio.
 pub struct StreamResampler {
-    resampler: rubato::SincFixedIn<f32>,
+    resampler: Async<f32>,
     channels: usize,
 }
 
@@ -10,25 +13,24 @@ impl StreamResampler {
     /// Create a new resampler. Returns `None` if rates are equal.
     pub fn new(from_rate: u32, to_rate: u32, channels: usize) -> Option<Self> {
         if from_rate == to_rate { return None; }
-        let params = rubato::SincInterpolationParameters {
+        let params = SincInterpolationParameters {
             sinc_len: 64,
             f_cutoff: 0.95,
-            interpolation: rubato::SincInterpolationType::Linear,
+            interpolation: SincInterpolationType::Linear,
             oversampling_factor: 128,
-            window: rubato::WindowFunction::BlackmanHarris2,
+            window: WindowFunction::BlackmanHarris2,
         };
         let ratio = to_rate as f64 / from_rate as f64;
-        let resampler = rubato::SincFixedIn::<f32>::new(ratio, 1.0, params, 1024, channels).ok()?;
+        let resampler = Async::<f32>::new_sinc(ratio, 1.0, &params, 1024, channels, FixedAsync::Input).ok()?;
         Some(Self { resampler, channels })
     }
 
     /// Resample interleaved F32 audio. Returns resampled interleaved F32.
     pub fn process(&mut self, interleaved: &[f32]) -> Vec<f32> {
-        use rubato::Resampler;
         let frames = interleaved.len() / self.channels;
         if frames == 0 { return Vec::new(); }
 
-        // Deinterleave
+        // Deinterleave into per-channel Vecs
         let mut channels: Vec<Vec<f32>> = (0..self.channels).map(|_| Vec::with_capacity(frames)).collect();
         for frame in interleaved.chunks_exact(self.channels) {
             for (ch, &sample) in frame.iter().enumerate() {
@@ -36,21 +38,15 @@ impl StreamResampler {
             }
         }
 
-        // Resample
-        let out = match self.resampler.process(&channels, None) {
-            Ok(o) => o,
+        // Resample — returns InterleavedOwned<f32>
+        let input = SequentialSliceOfVecs::new(&channels, self.channels, frames).unwrap();
+        let result = match self.resampler.process(&input, 0, None) {
+            Ok(r) => r,
             Err(_) => return Vec::new(),
         };
 
-        // Reinterleave
-        let out_frames = out[0].len();
-        let mut result = Vec::with_capacity(out_frames * self.channels);
-        for i in 0..out_frames {
-            for ch in &out {
-                result.push(ch[i]);
-            }
-        }
-        result
+        // Already interleaved — take the underlying Vec
+        result.take_data()
     }
 }
 

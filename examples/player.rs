@@ -17,7 +17,7 @@ use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use rubato::{SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction, Resampler};
+use rubato::{Async, FixedAsync, Resampler, SincInterpolationParameters, SincInterpolationType, WindowFunction};
 use std::net::IpAddr;
 use std::path::PathBuf;
 use shairplay::{AudioFormat, AudioHandler, AudioSession, BindConfig, RaopServer};
@@ -123,12 +123,13 @@ impl AudioHandler for Handler {
                 oversampling_factor: 256,
                 window: WindowFunction::BlackmanHarris2,
             };
-            SincFixedIn::<f64>::new(
+            Async::<f64>::new_sinc(
                 self.device_rate as f64 / format.sample_rate as f64,
                 2.0,
-                params,
+                &params,
                 1024,
                 format.channels as usize,
+                FixedAsync::Input,
             ).ok()
         } else {
             eprintln!("✅ Source rate matches device — no resampling needed");
@@ -146,7 +147,7 @@ impl AudioHandler for Handler {
 
 struct Session {
     ring: Arc<Mutex<AudioRing>>,
-    resampler: Option<Mutex<SincFixedIn<f64>>>,
+    resampler: Option<Mutex<Async<f64>>>,
     source_channels: usize,
     device_channels: usize,
 }
@@ -170,17 +171,14 @@ impl AudioSession for Session {
             for ch in &mut channels {
                 ch.resize(chunk, 0.0);
             }
-            // Resample and re-interleave
-            match rs.process(&channels, None) {
+            // Resample — returns InterleavedOwned<f64>
+            let frames = channels[0].len();
+            let input = rubato::audioadapter_buffers::direct::SequentialSliceOfVecs::new(
+                &channels, self.source_channels, frames,
+            ).unwrap();
+            match rs.process(&input, 0, None) {
                 Ok(resampled) => {
-                    let frames = resampled[0].len();
-                    let mut out = Vec::with_capacity(frames * self.source_channels);
-                    for i in 0..frames {
-                        for ch in &resampled {
-                            out.push(ch[i] as f32);
-                        }
-                    }
-                    out
+                    resampled.take_data().iter().map(|&s| s as f32).collect()
                 }
                 Err(_) => samples,
             }
@@ -249,7 +247,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let host = cpal::default_host();
     let (device_rate, device_channels) = host.default_output_device()
         .and_then(|d| d.default_output_config().ok())
-        .map(|c| (c.sample_rate().0, c.channels()))
+        .map(|c| (c.sample_rate(), c.channels()))
         .unwrap_or((44100, 2));
 
     let (ring, _stream) = match host.default_output_device() {
@@ -259,7 +257,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             let config = cpal::StreamConfig {
                 channels: device_channels,
-                sample_rate: cpal::SampleRate(device_rate),
+                sample_rate: device_rate,
                 buffer_size: cpal::BufferSize::Default,
             };
 

@@ -31,7 +31,6 @@ impl Base64 {
         b
     }
 
-    /// Standard base64 (RFC 4648) with padding and space-skipping.
 
     /// Compute the encoded length for a given source length.
     /// Equivalent to base64_encoded_length (minus the NUL terminator).
