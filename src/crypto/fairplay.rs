@@ -1,5 +1,4 @@
 //! FairPlay DRM handshake (fp-setup M1/M2) for AirPlay authentication.
-#![allow(clippy::needless_range_loop, clippy::too_many_arguments, clippy::explicit_counter_loop)]
 //!
 //! The iPhone sends two fp-setup requests:
 //! - **M1** (16 bytes): mode selection → server replies with 142-byte pre-computed response
@@ -123,9 +122,7 @@ fn playfair_decrypt(message3: &[u8; 164], cipher_text: &[u8; 72]) -> [u8; 16] {
     cycle(&mut block_in, &key_schedule);
 
     let mut key_out = [0u8; 16];
-    for i in 0..16 {
-        key_out[i] = block_in[i] ^ chunk1[i];
-    }
+    key_out.iter_mut().zip(block_in.iter().zip(chunk1)).for_each(|(o, (&a, &b))| *o = a ^ b);
     x_xor_inplace(&mut key_out);
     z_xor_inplace(&mut key_out);
     key_out
@@ -133,20 +130,24 @@ fn playfair_decrypt(message3: &[u8; 164], cipher_text: &[u8; 72]) -> [u8; 16] {
 
 // --- omg_hax.c port ---
 
+/// XOR a 16-byte block with the Z key.
 fn z_xor_block(input: &[u8], out: &mut [u8; 16]) {
-    for i in 0..16 { out[i] = input[i] ^ Z_KEY[i]; }
+    out.iter_mut().zip(input.iter().zip(&Z_KEY)).for_each(|(o, (&a, &b))| *o = a ^ b);
 }
 
+/// XOR a block in-place with the Z key.
 fn z_xor_inplace(block: &mut [u8; 16]) {
-    for i in 0..16 { block[i] ^= Z_KEY[i]; }
+    block.iter_mut().zip(&Z_KEY).for_each(|(b, &k)| *b ^= k);
 }
 
+/// XOR a block in-place with the X key.
 fn x_xor_inplace(block: &mut [u8; 16]) {
-    for i in 0..16 { block[i] ^= X_KEY[i]; }
+    block.iter_mut().zip(&X_KEY).for_each(|(b, &k)| *b ^= k);
 }
 
+/// XOR a 16-byte block with the T key.
 fn t_xor(input: &[u8], out: &mut [u8; 16]) {
-    for i in 0..16 { out[i] = input[i] ^ T_KEY[i]; }
+    out.iter_mut().zip(input.iter().zip(&T_KEY)).for_each(|(o, (&a, &b))| *o = a ^ b);
 }
 
 fn table_index(i: usize) -> &'static [u8] {
@@ -262,8 +263,8 @@ fn generate_key_schedule(key_material: &[u8; 16], key_schedule: &mut [[u32; 4]; 
 
 fn cycle(block: &mut [u8; 16], key_schedule: &[[u32; 4]; 11]) {
     // XOR with last round key
-    for i in 0..4 {
-        let v = read_u32_le(block, i * 4) ^ key_schedule[10][i];
+    for (i, &k) in key_schedule[10].iter().enumerate() {
+        let v = read_u32_le(block, i * 4) ^ k;
         write_u32_le(block, i * 4, v);
     }
     permute_block_1(block);
@@ -304,8 +305,8 @@ fn cycle(block: &mut [u8; 16], key_schedule: &[[u32; 4]; 11]) {
     }
 
     // Final XOR with first round key
-    for i in 0..4 {
-        let v = read_u32_le(block, i * 4) ^ key_schedule[0][i];
+    for (i, &k) in key_schedule[0].iter().enumerate() {
+        let v = read_u32_le(block, i * 4) ^ k;
         write_u32_le(block, i * 4, v);
     }
 }
@@ -396,10 +397,6 @@ fn rol8(x: u8, y: u32) -> u8 {
     ((x as u16) << (y & 7) | (x as u16) >> (8 - (y & 7))) as u8
 }
 
-#[allow(dead_code)]
-fn rol8x(x: u8, y: u32) -> u32 {
-    ((x as u32) << (y & 7)) | ((x as u32) >> (8 - (y & 7)))
-}
 
 fn sap_hash(block_in: &[u8], key_out: &mut [u8; 16]) {
     let block_words: Vec<u32> = (0..16).map(|i| {
@@ -567,10 +564,6 @@ fn decrypt_message(message_in: &[u8], decrypted_message: &mut [u8; 128]) {
     }
 }
 
-#[allow(dead_code)]
-fn swap_bytes(a: &mut u8, b: &mut u8) {
-    std::mem::swap(a, b);
-}
 
 fn generate_session_key(old_sap: &[u8], message_in: &[u8], session_key: &mut [u8; 16]) {
     let mut decrypted_message = [0u8; 128];

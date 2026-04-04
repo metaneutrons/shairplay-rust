@@ -61,6 +61,24 @@ struct RtpState {
     flush: i32,
 }
 
+/// Configuration for creating an AP1 RTP session, parsed from SDP.
+pub struct RtpConfig {
+    /// SDP `c=` remote address string (e.g. "192.168.1.5").
+    pub remote: String,
+    /// Local IP address to bind sockets to.
+    pub local_addr: IpAddr,
+    /// SDP `a=rtpmap` attribute.
+    pub rtpmap: String,
+    /// SDP `a=fmtp` attribute (ALAC configuration).
+    pub fmtp: String,
+    /// 128-bit AES session key (decrypted from SDP).
+    pub aes_key: [u8; 16],
+    /// 128-bit AES initialization vector.
+    pub aes_iv: [u8; 16],
+    /// If set, resample decoded audio to this rate.
+    pub output_sample_rate: Option<u32>,
+}
+
 /// AP1 RTP streaming session.
 ///
 /// Owns the UDP/TCP sockets, the packet buffer, and the ALAC decoder.
@@ -98,23 +116,13 @@ pub struct RaopRtp {
 impl RaopRtp {
     /// Create a new RTP session from SDP parameters and AES session keys.
     /// Does not bind sockets or start receiving — call [`start`](Self::start) for that.
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        callbacks: Arc<dyn AudioHandler>,
-        remote: &str,
-        local_addr: IpAddr,
-        rtpmap: &str,
-        fmtp: &str,
-        aes_key: &[u8; 16],
-        aes_iv: &[u8; 16],
-        output_sample_rate: Option<u32>,
-    ) -> Self {
-        let buffer = RaopBuffer::new(rtpmap, fmtp, aes_key, aes_iv);
+    pub fn new(callbacks: Arc<dyn AudioHandler>, config: RtpConfig) -> Self {
+        let buffer = RaopBuffer::new(&config.rtpmap, &config.fmtp, &config.aes_key, &config.aes_iv);
         Self {
             handler: callbacks,
-            remote: remote.to_string(),
-            local_addr,
-            output_sample_rate,
+            remote: config.remote,
+            local_addr: config.local_addr,
+            output_sample_rate: config.output_sample_rate,
             buffer: Arc::new(Mutex::new(buffer)),
             state: Arc::new(Mutex::new(RtpState {
                 volume: 0.0, volume_changed: false,
