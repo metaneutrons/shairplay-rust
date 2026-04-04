@@ -402,7 +402,9 @@ impl AlacDecoder {
     /// Decode an ALAC frame and return F32LE interleaved samples.
     pub fn decode_frame_f32(&mut self, input: &[u8]) -> Option<Vec<f32>> {
         let mut s16_buf = vec![0u8; 16384];
-        let len = self.decode_frame(input, &mut s16_buf);
+        let len = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            self.decode_frame(input, &mut s16_buf)
+        })).unwrap_or(0);
         if len == 0 { return None; }
         Some(s16_buf[..len].chunks_exact(2)
             .map(|c| i16::from_le_bytes([c[0], c[1]]) as f32 / 32768.0)
