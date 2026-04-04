@@ -76,6 +76,82 @@ use shairplay::PairingStore;
 #[cfg(feature = "video")]
 mod video_display;
 
+// --- HLS playback via mpv subprocess ---
+
+#[cfg(feature = "hls")]
+struct MpvHlsHandler;
+
+#[cfg(feature = "hls")]
+impl shairplay::HlsHandler for MpvHlsHandler {
+    fn on_play(&self, url: &str, start_position: f32) -> Box<dyn shairplay::HlsSession> {
+        eprintln!("🎬 HLS: playing {url}");
+        let mut cmd = std::process::Command::new("mpv");
+        cmd.arg(url).arg("--force-window=yes");
+        if start_position > 0.0 {
+            cmd.arg(format!("--start={start_position}"));
+        }
+        let child = cmd.stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn();
+        match child {
+            Ok(child) => Box::new(MpvHlsSession {
+                child: std::sync::Mutex::new(Some(child)),
+                start: std::time::Instant::now(),
+                rate: std::sync::atomic::AtomicU32::new(1_f32.to_bits()),
+            }),
+            Err(e) => {
+                eprintln!("⚠️  Failed to start mpv: {e}");
+                eprintln!("   Install mpv: brew install mpv (macOS) or apt install mpv (Linux)");
+                Box::new(MpvHlsSession {
+                    child: std::sync::Mutex::new(None),
+                    start: std::time::Instant::now(),
+                    rate: std::sync::atomic::AtomicU32::new(0_f32.to_bits()),
+                })
+            }
+        }
+    }
+}
+
+#[cfg(feature = "hls")]
+struct MpvHlsSession {
+    child: std::sync::Mutex<Option<std::process::Child>>,
+    start: std::time::Instant,
+    rate: std::sync::atomic::AtomicU32,
+}
+
+#[cfg(feature = "hls")]
+impl shairplay::HlsSession for MpvHlsSession {
+    fn duration(&self) -> f32 { 0.0 } // unknown for live/streaming
+    fn position(&self) -> f32 { self.start.elapsed().as_secs_f32() }
+    fn rate(&self) -> f32 { f32::from_bits(self.rate.load(std::sync::atomic::Ordering::Relaxed)) }
+    fn seek(&mut self, _position: f32) { /* mpv subprocess doesn't support seek via API */ }
+    fn set_rate(&mut self, rate: f32) {
+        self.rate.store(rate.to_bits(), std::sync::atomic::Ordering::Relaxed);
+        if rate == 0.0 { self.kill_child(); }
+    }
+    fn stop(&mut self) { self.kill_child(); }
+}
+
+#[cfg(feature = "hls")]
+impl MpvHlsSession {
+    fn kill_child(&mut self) {
+        if let Ok(mut guard) = self.child.lock() {
+            if let Some(ref mut child) = *guard {
+                let _ = child.kill();
+                let _ = child.wait();
+            }
+            *guard = None;
+        }
+        eprintln!("🎬 HLS: stopped");
+    }
+}
+
+#[cfg(feature = "hls")]
+impl Drop for MpvHlsSession {
+    fn drop(&mut self) { self.kill_child(); }
+}
+
 /// Persistent device identity + paired keys, stored as JSON.
 #[derive(serde::Serialize, serde::Deserialize, Default)]
 struct PersistState {
@@ -347,6 +423,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     #[cfg(not(feature = "video"))]
     let _video_frame: Option<()> = None;
+
+    #[cfg(feature = "hls")]
+    {
+        builder = builder.hls_handler(Arc::new(MpvHlsHandler));
+        eprintln!("🎬 HLS video playback enabled (requires mpv)");
+    }
 
     let mut server = builder.build(handler)?;
 

@@ -10,6 +10,10 @@ pub mod realtime_audio;
 pub mod handlers;
 #[cfg(feature = "ap2")]
 pub mod handlers_ap2;
+#[cfg(feature = "hls")]
+pub mod handlers_hls;
+#[cfg(feature = "hls")]
+pub mod hls;
 pub mod rtp;
 mod rtsp;
 #[cfg(feature = "video")]
@@ -174,6 +178,8 @@ struct RaopShared {
     video_ekey: Arc<std::sync::RwLock<Option<[u8; 16]>>>,
     #[cfg(feature = "video")]
     video_eiv: Arc<std::sync::RwLock<Option<[u8; 16]>>>,
+    #[cfg(feature = "hls")]
+    hls_handler: Option<Arc<dyn crate::raop::hls::HlsHandler>>,
 }
 
 impl HttpdCallbacks for RaopShared {
@@ -232,6 +238,10 @@ impl HttpdCallbacks for RaopShared {
             shared_video_ekey: self.video_ekey.clone(),
             #[cfg(feature = "video")]
             shared_video_eiv: self.video_eiv.clone(),
+            #[cfg(feature = "hls")]
+            hls_handler: self.hls_handler.clone(),
+            #[cfg(feature = "hls")]
+            hls_state: crate::raop::hls::HlsState::new(),
         };
         Some(Box::new(RaopConnectionHandler {
             conn,
@@ -336,6 +346,8 @@ pub struct RaopServerBuilder {
     pin: Option<String>,
     #[cfg(feature = "video")]
     video_handler: Option<Arc<dyn crate::raop::video::VideoHandler>>,
+    #[cfg(feature = "hls")]
+    hls_handler: Option<Arc<dyn crate::raop::hls::HlsHandler>>,
 }
 
 impl Default for RaopServerBuilder {
@@ -361,6 +373,8 @@ impl RaopServerBuilder {
             pin: None,
             #[cfg(feature = "video")]
             video_handler: None,
+            #[cfg(feature = "hls")]
+            hls_handler: None,
         }
     }
 
@@ -409,6 +423,12 @@ impl RaopServerBuilder {
         self.video_handler = Some(handler); self
     }
 
+    #[cfg(feature = "hls")]
+    /// Set an HLS handler for YouTube/video URL playback.
+    pub fn hls_handler(mut self, handler: Arc<dyn crate::raop::hls::HlsHandler>) -> Self {
+        self.hls_handler = Some(handler); self
+    }
+
     /// Build the server with the given audio handler.
     pub fn build(self, handler: Arc<dyn AudioHandler>) -> Result<RaopServer, ShairplayError> {
         let rsakey = airport_rsakey();
@@ -433,6 +453,8 @@ impl RaopServerBuilder {
             video_ekey: Arc::new(std::sync::RwLock::new(None)),
             #[cfg(feature = "video")]
             video_eiv: Arc::new(std::sync::RwLock::new(None)),
+            #[cfg(feature = "hls")]
+            hls_handler: self.hls_handler,
         });
 
         let mut httpd = HttpServer::new(shared.clone(), self.max_clients);

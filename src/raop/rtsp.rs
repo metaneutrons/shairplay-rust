@@ -9,6 +9,8 @@ use crate::proto::http::{HttpRequest, HttpResponse};
 use crate::raop::handlers::{self, RaopConnection};
 #[cfg(feature = "ap2")]
 use crate::raop::handlers_ap2;
+#[cfg(feature = "hls")]
+use crate::raop::handlers_hls;
 
 /// Handler function signature — all RTSP handlers share this type.
 type Handler = fn(&mut RaopConnection, &HttpRequest, &mut HttpResponse) -> Option<Vec<u8>>;
@@ -61,6 +63,20 @@ const ROUTES: &[Route] = &[
     // --- Info ---
     #[cfg(feature = "ap2")]
     Route { method: "GET", path: "/info", handler: handlers_ap2::handle_get_info },
+
+    // --- HLS (HTTP Live Streaming) ---
+    #[cfg(feature = "hls")]
+    Route { method: "GET",  path: "/server-info",   handler: handlers_hls::handle_server_info },
+    #[cfg(feature = "hls")]
+    Route { method: "POST", path: "/play",          handler: handlers_hls::handle_play },
+    #[cfg(feature = "hls")]
+    Route { method: "GET",  path: "/playback-info",  handler: handlers_hls::handle_playback_info },
+    #[cfg(feature = "hls")]
+    Route { method: "POST", path: "/stop",          handler: handlers_hls::handle_stop },
+    #[cfg(feature = "hls")]
+    Route { method: "POST", path: "/scrub",         handler: handlers_hls::handle_scrub },
+    #[cfg(feature = "hls")]
+    Route { method: "POST", path: "/rate",          handler: handlers_hls::handle_rate },
 ];
 
 /// Dispatch an RTSP request: authenticate, resolve route, call handler, build response.
@@ -109,10 +125,13 @@ fn resolve_handler(
     method: &str,
     url: &str,
 ) -> Option<Handler> {
-    // 1. Check static route table
+    // 1. Check static route table (exact path or prefix match for query-string routes)
     for route in ROUTES {
-        if route.method == method && (route.path == "*" || route.path == url) {
-            return Some(route.handler);
+        if route.method == method {
+            let path = url.split('?').next().unwrap_or(url);
+            if route.path == "*" || route.path == path {
+                return Some(route.handler);
+            }
         }
     }
 

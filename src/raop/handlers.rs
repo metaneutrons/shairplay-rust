@@ -67,6 +67,10 @@ pub(crate) struct RaopConnection {
     pub shared_video_ekey: Arc<std::sync::RwLock<Option<[u8; 16]>>>,
     #[cfg(feature = "video")]
     pub shared_video_eiv: Arc<std::sync::RwLock<Option<[u8; 16]>>>,
+    #[cfg(feature = "hls")]
+    pub hls_handler: Option<Arc<dyn crate::raop::hls::HlsHandler>>,
+    #[cfg(feature = "hls")]
+    pub hls_state: std::sync::Arc<std::sync::Mutex<crate::raop::hls::HlsState>>,
 }
 
 /// Returns the connection's local IP address.
