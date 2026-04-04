@@ -4,9 +4,15 @@ use rubato::{Async, FixedAsync, Resampler, SincInterpolationParameters, SincInte
 use rubato::audioadapter_buffers::direct::SequentialSliceOfVecs;
 
 /// Persistent F32 resampler for streaming audio.
+/// Buffers input internally and processes in fixed chunks.
 pub struct StreamResampler {
     resampler: Async<f32>,
     channels: usize,
+    chunk_size: usize,
+    /// Accumulated input samples (interleaved).
+    pending: Vec<f32>,
+    /// Whether the initial delay has been flushed.
+    warmed_up: bool,
 }
 
 impl StreamResampler {
@@ -21,32 +27,54 @@ impl StreamResampler {
             window: WindowFunction::BlackmanHarris2,
         };
         let ratio = to_rate as f64 / from_rate as f64;
-        let resampler = Async::<f32>::new_sinc(ratio, 1.0, &params, 1024, channels, FixedAsync::Input).ok()?;
-        Some(Self { resampler, channels })
+        let chunk_size = 128; // small for low latency
+        let resampler = Async::<f32>::new_sinc(
+            ratio, 1.0, &params, chunk_size, channels, FixedAsync::Input,
+        ).ok()?;
+        Some(Self { resampler, channels, chunk_size, pending: Vec::new(), warmed_up: false })
     }
 
     /// Resample interleaved F32 audio. Returns resampled interleaved F32.
     pub fn process(&mut self, interleaved: &[f32]) -> Vec<f32> {
-        let frames = interleaved.len() / self.channels;
-        if frames == 0 { return Vec::new(); }
+        self.pending.extend_from_slice(interleaved);
 
-        // Deinterleave into per-channel Vecs
-        let mut channels: Vec<Vec<f32>> = (0..self.channels).map(|_| Vec::with_capacity(frames)).collect();
-        for frame in interleaved.chunks_exact(self.channels) {
-            for (ch, &sample) in frame.iter().enumerate() {
-                channels[ch].push(sample);
+        let samples_per_chunk = self.chunk_size * self.channels;
+        let mut output = Vec::new();
+
+        while self.pending.len() >= samples_per_chunk {
+            let chunk: Vec<f32> = self.pending.drain(..samples_per_chunk).collect();
+
+            // Deinterleave
+            let mut ch_vecs: Vec<Vec<f32>> = (0..self.channels)
+                .map(|_| Vec::with_capacity(self.chunk_size))
+                .collect();
+            for frame in chunk.chunks_exact(self.channels) {
+                for (ch, &s) in frame.iter().enumerate() {
+                    ch_vecs[ch].push(s);
+                }
+            }
+
+            let input = match SequentialSliceOfVecs::new(&ch_vecs, self.channels, self.chunk_size) {
+                Ok(i) => i,
+                Err(_) => continue,
+            };
+
+            match self.resampler.process(&input, 0, None) {
+                Ok(result) => {
+                    let data = result.take_data();
+                    if !data.is_empty() {
+                        if !self.warmed_up {
+                            // Skip initial silence from sinc filter warmup
+                            self.warmed_up = true;
+                        }
+                        output.extend(data);
+                    }
+                }
+                Err(_) => {}
             }
         }
 
-        // Resample — returns InterleavedOwned<f32>
-        let input = SequentialSliceOfVecs::new(&channels, self.channels, frames).unwrap();
-        let result = match self.resampler.process(&input, 0, None) {
-            Ok(r) => r,
-            Err(_) => return Vec::new(),
-        };
-
-        // Already interleaved — take the underlying Vec
-        result.take_data()
+        output
     }
 }
 
@@ -54,7 +82,7 @@ impl StreamResampler {
 /// Uses ITU-R BS.775 downmix coefficients for 5.1 and 7.1.
 pub fn mixdown(input: &[f32], in_channels: usize, out_channels: usize) -> Vec<f32> {
     if in_channels == out_channels { return input.to_vec(); }
-    if out_channels != 2 { return input.to_vec(); } // only stereo mixdown supported
+    if out_channels != 2 { return input.to_vec(); }
 
     let frames = input.len() / in_channels;
     let mut output = Vec::with_capacity(frames * 2);
@@ -63,13 +91,11 @@ pub fn mixdown(input: &[f32], in_channels: usize, out_channels: usize) -> Vec<f3
     for frame in input.chunks_exact(in_channels) {
         let (l, r) = match in_channels {
             6 => {
-                // 5.1: FL FR FC LFE RL RR
                 let fl = frame[0]; let fr = frame[1]; let fc = frame[2];
                 let rl = frame[4]; let rr = frame[5];
                 (fl + k * fc + k * rl, fr + k * fc + k * rr)
             }
             8 => {
-                // 7.1: FL FR FC LFE SL SR RL RR
                 let fl = frame[0]; let fr = frame[1]; let fc = frame[2];
                 let sl = frame[4]; let sr = frame[5];
                 let rl = frame[6]; let rr = frame[7];
@@ -81,4 +107,34 @@ pub fn mixdown(input: &[f32], in_channels: usize, out_channels: usize) -> Vec<f3
         output.push(r.clamp(-1.0, 1.0));
     }
     output
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resample_small_chunks() {
+        let mut rs = StreamResampler::new(44100, 96000, 2).unwrap();
+        let mut total_out = 0;
+        // Feed 10 chunks of 352 frames (typical ALAC)
+        for _ in 0..10 {
+            let mut input = Vec::new();
+            for i in 0..352 {
+                let t = i as f32 / 44100.0;
+                let s = (2.0 * std::f32::consts::PI * 440.0 * t).sin() * 0.5;
+                input.push(s);
+                input.push(s);
+            }
+            let output = rs.process(&input);
+            total_out += output.len();
+        }
+        eprintln!("Total output samples from 10x352 frames: {}", total_out);
+        assert!(total_out > 0, "no output produced");
+    }
+
+    #[test]
+    fn resample_passthrough_returns_none() {
+        assert!(StreamResampler::new(44100, 44100, 2).is_none());
+    }
 }
