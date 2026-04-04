@@ -37,7 +37,7 @@ pub const MAX_NONCE_LEN: usize = 32;
 /// Audio codec type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AudioCodec {
-    /// Decoded PCM (F32LE interleaved). Always delivered regardless of AP1/AP2.
+    /// Decoded PCM (f32 interleaved). Always delivered regardless of AP1/AP2.
     Pcm,
 }
 
@@ -46,7 +46,7 @@ pub enum AudioCodec {
 pub struct AudioFormat {
     /// Audio codec (always PCM for decoded output).
     pub codec: AudioCodec,
-    /// Bits per sample (32 for F32LE).
+    /// Bits per sample (always 32 — samples are delivered as `&[f32]`).
     pub bits: u8,
     /// Number of channels.
     pub channels: u8,
@@ -105,8 +105,8 @@ impl PairingStore for MemoryPairingStore {
 ///
 /// Created by [`AudioHandler::audio_init`]. Dropped when the client disconnects.
 pub trait AudioSession: Send + Sync {
-    /// Receive decoded F32LE interleaved PCM audio data.
-    fn audio_process(&mut self, buffer: &[u8]);
+    /// Receive decoded f32 interleaved PCM audio samples.
+    fn audio_process(&mut self, samples: &[f32]);
     /// Flush the audio buffer (e.g. on seek).
     fn audio_flush(&mut self) {}
     /// Volume change in dB (0.0 = max, -144.0 = mute).
@@ -167,6 +167,11 @@ struct RaopShared {
     pin: Option<String>,
     #[cfg(feature = "video")]
     video_handler: Option<Arc<dyn crate::raop::video::VideoHandler>>,
+    /// Shared video encryption keys — set by audio SETUP, read by video SETUP.
+    #[cfg(feature = "video")]
+    video_ekey: Arc<std::sync::RwLock<Option<[u8; 16]>>>,
+    #[cfg(feature = "video")]
+    video_eiv: Arc<std::sync::RwLock<Option<[u8; 16]>>>,
 }
 
 impl HttpdCallbacks for RaopShared {
@@ -201,6 +206,8 @@ impl HttpdCallbacks for RaopShared {
             #[cfg(feature = "ap2")]
             ap2_shared_secret: None,
             #[cfg(feature = "ap2")]
+            pair_verify_secret: None,
+            #[cfg(feature = "ap2")]
             is_ap2: false,
             #[cfg(feature = "ap2")]
             pairing_store: self.pairing_store.clone(),
@@ -218,6 +225,10 @@ impl HttpdCallbacks for RaopShared {
             ekey: None,
             #[cfg(feature = "video")]
             eiv: None,
+            #[cfg(feature = "video")]
+            shared_video_ekey: self.video_ekey.clone(),
+            #[cfg(feature = "video")]
+            shared_video_eiv: self.video_eiv.clone(),
         };
         Some(Box::new(RaopConnectionHandler {
             conn,
@@ -415,6 +426,10 @@ impl RaopServerBuilder {
             pin: self.pin,
             #[cfg(feature = "video")]
             video_handler: self.video_handler,
+            #[cfg(feature = "video")]
+            video_ekey: Arc::new(std::sync::RwLock::new(None)),
+            #[cfg(feature = "video")]
+            video_eiv: Arc::new(std::sync::RwLock::new(None)),
         });
 
         let mut httpd = HttpServer::new(shared.clone(), self.max_clients);
@@ -434,7 +449,7 @@ impl RaopServerBuilder {
 /// The main AirPlay/RAOP server.
 ///
 /// Listens for RTSP connections, handles pairing and encryption,
-/// decodes audio, and delivers F32LE PCM samples via [`AudioSession`].
+/// decodes audio, and delivers f32 PCM samples via [`AudioSession`].
 /// Automatically registers mDNS services for network discovery.
 pub struct RaopServer {
     shared: Arc<RaopShared>,

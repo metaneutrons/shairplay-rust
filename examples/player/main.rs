@@ -73,6 +73,9 @@ use shairplay::{AudioFormat, AudioHandler, AudioSession, BindConfig, RaopServer}
 #[cfg(feature = "ap2")]
 use shairplay::PairingStore;
 
+#[cfg(feature = "video")]
+mod video_display;
+
 /// Persistent device identity + paired keys, stored as JSON.
 #[derive(serde::Serialize, serde::Deserialize, Default)]
 struct PersistState {
@@ -192,11 +195,8 @@ struct Session {
 }
 
 impl AudioSession for Session {
-    fn audio_process(&mut self, buffer: &[u8]) {
-        // Decode F32LE bytes to samples
-        let mut samples: Vec<f32> = buffer.chunks_exact(4)
-            .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-            .collect();
+    fn audio_process(&mut self, samples: &[f32]) {
+        let mut samples = samples.to_vec();
 
         // Resample if needed
         if let Some(ref rs) = self.resampler {
@@ -349,6 +349,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("🔗 Binding to {:?}", bind_addrs);
         builder = builder.bind(BindConfig::new().addrs(bind_addrs));
     }
+
+    #[cfg(feature = "video")]
+    let video_frame = {
+        let vh = video_display::DisplayVideoHandler::new();
+        let frame = vh.frame_buffer();
+        builder = builder.video_handler(Arc::new(vh));
+        eprintln!("📺 Video (screen mirroring) enabled");
+        Some(frame)
+    };
+    #[cfg(not(feature = "video"))]
+    let _video_frame: Option<()> = None;
+
     let mut server = builder.build(handler)?;
 
     server.start().await?;
@@ -360,8 +372,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     eprintln!("🔐 PIN: 3939 (enter on iPhone when prompted)");
     eprintln!("   Press Ctrl+C to stop");
 
+    // If video is enabled, run the window loop on the main thread (required on macOS).
+    // The window loop blocks until closed; Ctrl+C still works via signal handler.
+    #[cfg(feature = "video")]
+    if let Some(frame) = video_frame {
+        video_display::run_window(frame);
+        eprintln!("\n🛑 Shutting down...");
+        server.stop().await;
+        return Ok(());
+    }
+
     tokio::signal::ctrl_c().await?;
     eprintln!("\n🛑 Shutting down...");
     server.stop().await;
+
     Ok(())
 }

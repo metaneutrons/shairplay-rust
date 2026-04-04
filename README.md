@@ -10,7 +10,7 @@
 [![License: LGPL-3.0](https://img.shields.io/badge/license-LGPL--3.0-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.75%2B-orange.svg)](https://www.rust-lang.org)
 
-A complete AirPlay audio receiver as a Rust library. Supports both classic AirPlay (AP1) and AirPlay 2 (AP2) with buffered audio, encrypted transport, and HomeKit pairing. `#![forbid(unsafe_code)]`.
+A complete AirPlay audio and video receiver as a Rust library. Supports both classic AirPlay (AP1) and AirPlay 2 (AP2) with buffered audio, encrypted transport, HomeKit pairing, and screen mirroring. `#![forbid(unsafe_code)]`.
 
 **This is a clean-room Rust implementation — not a wrapper or FFI binding.** Every protocol handler, codec, and cryptographic primitive has been reimplemented from scratch in safe Rust. No C code from shairplay, shairport-sync, or any other project is linked or called.
 
@@ -52,8 +52,8 @@ impl AudioHandler for MyHandler {
 
 struct MySession;
 impl AudioSession for MySession {
-    fn audio_process(&mut self, buffer: &[u8]) {
-        // F32LE interleaved PCM — same format for AP1 and AP2
+    fn audio_process(&mut self, samples: &[f32]) {
+        // F32 interleaved PCM — same format for AP1 and AP2
     }
 }
 
@@ -73,7 +73,7 @@ async fn main() -> Result<(), shairplay::ShairplayError> {
 
 ```rust
 // AP2 adds resampling and multichannel mixdown.
-// Output is always F32LE interleaved PCM — same as AP1.
+// Output is always f32 interleaved PCM — same as AP1.
 let mut server = RaopServer::builder()
     .name("My Speaker")
     .output_sample_rate(48000)
@@ -114,7 +114,7 @@ Rock solid. ALAC decoding, AES encryption, DACP remote control, metadata (artwor
 
 ### ✅ AirPlay 2 Audio — Production Ready
 
-Full pipeline: SRP-6a pairing → encrypted RTSP → FairPlay → PTP timing → buffered AAC decode → F32LE PCM output. Multichannel 5.1/7.1 with ITU-R BS.775 mixdown. Automatic resampling. Both stream types implemented:
+Full pipeline: SRP-6a pairing → encrypted RTSP → FairPlay → PTP timing → buffered AAC decode → f32 PCM output. Multichannel 5.1/7.1 with ITU-R BS.775 mixdown. Automatic resampling. Both stream types implemented:
 
 - **Type 103 (buffered)** — AAC over TCP with timed playout buffer. Used for music.
 - **Type 96 (realtime)** — ALAC over UDP with immediate delivery. Used for Siri, phone calls, system sounds.
@@ -123,7 +123,14 @@ Full pipeline: SRP-6a pairing → encrypted RTSP → FairPlay → PTP timing →
 
 ### 🧪 Video (Screen Mirroring) — Experimental
 
-Behind the `video` feature gate. The library receives encrypted H.264/H.265 video packets, decrypts them (AES-128-CTR), and delivers raw NAL units to the application. The app is responsible for decoding and rendering.
+Behind the `video` feature gate. Screen mirroring is working on iOS 18:
+decryption, H.264 decode, and display confirmed. The library receives
+encrypted video packets, decrypts them (AES-128-CTR with FairPlay key
+derivation), and delivers raw H.264 NAL units to the application.
+
+Uses UxPlay-compatible feature set (`0x527FFEE6`) — AP2 buffered audio
+is not available when video is enabled. See [AP2-STATUS.md](AP2-STATUS.md)
+for details.
 
 ### 🔬 Remote Control — Research Complete
 
@@ -186,7 +193,7 @@ src/
 
 ## Test Coverage
 
-127 tests including 17 C-verified vectors from the [pair_ap](https://github.com/ejurgensen/pair_ap) reference implementation:
+139 tests including 17 C-verified pairing vectors from [pair_ap](https://github.com/ejurgensen/pair_ap) and 10 C-verified FairPlay vectors generated from the original [shairplay](https://github.com/juhovh/shairplay) C source:
 
 ```
 cargo test                    # AP1 tests

@@ -72,7 +72,7 @@ pub enum PlayoutCommand {
 }
 
 struct PlayoutState {
-    buffer: BTreeMap<u32, Vec<u8>>, // rtp_timestamp → F32 PCM bytes
+    buffer: BTreeMap<u32, Vec<f32>>, // rtp_timestamp → F32 PCM samples
     anchor_rtp: u32,
     anchor_local_ns: u64,
     rate: u32,
@@ -304,15 +304,9 @@ async fn receive_loop(
                 samples = rs.process(&samples);
             }
 
-            // Convert back to bytes
-            let mut out_bytes = Vec::with_capacity(samples.len() * 4);
-            for s in &samples {
-                out_bytes.extend_from_slice(&s.to_le_bytes());
-            }
-
             let (lock, cvar) = &*state;
             let mut s = lock.lock().unwrap();
-            s.buffer.insert(timestamp, out_bytes);
+            s.buffer.insert(timestamp, samples);
             cvar.notify_all();
         }
     }
@@ -354,7 +348,7 @@ fn delivery_loop(
         let elapsed_frames = (elapsed_ns as u128 * s.sample_rate as u128 / 1_000_000_000) as u32;
         let target_rtp = s.anchor_rtp.wrapping_add(elapsed_frames);
 
-        let ready: Vec<(u32, Vec<u8>)> = s.buffer
+        let ready: Vec<(u32, Vec<f32>)> = s.buffer
             .iter()
             .filter(|(&ts, _)| (target_rtp.wrapping_sub(ts) as i32) >= 0)
             .map(|(&ts, data)| (ts, data.clone()))

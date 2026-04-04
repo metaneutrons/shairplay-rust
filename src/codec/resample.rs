@@ -59,8 +59,7 @@ impl StreamResampler {
                 Err(_) => continue,
             };
 
-            match self.resampler.process(&input, 0, None) {
-                Ok(result) => {
+            if let Ok(result) = self.resampler.process(&input, 0, None) {
                     let data = result.take_data();
                     if !data.is_empty() {
                         if !self.warmed_up {
@@ -69,8 +68,6 @@ impl StreamResampler {
                         }
                         output.extend(data);
                     }
-                }
-                Err(_) => {}
             }
         }
 

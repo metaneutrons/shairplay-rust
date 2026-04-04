@@ -12,8 +12,12 @@ pub enum AirPlayFeature {
     SupportsAirPlayVideoV1 = 0,
     /// Bit 1 — AirPlay photo
     SupportsAirPlayPhoto = 1,
+    /// Bit 2 — AirPlay video FairPlay
+    SupportsAirPlayVideoFairPlay = 2,
     /// Bit 5 — AirPlay slideshow
     SupportsAirPlaySlideshow = 5,
+    /// Bit 6 — AirPlay video volume control
+    SupportsAirPlayVideoVolumeControl = 6,
     /// Bit 7 — AirPlay screen mirroring
     SupportsAirPlayScreen = 7,
     /// Bit 9 — AirPlay audio
@@ -36,6 +40,8 @@ pub enum AirPlayFeature {
     AudioFormats2 = 20,
     /// Bit 21 — Audio format support 3
     AudioFormats3 = 21,
+    /// Bit 22 — Audio format support 4
+    AudioFormats4 = 22,
     /// Bit 23 — RSA authentication (legacy, not used)
     Authentication1 = 23,
     /// Bit 26 — MFi authentication
@@ -66,6 +72,8 @@ pub enum AirPlayFeature {
     IsApValeriaScreenSender = 44,
     /// Bit 46 — HomeKit pairing and access control
     SupportsHkPairingAndAccessControl = 46,
+    /// Bit 47 — Transient pairing
+    SupportsTransientPairing = 47,
     /// Bit 48 — CoreUtils pairing and encryption
     SupportsCoreUtilsPairingAndEncryption = 48,
     /// Bit 49 — AirPlay video v2
@@ -134,45 +142,65 @@ pub fn features_to_mdns(features: u64) -> String {
 /// - bit 52 (SupportsSetPeersExtendedMessage) — causes discovery failure
 /// - bit 59/60/61 (AudioStreamConn/MediaDataCtrl/Rfc2198) — causes discovery failure
 pub fn receiver_features() -> u64 {
+    #[cfg(not(feature = "video"))]
     use AirPlayFeature::*;
 
     // Known-good bitmask: 0x0001C340405D4A00
     // Verified with iOS 18 + shairport-sync reference.
     // Each bit is annotated with its position for easy cross-referencing
     // with https://emanuelecozzi.net/docs/airplay2/features/
-    #[allow(unused_mut)]
-    let mut bits: Vec<AirPlayFeature> = vec![
-        SupportsAirPlayAudio,         // bit 9
-        AudioRedundant,               // bit 11
-        Authentication4,              // bit 14 — FairPlay
-        MetadataProgress,             // bit 16
-        AudioFormats0,                // bit 18
-        AudioFormats1,                // bit 19
-        HasUnifiedAdvertiserInfo,     // bit 30
-        SupportsUnifiedMediaControl,  // bit 38
-        SupportsBufferedAudio,        // bit 40
-        SupportsPtp,                  // bit 41
-        SupportsHkPairingAndAccessControl,       // bit 46
-        SupportsCoreUtilsPairingAndEncryption,   // bit 48
-    ];
-
-    #[allow(unused_mut)]
-    let mut val = features_from(&bits);
-
-    // Bits 20, 22, 47 are set by shairport-sync but not in our enum.
-    val |= (1 << 20) | (1 << 22) | (1 << 47);
-
-    // TODO: test video feature bits with real iPhone — may break AP2 audio discovery.
+    // When video is enabled, use UxPlay's proven feature set (0x527FFEE6).
+    // Bit 27 (legacy pairing) must be OFF — otherwise the iPhone does
+    // pair-setup/verify and the ECDH hash corrupts the FairPlay key.
+    // No AP2 bits (40, 41, 46, 48) — pure legacy protocol for video.
     #[cfg(feature = "video")]
     {
-        val |= features_from(&[
-            SupportsAirPlayVideoV1,   // bit 0
-            SupportsAirPlayScreen,    // bit 7
-            SupportsScreenMultiCodec, // bit 42
+        use AirPlayFeature::*;
+        let mut val = features_from(&[
+            SupportsAirPlayPhoto,             // bit 1
+            SupportsAirPlayVideoFairPlay,     // bit 2
+            SupportsAirPlaySlideshow,         // bit 5
+            SupportsAirPlayVideoVolumeControl, // bit 6
+            SupportsAirPlayScreen,            // bit 7
+            SupportsAirPlayAudio,             // bit 9
+            AudioRedundant,                   // bit 11
+            Authentication4,                  // bit 14
+            MetadataArtwork,                  // bit 15
+            MetadataProgress,                 // bit 16
+            MetadataNowPlayingDaap,           // bit 17
+            AudioFormats0,                    // bit 18
+            AudioFormats1,                    // bit 19
+            AudioFormats2,                    // bit 20
+            AudioFormats3,                    // bit 21
+            HasUnifiedAdvertiserInfo,         // bit 30
         ]);
+        // Bits without enum variants (from UxPlay's 0x527FFEE6)
+        val |= (1 << 10) | (1 << 12) | (1 << 13) | (1 << 22) | (1 << 25) | (1 << 28);
+        val
     }
 
-    val
+    #[cfg(not(feature = "video"))]
+    {
+        let bits: Vec<AirPlayFeature> = vec![
+            SupportsAirPlayAudio,         // bit 9
+            AudioRedundant,               // bit 11
+            Authentication4,              // bit 14 — FairPlay
+            MetadataProgress,             // bit 16
+            AudioFormats0,                // bit 18
+            AudioFormats1,                // bit 19
+            HasUnifiedAdvertiserInfo,     // bit 30
+            SupportsUnifiedMediaControl,  // bit 38
+            SupportsBufferedAudio,        // bit 40
+            SupportsPtp,                  // bit 41
+            SupportsHkPairingAndAccessControl,       // bit 46
+            SupportsCoreUtilsPairingAndEncryption,   // bit 48
+            AudioFormats2,                    // bit 20
+            AudioFormats4,                    // bit 22
+            SupportsTransientPairing,         // bit 47
+        ];
+
+        features_from(&bits)
+    }
 }
 
 #[cfg(test)]
@@ -202,6 +230,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "video"))]
     fn audio_receiver_has_required_bits() {
         let f = receiver_features();
         // Core AP2 requirements (from shairport-sync)
@@ -213,5 +242,11 @@ mod tests {
         assert!(f & (1 << 38) != 0, "SupportsUnifiedMediaControl");
         assert!(f & (1 << 46) != 0, "SupportsHKPairing");
         assert!(f & (1 << 48) != 0, "SupportsCoreUtilsPairing");
+    }
+
+    #[test]
+    #[cfg(feature = "video")]
+    fn video_receiver_uses_uxplay_features() {
+        assert_eq!(receiver_features(), 0x527FFEE6);
     }
 }

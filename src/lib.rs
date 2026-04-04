@@ -21,8 +21,8 @@ impl AudioHandler for MyHandler {
 
 struct MySession;
 impl AudioSession for MySession {
-    fn audio_process(&mut self, buffer: &[u8]) {
-        // F32LE interleaved PCM — same format for AP1 and AP2
+    fn audio_process(&mut self, samples: &[f32]) {
+        // F32 interleaved PCM — same format for AP1 and AP2
     }
 }
 

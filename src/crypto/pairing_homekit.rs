@@ -532,6 +532,12 @@ impl PairVerifyServer {
     pub fn shared_secret(&self) -> Option<&[u8; 32]> {
         if self.completed { Some(&self.shared_secret) } else { None }
     }
+
+    /// Returns the ECDH shared secret computed during M1 processing.
+    /// Available before M3 completes — needed for video key derivation.
+    pub fn ecdh_shared_secret(&self) -> &[u8; 32] {
+        &self.shared_secret
+    }
 }
 
 #[cfg(test)]

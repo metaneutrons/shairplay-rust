@@ -105,6 +105,11 @@ impl FairPlay {
         }
         Ok(playfair_decrypt(&self.keymsg, input))
     }
+
+    /// Returns the 164-byte key message from M2, or None if handshake not complete.
+    pub fn keymsg(&self) -> Option<&[u8; 164]> {
+        if self.keymsglen == 164 { Some(&self.keymsg) } else { None }
+    }
 }
 
 // --- playfair.c port ---
@@ -352,8 +357,14 @@ fn modified_md5(original_block_in: &[u8], key_in: &[u8; 16], key_out: &mut [u8; 
         let s = MD5_SHIFT[i as usize];
         z = z.rotate_left(s);
 
+        z = z.wrapping_add(b);
+        let tmp = d;
+        d = c;
+        c = b;
+        b = z;
+        a = tmp;
+
         if i == 31 {
-            // Safe version of the swap operations
             let mut bw = [0u32; 16];
             for idx in 0..16 {
                 bw[idx] = u32::from_le_bytes([
@@ -370,13 +381,6 @@ fn modified_md5(original_block_in: &[u8], key_in: &[u8; 16], key_out: &mut [u8; 
                 block_in[idx*4..idx*4+4].copy_from_slice(&bytes);
             }
         }
-
-        z = z.wrapping_add(b);
-        let tmp = d;
-        d = c;
-        c = b;
-        b = z;
-        a = tmp;
     }
 
     let out_words = [
@@ -610,5 +614,125 @@ fn generate_session_key(old_sap: &[u8], message_in: &[u8], session_key: &mut [u8
     // XOR with 121
     for b in session_key.iter_mut() {
         *b ^= 121;
+    }
+}
+
+#[cfg(test)]
+mod playfair_tests {
+    use super::*;
+
+    fn to_hex(d: &[u8]) -> String { d.iter().map(|b| format!("{:02x}", b)).collect() }
+
+    #[test]
+    fn md5_zeros() {
+        let mut out = [0u8; 16];
+        modified_md5(&[0u8; 64], &[0u8; 16], &mut out);
+        assert_eq!(to_hex(&out), "971ccdf7813648a532d8682b39a60cf9");
+    }
+
+    #[test]
+    fn md5_all_0x41() {
+        let mut out = [0u8; 16];
+        modified_md5(&[0x41u8; 64], &[0x41u8; 16], &mut out);
+        assert_eq!(to_hex(&out), "695b0c3715d9d4ceb4bfee317c92de79");
+    }
+
+    #[test]
+    fn md5_real_block() {
+        let block: [u8; 64] = [
+            0xfa,0x9c,0xad,0x4d,0x4b,0x68,0x26,0x8c,0x7f,0xf3,0x88,0x99,0xde,0x92,0x2e,0x95,
+            0x1e,0xef,0xbf,0x61,0x64,0x43,0xab,0x48,0x6b,0x70,0x0a,0x3f,0x74,0x3d,0xf2,0x0d,
+            0xdd,0x71,0x85,0x35,0x46,0xf2,0xef,0x51,0x5d,0x63,0xe2,0x7a,0x37,0xc5,0x10,0xde,
+            0x09,0x71,0x85,0x35,0x46,0xf2,0xef,0x51,0x5d,0x63,0xe2,0x7a,0x37,0xc5,0x10,0xde,
+        ];
+        let key: [u8; 16] = [0xdc,0xdc,0xf3,0xb9,0x0b,0x74,0xdc,0xfb,0x86,0x7f,0xf7,0x60,0x16,0x72,0x90,0x51];
+        let mut out = [0u8; 16];
+        modified_md5(&block, &key, &mut out);
+        assert_eq!(to_hex(&out), "47da73bfb135d7aaf2934e953f6372ed");
+    }
+
+    #[test]
+    fn md5_incrementing() {
+        let mut block = [0u8; 64];
+        let mut key = [0u8; 16];
+        for i in 0..64 { block[i] = i as u8; }
+        for i in 0..16 { key[i] = (i + 64) as u8; }
+        let mut out = [0u8; 16];
+        modified_md5(&block, &key, &mut out);
+        assert_eq!(to_hex(&out), "086862637e36ec8ccfeed2d71d459bf0");
+    }
+
+    #[test]
+    fn sap_hash_real_block() {
+        let block: [u8; 64] = [
+            0xfa,0x9c,0xad,0x4d,0x4b,0x68,0x26,0x8c,0x7f,0xf3,0x88,0x99,0xde,0x92,0x2e,0x95,
+            0x1e,0xef,0xbf,0x61,0x64,0x43,0xab,0x48,0x6b,0x70,0x0a,0x3f,0x74,0x3d,0xf2,0x0d,
+            0xdd,0x71,0x85,0x35,0x46,0xf2,0xef,0x51,0x5d,0x63,0xe2,0x7a,0x37,0xc5,0x10,0xde,
+            0x09,0x71,0x85,0x35,0x46,0xf2,0xef,0x51,0x5d,0x63,0xe2,0x7a,0x37,0xc5,0x10,0xde,
+        ];
+        let mut key: [u8; 16] = [0xdc,0xdc,0xf3,0xb9,0x0b,0x74,0xdc,0xfb,0x86,0x7f,0xf7,0x60,0x16,0x72,0x90,0x51];
+        sap_hash(&block, &mut key);
+        assert_eq!(to_hex(&key), "b638c90d9db20392b91613624eb07ba4");
+    }
+
+    #[test]
+    fn playfair_full() {
+        let mut keymsg = [0x41u8; 164];
+        keymsg[0] = 0x46; keymsg[1] = 0x50; keymsg[2] = 0x4c; keymsg[3] = 0x59;
+        keymsg[4] = 0x03; keymsg[12] = 0x01;
+        let mut ekey = [0x42u8; 72];
+        ekey[0] = 0x46; ekey[1] = 0x50; ekey[2] = 0x4c; ekey[3] = 0x59;
+        let result = playfair_decrypt(&keymsg, &ekey);
+        assert_eq!(to_hex(&result), "51e601d65942f9bd660b57bf98800cdf");
+    }
+
+    #[test]
+    fn generate_session_key_full() {
+        let mut msg = [0x41u8; 164];
+        msg[0] = 0x46; msg[1] = 0x50; msg[2] = 0x4c; msg[3] = 0x59;
+        msg[4] = 0x03; msg[12] = 0x01;
+        let mut sk = [0u8; 16];
+        generate_session_key(&DEFAULT_SAP, &msg, &mut sk);
+        assert_eq!(to_hex(&sk), "4c8323c42e6b9b50fa961f0039cc90f3");
+    }
+
+    #[test]
+    fn decrypt_message_vector() {
+        let mut msg = [0x41u8; 164];
+        msg[0] = 0x46; msg[1] = 0x50; msg[2] = 0x4c; msg[3] = 0x59;
+        msg[4] = 0x03; msg[12] = 0x01;
+        let mut dec = [0u8; 128];
+        decrypt_message(&msg, &mut dec);
+        assert_eq!(to_hex(&dec[..16]), "efbf616443ab486b700a3f743df20ddd");
+        assert_eq!(to_hex(&dec[112..128]), "71853546f2ef515d63e27a37c510de09");
+    }
+
+    #[test]
+    fn cycle_zero_key_schedule() {
+        let mut block: [u8; 16] = [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16];
+        let ks = [[0u32; 4]; 11];
+        cycle(&mut block, &ks);
+        assert_eq!(to_hex(&block), "d8dfd3c32f1de7b4d16e65e92e6d3f27");
+    }
+
+    #[test]
+    fn garble_vector() {
+        use crate::crypto::fairplay_garble::garble;
+        let mut b0 = [0u8; 20];
+        let mut b1 = [0u8; 210];
+        let mut b2 = [0u8; 35];
+        let mut b3 = [0u8; 132];
+        let b4 = [0u8; 21];
+        for i in 0..20 { b0[i] = i as u8; }
+        for i in 0..210 { b1[i] = (i & 0xff) as u8; }
+        for i in 0..35 { b2[i] = (i + 100) as u8; }
+        for i in 0..132 { b3[i] = (i + 50) as u8; }
+        let mut b4m = [0u8; 21];
+        for i in 0..21 { b4m[i] = (i + 200) as u8; }
+        garble(&mut b0, &mut b1, &mut b2, &mut b3, &b4m);
+        assert_eq!(to_hex(&b0), "000102fb04059ef508090c0b513e73550073129e");
+        assert_eq!(to_hex(&b1[..16]), "0001c203d231060708090a0b0c0d0e6b");
+        assert_eq!(to_hex(&b2), "643da6672b996a6b536d6e6fbdbf4273e2752e777879077b7cb97e7f08a22d83849eb8");
+        assert_eq!(to_hex(&b3[..16]), "d8333435113738394c3b3c3d823f4041");
     }
 }

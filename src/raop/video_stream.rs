@@ -6,7 +6,7 @@
 use bytes::BytesMut;
 use tokio::io::AsyncReadExt;
 use tokio::net::{TcpListener, TcpStream};
-use tracing::{debug, info, warn};
+use tracing::{trace, debug, info, warn};
 
 use crate::crypto::video_cipher::VideoCipher;
 use crate::raop::video::{PacketKind, VideoPacket, VideoSession};
@@ -79,7 +79,8 @@ async fn process(
             cipher.decrypt(&mut payload);
         }
 
-        debug!(?kind, timestamp, payload_len, "Video packet");
-        session.on_video(VideoPacket { kind, timestamp, payload });
+        trace!(?kind, timestamp, payload_len, "Video packet");
+        session.on_video(VideoPacket { kind, timestamp, payload: payload.freeze() });
     }
+    session.on_video_end();
 }

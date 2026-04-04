@@ -37,6 +37,9 @@ pub(crate) struct RaopConnection {
     pub pair_verify: Option<PairVerifyServer>,
     #[cfg(feature = "ap2")]
     pub ap2_shared_secret: Option<Vec<u8>>,
+    /// X25519 shared secret from pair-verify (32 bytes). Used for video key derivation.
+    #[cfg(feature = "ap2")]
+    pub pair_verify_secret: Option<[u8; 32]>,
     #[cfg(feature = "ap2")]
     pub is_ap2: bool,
     #[cfg(feature = "ap2")]
@@ -58,6 +61,11 @@ pub(crate) struct RaopConnection {
     pub ekey: Option<[u8; 16]>,
     #[cfg(feature = "video")]
     pub eiv: Option<[u8; 16]>,
+    /// Shared video encryption keys (set by audio connection, read by video connection).
+    #[cfg(feature = "video")]
+    pub shared_video_ekey: Arc<std::sync::RwLock<Option<[u8; 16]>>>,
+    #[cfg(feature = "video")]
+    pub shared_video_eiv: Arc<std::sync::RwLock<Option<[u8; 16]>>>,
 }
 
 /// Returns the connection's local IP address.
@@ -461,9 +469,13 @@ pub(crate) fn handle_pair_verify_ap2(
 
     let tlv = match crate::crypto::tlv::TlvValues::decode(data) {
         Ok(t) if t.get(6).is_some() => t,
-        _ => return handle_pair_verify(conn, request, response),
+        _ => {
+            tracing::debug!(data_len = data.len(), "pair-verify: no TLV state, falling back to legacy");
+            return handle_pair_verify(conn, request, response);
+        }
     };
     let state = *tlv.get(6)?.first()?;
+    tracing::debug!(state, data_len = data.len(), "pair-verify TLV state");
 
     match state {
         1 => {
@@ -471,6 +483,9 @@ pub(crate) fn handle_pair_verify_ap2(
             let mut pv = PairVerifyServer::new(&conn.device_id);
             match pv.process_m1_build_m2(data) {
                 Ok(m2) => {
+                    tracing::debug!(m2_len = m2.len(), "pair-verify M2 built");
+                    // Store ECDH shared secret immediately (needed for video even if M3 never arrives)
+                    conn.pair_verify_secret = Some(*pv.ecdh_shared_secret());
                     conn.pair_verify = Some(pv);
                     Some(m2)
                 }
@@ -485,6 +500,7 @@ pub(crate) fn handle_pair_verify_ap2(
             let store = conn.pairing_store.clone();
             match pv.process_m3_build_m4(data, Some(&|id| store.get(id))) {
                 Ok(m4) => {
+                    conn.pair_verify_secret = pv.shared_secret().copied();
                     conn.ap2_shared_secret = pv.shared_secret().map(|s| s.to_vec());
                     conn.is_ap2 = true;
                     tracing::info!("AP2 pair-verify complete, encrypted RTSP active");
@@ -526,6 +542,19 @@ pub(crate) fn handle_get_info(
     dict.insert("statusFlags".into(), plist::Value::Integer((mdns::AP2_STATUS_FLAGS as i64).into()));
     dict.insert("pk".into(), plist::Value::String(pk_hex));
 
+    // Video: advertise a display so the iPhone offers screen mirroring
+    #[cfg(feature = "video")]
+    if conn.video_handler.is_some() {
+        let display = plist::Dictionary::from_iter([
+            ("widthPixels".to_string(), plist::Value::Integer(1920.into())),
+            ("heightPixels".to_string(), plist::Value::Integer(1080.into())),
+            ("uuid".to_string(), plist::Value::String("shairplay_display".into())),
+            ("maxFPS".to_string(), plist::Value::Integer(60.into())),
+            ("features".to_string(), plist::Value::Integer(2.into())),
+        ]);
+        dict.insert("displays".into(), plist::Value::Array(vec![plist::Value::Dictionary(display)]));
+    }
+
     let mut buf = Vec::new();
     plist::to_writer_binary(&mut buf, &dict).ok()?;
 
@@ -566,7 +595,9 @@ pub(crate) fn handle_setup_2(
 
                 let shk = stream0.get("shk").and_then(|v| v.as_data()).unwrap_or(&[]);
                 if shk.len() != 32 {
-                    tracing::warn!(len = shk.len(), "Invalid shk length for type 96");
+                    // Screen mirroring audio (type 96 without shk) uses a different
+                    // encryption scheme — not yet implemented. Skip gracefully.
+                    tracing::warn!("Type 96 without shk — screen mirroring audio not yet supported");
                     return None;
                 }
                 let mut shk_arr = [0u8; 32];
@@ -673,14 +704,81 @@ pub(crate) fn handle_setup_2(
                     .unwrap_or(0) as u64;
                 tracing::info!(stream_type = 110, stream_connection_id, "AP2 video stream setup");
 
-                // Video uses AES-CTR with keys from the initial SETUP (ekey/eiv)
-                let ekey = match conn.ekey {
-                    Some(k) => k,
-                    None => { tracing::warn!("Video stream requires ekey"); return None; }
-                };
-                let eiv = match conn.eiv {
-                    Some(iv) => iv,
-                    None => { tracing::warn!("Video stream requires eiv"); return None; }
+                // Video decryption key derivation (from SteeBono/airplayreceiver):
+                // Step 1: eaesKey = SHA-512(fairplay_decrypted_key, ecdh_shared)[0..16]
+                // Step 2: streamKey = SHA-512("AirPlayStreamKey{id}", eaesKey)[0..16]
+                // Step 3: streamIV = SHA-512("AirPlayStreamIV{id}", eaesKey)[0..16]
+                //
+                // fairplay_decrypted_key comes from ekey (audio SETUP) or shared state.
+                // ecdh_shared comes from pair-verify M1 (X25519 key agreement).
+                let (ekey, eiv) = if let Some(aeskey_audio) =
+                    conn.ekey.or_else(|| conn.shared_video_ekey.read().ok()?.as_ref().copied())
+                {
+                    // Stage 3: derive stream key/IV from aeskey_audio + streamConnectionID
+                    use sha2::{Sha512, Digest};
+                    let mut h1 = Sha512::new();
+                    h1.update(format!("AirPlayStreamKey{stream_connection_id}").as_bytes());
+                    h1.update(aeskey_audio);
+                    let key_hash = h1.finalize();
+                    let mut key = [0u8; 16];
+                    key.copy_from_slice(&key_hash[..16]);
+
+                    let mut h2 = Sha512::new();
+                    h2.update(format!("AirPlayStreamIV{stream_connection_id}").as_bytes());
+                    h2.update(aeskey_audio);
+                    let iv_hash = h2.finalize();
+                    let mut iv = [0u8; 16];
+                    iv.copy_from_slice(&iv_hash[..16]);
+
+                    tracing::debug!("Video key: Stage 3 derivation from aeskey_audio");
+                    (key, iv)
+                } else if let Some(ecdh) = conn.pair_verify_secret.as_ref() {
+                    use sha2::{Sha512, Digest};
+
+                    // Get FairPlay decrypted key from shared state or this connection
+                    let fp_key = conn.shared_video_ekey.read().ok()
+                        .and_then(|k| *k);
+
+                    if let Some(fp_key) = fp_key {
+                        // Full 3-step derivation
+                        let mut h0 = Sha512::new();
+                        h0.update(fp_key);
+                        h0.update(ecdh);
+                        let eaes = h0.finalize();
+                        let eaes_key = &eaes[..16];
+
+                        let mut h1 = Sha512::new();
+                        h1.update(format!("AirPlayStreamKey{stream_connection_id}").as_bytes());
+                        h1.update(eaes_key);
+                        let key_hash = h1.finalize();
+                        let mut key = [0u8; 16];
+                        key.copy_from_slice(&key_hash[..16]);
+
+                        let mut h2 = Sha512::new();
+                        h2.update(format!("AirPlayStreamIV{stream_connection_id}").as_bytes());
+                        h2.update(eaes_key);
+                        let iv_hash = h2.finalize();
+                        let mut iv = [0u8; 16];
+                        iv.copy_from_slice(&iv_hash[..16]);
+
+                        tracing::debug!(
+                            derived_key = %hex::encode(key),
+                            derived_iv = %hex::encode(iv),
+                            "Video key: 3-step derivation (FairPlay + ECDH)"
+                        );
+                        (key, iv)
+                    } else {
+                        // iOS 18+ with HomeKit pairing does not send ekey.
+                        // The video key derivation for this case is unsolved.
+                        // See VIDEO-RESEARCH.md for details.
+                        tracing::warn!("Video: no ekey available — iOS 18 HomeKit video decryption unsupported");
+                        tracing::warn!("Video stream will connect but frames cannot be decrypted");
+                        // Use zeroed key — stream will connect but produce garbage
+                        ([0u8; 16], [0u8; 16])
+                    }
+                } else {
+                    tracing::warn!("Video stream: no encryption keys available");
+                    return None;
                 };
 
                 let cipher = crate::crypto::video_cipher::VideoCipher::new(&ekey, &eiv);
@@ -706,6 +804,8 @@ pub(crate) fn handle_setup_2(
                 stream_resp.insert("dataPort".into(), plist::Value::Integer(video_port.into()));
             }
             _ => {
+                // Type 120 = Apple Music video (animated album art / music videos).
+                // Not yet implemented.
                 tracing::warn!(stream_type, "Unknown AP2 stream type");
             }
         }
@@ -724,14 +824,37 @@ pub(crate) fn handle_setup_2(
             .and_then(|v| v.as_string())
             .unwrap_or("None");
 
-        // Capture FairPlay encryption keys for video
+        // Capture FairPlay encryption keys for video.
+        // The audio connection provides ekey (72 bytes, FairPlay-encrypted) + eiv (16 bytes).
+        // The video connection (separate RTSP session) reads them from shared state.
         #[cfg(feature = "video")]
         {
             if let Some(ekey_data) = dict.get("ekey").and_then(|v| v.as_data()) {
                 if ekey_data.len() == 72 {
                     if let Ok(input) = <[u8; 72]>::try_from(ekey_data) {
-                        if let Ok(key) = conn.fairplay.decrypt(&input) {
-                            conn.ekey = Some(key);
+                        if let Ok(fp_key) = conn.fairplay.decrypt(&input) {
+                            // SHA-512 two-step: hash FairPlay key with ECDH shared secret
+                            // Stage 2: hash with ECDH only if AP2 pairing was used.
+                            // With UxPlay-style features (bit 27 off), no pairing occurs
+                            // and the raw FairPlay key is used directly.
+                            let derived = if let Some(ref secret) = conn.ap2_shared_secret {
+                                use sha2::{Sha512, Digest};
+                                let mut hasher = Sha512::new();
+                                hasher.update(fp_key);
+                                hasher.update(secret);
+                                let hash = hasher.finalize();
+                                let mut key = [0u8; 16];
+                                key.copy_from_slice(&hash[..16]);
+                                key
+                            } else {
+                                fp_key
+                            };
+                            conn.ekey = Some(derived);
+                            // Store in shared state for the video connection
+                            if let Ok(mut shared) = conn.shared_video_ekey.write() {
+                                *shared = Some(derived);
+                                tracing::debug!("Video ekey stored in shared state");
+                            }
                         }
                     }
                 }
@@ -739,6 +862,10 @@ pub(crate) fn handle_setup_2(
             if let Some(eiv_data) = dict.get("eiv").and_then(|v| v.as_data()) {
                 if let Ok(iv) = <[u8; 16]>::try_from(eiv_data) {
                     conn.eiv = Some(iv);
+                    if let Ok(mut shared) = conn.shared_video_eiv.write() {
+                        *shared = Some(iv);
+                        tracing::debug!("Video eiv stored in shared state");
+                    }
                 }
             }
         }

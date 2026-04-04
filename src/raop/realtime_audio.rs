@@ -1,7 +1,7 @@
 //! Realtime ALAC audio receiver (stream type 96).
 //!
 //! Receives UDP packets with RTP headers, decrypts with ChaCha20-Poly1305,
-//! decodes ALAC, resamples/mixes down, and delivers F32LE PCM immediately.
+//! decodes ALAC, resamples/mixes down, and delivers f32 PCM immediately.
 
 use std::sync::Arc;
 use tokio::net::UdpSocket;
@@ -85,7 +85,7 @@ pub async fn run(
         let aad = &packet[4..12];
         let ciphertext = &packet[RTP_HEADER_LEN..pkt_len - NONCE_TRAIL_LEN];
 
-        let plaintext = match cipher.decrypt(
+        let alac_data = match cipher.decrypt(
             Nonce::from_slice(&nonce),
             Payload { msg: ciphertext, aad },
         ) {
@@ -94,7 +94,7 @@ pub async fn run(
         };
 
         // Decode ALAC → f32 PCM
-        let Some(mut samples) = decoder.as_mut().and_then(|d| d.decode_frame_f32(&plaintext)) else {
+        let Some(mut samples) = decoder.as_mut().and_then(|d| d.decode_frame_f32(&alac_data)) else {
             continue;
         };
 
@@ -112,8 +112,7 @@ pub async fn run(
 
         // Deliver immediately (realtime = no playout buffer)
         if let Some(ref mut sess) = session {
-            let bytes: Vec<u8> = samples.iter().flat_map(|s| s.to_le_bytes()).collect();
-            sess.audio_process(&bytes);
+            sess.audio_process(&samples);
         }
     }
 

@@ -241,17 +241,15 @@ impl RaopRtp {
                                 if len >= 12 {
                                     let mut buf = buffer.lock().await;
                                     buf.queue(&data_packet[..len], true);
-                                    while let Some(audio) = buf.dequeue(no_resend) {
+                                    while let Some(samples) = buf.dequeue(no_resend) {
                                         {
                                             #[cfg(feature = "resample")]
                                             if let Some(ref mut rs) = resampler {
-                                                let samples: Vec<f32> = audio.chunks_exact(4).map(|c| f32::from_le_bytes([c[0],c[1],c[2],c[3]])).collect();
-                                                let resampled = rs.process(&samples);
-                                                let bytes: Vec<u8> = resampled.iter().flat_map(|s| s.to_le_bytes()).collect();
-                                                session.audio_process(&bytes);
+                                                let resampled = rs.process(samples);
+                                                session.audio_process(&resampled);
                                             }
                                             #[cfg(not(feature = "resample"))]
-                                            session.audio_process(audio);
+                                            session.audio_process(samples);
                                         }
                                     }
                                 }
@@ -339,17 +337,15 @@ impl RaopRtp {
                                 if packet_buf.len() < 4 + rtp_len { break; }
                                 let mut buf = buffer.lock().await;
                                 buf.queue(&packet_buf[4..4 + rtp_len], false);
-                                if let Some(audio) = buf.dequeue(true) {
+                                if let Some(samples) = buf.dequeue(true) {
                                     {
                                             #[cfg(feature = "resample")]
                                             if let Some(ref mut rs) = resampler {
-                                                let samples: Vec<f32> = audio.chunks_exact(4).map(|c| f32::from_le_bytes([c[0],c[1],c[2],c[3]])).collect();
-                                                let resampled = rs.process(&samples);
-                                                let bytes: Vec<u8> = resampled.iter().flat_map(|s| s.to_le_bytes()).collect();
-                                                session.audio_process(&bytes);
+                                                let resampled = rs.process(samples);
+                                                session.audio_process(&resampled);
                                             }
                                             #[cfg(not(feature = "resample"))]
-                                            session.audio_process(audio);
+                                            session.audio_process(samples);
                                         }
                                 }
                                 drop(buf);

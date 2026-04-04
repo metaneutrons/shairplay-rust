@@ -13,7 +13,7 @@ struct TestHandler {
 }
 
 struct TestSession {
-    samples: Arc<Mutex<Vec<Vec<u8>>>>,
+    samples: Arc<Mutex<Vec<Vec<f32>>>>,
 }
 
 impl AudioHandler for TestHandler {
@@ -24,8 +24,8 @@ impl AudioHandler for TestHandler {
 }
 
 impl AudioSession for TestSession {
-    fn audio_process(&mut self, buffer: &[u8]) {
-        self.samples.lock().unwrap().push(buffer.to_vec());
+    fn audio_process(&mut self, samples: &[f32]) {
+        self.samples.lock().unwrap().push(samples.to_vec());
     }
 }
 

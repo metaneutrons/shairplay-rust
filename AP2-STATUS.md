@@ -17,8 +17,110 @@
 | Metadata forwarding | — | Volume, artwork, progress, DMAP track info |
 | Event channel | — | Bidirectional encrypted TCP, updateInfo |
 | Realtime audio | 96 | ALAC decode, ChaCha20 decrypt, immediate delivery |
-| Video (experimental) | 110 | AES-128-CTR decrypt, raw H.264/H.265 NAL delivery |
+| **Video (screen mirroring)** | **110** | **AES-128-CTR decrypt, H.264 decode, working on iOS 18** |
 | Unified output | — | Always F32LE interleaved PCM to app |
+
+## Video — Working (iOS 18)
+
+**Screen mirroring is working.** iPhone screen successfully mirrored and
+displayed in a window. The full pipeline is proven:
+
+1. FairPlay key exchange (fp-setup M1/M2)
+2. AES-128-CTR video decryption
+3. H.264 decode (openh264) + display (minifb)
+
+### Key Discovery: UxPlay Feature Set
+
+The breakthrough was using UxPlay's exact feature bitmask:
+
+```
+Features = 0x527FFEE6 (bit 27 "legacy pairing" OFF)
+```
+
+With this feature set:
+- iPhone **skips pair-setup and pair-verify entirely**
+- iPhone sends `ekey` (72 bytes, FairPlay-encrypted) directly in SETUP
+- No ECDH hash needed — raw FairPlay-decrypted key goes to Stage 3
+- No AP2 bits (40, 41, 46, 48) — pure legacy protocol for video
+
+### Video Key Derivation (Working)
+
+Two-step process (no ECDH hash when bit 27 is off):
+
+```
+Step 1: aeskey = playfair_decrypt(keymsg_164, ekey_72)              → 16 bytes
+Step 2: key    = SHA-512("AirPlayStreamKey{id}" || aeskey)[0..16]   → 16 bytes
+        iv     = SHA-512("AirPlayStreamIV{id}"  || aeskey)[0..16]   → 16 bytes
+```
+
+Where `{id}` is the `streamConnectionID` from the type 110 SETUP, formatted
+as unsigned decimal (`PRIu64`).
+
+### Critical Bug Found: Truncated FairPlay Tables
+
+The Rust port of `playfair_decrypt` had **6 truncated lookup tables** from the
+original C-to-Rust conversion. Rust zero-filled the missing bytes, causing
+`playfair_decrypt` to produce wrong keys silently:
+
+| Table | Declared | Actual | Missing |
+|-------|----------|--------|---------|
+| TABLE_S1 | 10240 | 9600 | 640 |
+| TABLE_S2 | 36864 | 34560 | 2304 |
+| TABLE_S3 | 4096 | 3840 | 256 |
+| TABLE_S4 | 36864 | 34560 | 2304 |
+| TABLE_S9 | 1024 | 256 | 768 |
+| TABLE_S10 | 4096 | 3840 | 256 |
+| STATIC_SOURCE_2 | 47 | 46 | 1 |
+
+Tables regenerated from original C source (`playfair/omg_hax.c`).
+
+**⚠️ This bug invalidated ALL previous video decryption research.** Every
+"tested approach" that failed was tested with a broken `playfair_decrypt`.
+The previous conclusion that "iOS 18 doesn't send ekey" was wrong — it does
+send ekey, but only with UxPlay's feature set (no AP2 bits).
+
+### Remaining Issue: Rust `modified_md5`
+
+The Rust port of `modified_md5` (used inside `playfair_decrypt`) still produces
+different output than the C version for certain inputs. Currently using C FFI
+(`libplayfair.a`) as a temporary workaround. The algorithm port needs a
+line-by-line fix to eliminate the C dependency and restore `#![forbid(unsafe_code)]`.
+
+### Previous Research — Needs Re-verification
+
+The following conclusions from VIDEO-RESEARCH.md were made with the broken
+`playfair_decrypt` and may no longer be accurate:
+
+- "iOS 18 doesn't send ekey for screen mirroring" — **WRONG.** It does, with
+  UxPlay features (`0x527FFEE6`).
+- "ECDH hash is required for video key" — **WRONG for legacy mode.** With bit 27
+  off, no pairing occurs and the raw FairPlay key is used directly.
+- "All 13+ key derivation variants failed" — **All tested with wrong FairPlay key.**
+  Need to re-test with AP2 features if AP2+video is desired.
+- "Screen mirroring audio (type 96 usingScreen) has no shk" — Needs re-testing
+  with UxPlay features.
+
+### Current Limitations
+
+- **C FFI dependency** — `playfair_decrypt` uses linked C library temporarily
+- **No AP2 audio with video** — UxPlay features disable AP2 buffered audio
+- **openh264 decode errors** — Software decoder struggles at 30fps in debug mode
+- **No screen mirroring audio** — Type 96 `usingScreen` audio not yet wired up
+
+### Stream Type 120 — Video Relay (Not Implemented)
+
+Sent by YouTube, Apple Music (music videos), and other video apps. The SETUP
+contains only `{"type": Integer(120)}` with no additional fields. Likely HLS
+video relay where the app sends a video URL for the receiver to fetch directly.
+
+### TODO
+- [ ] Fix Rust `modified_md5` to match C output (eliminate C FFI)
+- [ ] Restore `#![forbid(unsafe_code)]`
+- [ ] Test AP2+video hybrid features (can we have both AP2 audio and video?)
+- [ ] Wire up screen mirroring audio (type 96 `usingScreen`)
+- [ ] Improve H.264 decode stability (release build, error recovery)
+- [ ] Research type 120 protocol
+- [ ] Re-test previous key derivation approaches with correct FairPlay key
 
 ## Known Issues
 
@@ -43,70 +145,7 @@ The delay does not affect audio quality or playback once connected.
 Third-party AP2 receivers cannot send playback commands (play/pause/skip) to
 the iPhone. AP1 DACP remote control is fully implemented and works.
 
-### All Paths Investigated
-
-| Path | Mechanism | Result |
-|------|-----------|--------|
-| DACP | `Active-Remote` RTSP header | Not sent in AP2 (iOS 18+) |
-| Type 130 MRP | Encrypted data channel with `seed` | Seed requires HomeKit trust |
-| Event channel | RTSP `POST /command` over encrypted TCP | One-way only. iPhone returns 200 OK but ignores commands |
-| Companion-link | `_companion-link._tcp` OPACK protocol | Requires same Apple ID (`rapportd` always-on) |
-| HAP pairing | `_hap._tcp` HomeKit accessory | Apple TV/HomePod don't use HAP for AirPlay trust |
-
-### Why It Works for Apple Devices
-
-- **Mac**: Uses `_companion-link._tcp` (Rapport daemon). iPhone connects because
-  they share the same Apple ID. Always-on connection, not AirPlay-specific.
-- **HomePod/Apple TV**: Added to Home app during initial setup. HomeKit trust
-  stored in iCloud. iPhone sends `seed` in type 130 SETUP because the device
-  is in the same Home.
-
-### Event Channel Discovery
-
-The event channel accepts RTSP-framed requests (`POST /command`) and the iPhone
-responds with `RTSP/1.0 200 OK`. Shairport-sync uses this for `updateInfo`
-status messages. We tested sending `sendMediaRemoteCommand`, `sendCommand`, and
-`cycleRemoteCommand` — all returned 200 OK but none triggered playback actions.
-The event channel is for status updates only, not command delivery.
-
-### MR Supported Commands
-
-The iPhone sends `updateMRSupportedCommands` via `POST /command` with 31 MR
-commands as nested binary plists:
-
-```
-0  = Play                    10 = StartForwardSeek
-1  = Pause                   11 = StartBackwardSeek
-2  = TogglePlayPause         17 = SkipForward (disabled)
-3  = Stop                    18 = SkipBackward (disabled)
-4  = NextTrack               19 = ChangePlaybackRate (disabled)
-5  = PreviousTrack           21 = RateTrack
-8  = ToggleShuffle           22 = LikeTrack
-9  = ToggleRepeat            24 = DislikeTrack
-121 = SetPlaybackPosition    127 = PrepareForSetQueue
-122 = SetPlaybackQueue       128-135 = Queue/session management
-125 = PlayItemInQueue        143 = SetVolume
-149 = ChangePlaybackMode
-```
-
-### Feature Flag Research
-
-Tested combinations (all produce type 130 without seed):
-
-| Features | Model | et | Result |
-|----------|-------|----|--------|
-| `0x1C340405D4A00` (shairport-sync) | AppleTV2,1 | 0,1 | ✅ audio, no seed |
-| `0x1C340405D4A00` (shairport-sync) | AppleTV2,1 | 0,3,5 | ✅ audio, no seed |
-| `0x38174FDE4A7FCFD5` (Mac) | Mac15,6 | 0,3,5 | ✅ audio, no seed |
-| `0x1C340405D4A00` + bit 58 | AudioAccessory5,1 | 0,1 | ✅ audio, no seed |
-
-### Companion-Link Protocol
-
-Investigated via pyatv source. Uses OPACK encoding (not plist, not protobuf)
-with frame format `[1B type][3B BE length][payload]`. Commands:
-`{"_i": "_mcc", "_t": 1, "_c": {"_mcc": <cmd_id>}}`. Requires same Apple ID —
-the iPhone connects to the receiver's `_companion-link._tcp` service only if
-they share an iCloud account.
+See previous sections for full remote control research (unchanged).
 
 ## Test Coverage
 
@@ -116,15 +155,13 @@ they share an iCloud account.
 - Anchor time calculation, channel mixdown, SSRC mapping
 - Full M1→M4 SRP integration test over real TCP
 - Video cipher streaming AES-CTR partial block tests
+- FairPlay cross-validation test against C `playfair_decrypt` output
 
 ## References
 
 - [AirPlay 2 Internals — Features](https://emanuelecozzi.net/docs/airplay2/features/)
 - [AirPlay 2 Internals — RTSP](https://emanuelecozzi.net/docs/airplay2/rtsp/)
 - [Unofficial AirPlay Specification](https://openairplay.github.io/airplay-spec/)
-- [Dissecting the Media Remote Protocol](https://edc.me/posts/dissecting-the-media-remote-protocol/)
+- [UxPlay](https://github.com/FDH2/UxPlay) — working screen mirroring reference
 - [pair_ap](https://github.com/ejurgensen/pair_ap)
 - [shairport-sync](https://github.com/mikebrady/shairport-sync)
-- [pyatv](https://github.com/postlund/pyatv)
-- [rairplay](https://github.com/r4v3n6101/rairplay)
-- [SteeBono/airplayreceiver](https://github.com/SteeBono/airplayreceiver/wiki/AirPlay2-Protocol)

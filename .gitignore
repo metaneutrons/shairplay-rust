@@ -4,3 +4,4 @@
 /fuzz/artifacts
 Cargo.lock
 .vscode/
+persistence.json

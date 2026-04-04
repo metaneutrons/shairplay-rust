@@ -96,7 +96,10 @@ pub(crate) fn dispatch(conn: &mut RaopConnection, request: &HttpRequest) -> Http
     } else if method == "SETUP" {
         #[cfg(feature = "ap2")]
         {
-            if conn.is_ap2 {
+            // Route to AP2 handler if is_ap2 OR if body is a binary plist
+            // (legacy pairing with plist-based SETUP, e.g. screen mirroring)
+            let is_plist = request.data().map(|d| d.starts_with(b"bplist")).unwrap_or(false);
+            if conn.is_ap2 || is_plist {
                 Some(handlers::handle_setup_2 as Handler)
             } else {
                 Some(handlers::handle_setup as Handler)

@@ -4,7 +4,7 @@
 //! and delivers raw NAL units to the application via [`VideoSession`].
 //! The application is responsible for decoding and rendering.
 
-use bytes::BytesMut;
+use bytes::Bytes;
 
 /// Classification of a video packet.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -29,7 +29,7 @@ pub struct VideoPacket {
     /// Presentation timestamp (NTP-based, in stream time units).
     pub timestamp: u64,
     /// Packet payload (raw NAL units for Payload, config bytes for AvcC/HvcC).
-    pub payload: BytesMut,
+    pub payload: Bytes,
 }
 
 /// Factory for creating video sessions. Implement this to receive video data.
@@ -44,4 +44,7 @@ pub trait VideoHandler: Send + Sync + 'static {
 pub trait VideoSession: Send + Sync {
     /// Called for each decrypted video packet.
     fn on_video(&mut self, packet: VideoPacket);
+
+    /// Called when the video stream ends (client disconnected or error).
+    fn on_video_end(&mut self) {}
 }
