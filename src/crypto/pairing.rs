@@ -41,7 +41,6 @@ impl Pairing {
         PairingSession {
             status: Status::Initial,
             ed_signing_key: self.signing_key.clone(),
-            ed_ours: self.public_key(),
             ed_theirs: [0u8; 32],
             ecdh_ours: [0u8; 32],
             ecdh_theirs: [0u8; 32],
@@ -61,8 +60,6 @@ enum Status {
 pub struct PairingSession {
     status: Status,
     ed_signing_key: SigningKey,
-    #[allow(dead_code)]
-    ed_ours: [u8; 32],
     ed_theirs: [u8; 32],
     ecdh_ours: [u8; 32],
     ecdh_theirs: [u8; 32],
