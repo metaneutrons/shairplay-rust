@@ -1,9 +1,32 @@
+//! RTSP method dispatch — routes incoming requests to the appropriate handler.
+//!
+//! This is the central routing function for all RTSP traffic on a connection.
+//! Each request goes through:
+//!
+//! 1. **Authentication** — HTTP Digest auth check (if password is set)
+//! 2. **Apple-Challenge** — RSA signature response (device identity proof)
+//! 3. **Method routing** — dispatched to the appropriate handler in [`handlers`](super::handlers)
+//!
+//! AP1 and AP2 share the same dispatch function. AP2-specific methods
+//! (pair-setup, pair-verify, GET /info, SETRATEANCHORTIME, etc.) are
+//! gated behind `#[cfg(feature = "ap2")]`.
 use crate::proto::digest;
 use crate::proto::http::{HttpRequest, HttpResponse};
 use crate::raop::handlers::{self, RaopConnection};
 
-/// Route an RTSP request to the appropriate handler.
-/// Equivalent to conn_request dispatch logic in raop.c.
+/// Route an RTSP request to the appropriate handler and build the response.
+///
+/// # Authentication
+///
+/// If the server has a password set, all methods except OPTIONS require
+/// HTTP Digest authentication. Failed auth returns 401 with a WWW-Authenticate
+/// challenge header.
+///
+/// # Apple-Challenge
+///
+/// If the request contains an `Apple-Challenge` header, the response includes
+/// an `Apple-Response` header with an RSA signature proving device identity.
+/// This is required for the iPhone to trust the receiver.
 pub(crate) fn dispatch(conn: &mut RaopConnection, request: &HttpRequest) -> HttpResponse {
     let method = request.method().unwrap_or("");
     let url = request.url().unwrap_or("");

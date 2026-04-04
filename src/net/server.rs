@@ -1,3 +1,5 @@
+//! Async TCP server with TLS-like encrypt/decrypt hooks for RTSP connections.
+
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::Arc;
 
@@ -45,6 +47,7 @@ impl Default for BindConfig {
 }
 
 impl BindConfig {
+    /// Create a new default bind configuration.
     pub fn new() -> Self { Self::default() }
 
     /// Set specific addresses to bind to. Replaces any previous addresses.
@@ -68,11 +71,13 @@ impl BindConfig {
 
 /// Callback trait for HTTP/RTSP connection lifecycle. Equivalent to httpd_callbacks_t.
 pub trait HttpdCallbacks: Send + Sync + 'static {
+    /// Called when a new TCP connection is accepted. Return a handler or None to reject.
     fn conn_init(&self, local: SocketAddr, remote: SocketAddr) -> Option<Box<dyn ConnectionHandler>>;
 }
 
 /// Per-connection request handler. Equivalent to conn_request + conn_destroy.
 pub trait ConnectionHandler: Send {
+    /// Handle an HTTP/RTSP request and return the response.
     fn conn_request(&mut self, request: &HttpRequest) -> HttpResponse;
 
     /// Decrypt incoming raw bytes. Returns decrypted data and bytes consumed.
@@ -104,6 +109,7 @@ pub struct HttpServer {
 }
 
 impl HttpServer {
+    /// Create a new HTTP server with the given callbacks and connection limit.
     pub fn new(callbacks: Arc<dyn HttpdCallbacks>, max_connections: usize) -> Self {
         Self {
             callbacks,
@@ -115,10 +121,12 @@ impl HttpServer {
         }
     }
 
+    /// Set the bind configuration (addresses, port, auto-sensing).
     pub fn set_bind_config(&mut self, config: BindConfig) {
         self.bind_config = config;
     }
 
+    /// Start listening. Returns the actual port (may differ if auto-sensing).
     pub async fn start(&mut self, port: u16) -> Result<u16, NetworkError> {
         if self.running {
             return Ok(self.port);
@@ -165,14 +173,17 @@ impl HttpServer {
         Ok(actual_port)
     }
 
+    /// Whether the server is currently accepting connections.
     pub fn is_running(&self) -> bool {
         self.running
     }
 
+    /// The actual port the server is listening on (after auto-sensing).
     pub fn port(&self) -> u16 {
         self.port
     }
 
+    /// Stop the server and close all listeners.
     pub async fn stop(&mut self) {
         if let Some(tx) = self.shutdown_tx.take() {
             let _ = tx.send(true);
@@ -180,7 +191,6 @@ impl HttpServer {
         self.running = false;
     }
 }
-
 
 /// Try to bind a TCP listener, optionally auto-incrementing the port.
 async fn bind_listener(addr: IpAddr, start_port: u16, auto_port: bool) -> Result<TcpListener, NetworkError> {
@@ -195,6 +205,7 @@ async fn bind_listener(addr: IpAddr, start_port: u16, auto_port: bool) -> Result
         }
     }
 }
+/// Spawn a tokio task that accepts connections on the given listener.
 fn spawn_accept_loop(
     listener: TcpListener,
     callbacks: Arc<dyn HttpdCallbacks>,
@@ -228,19 +239,9 @@ fn spawn_accept_loop(
                         let mut stream = stream;
                         let mut buf = [0u8; 4096];
                         let mut request = HttpRequest::new();
-                        let mut pending = Vec::new();
                         let mut raw_buf = Vec::new(); // accumulates encrypted data
 
                         loop {
-                            // Try to parse pending decrypted data
-                            if !pending.is_empty() {
-                                if request.add_data(&pending).is_err() {
-                                    tracing::warn!("HTTP parse error on pending data");
-                                    break;
-                                }
-                                pending.clear();
-                            }
-
                             // Handle complete requests
                             while request.is_complete() {
                                 let method = request.method().unwrap_or("?").to_string();
@@ -280,6 +281,10 @@ fn spawn_accept_loop(
                             // Decrypt if encrypted, otherwise feed directly
                             if handler.is_encrypted() {
                                 raw_buf.extend_from_slice(&buf[..n]);
+                                if raw_buf.len() > 1024 * 1024 {
+                                    tracing::warn!("Encrypted buffer exceeded 1 MB, dropping connection");
+                                    break;
+                                }
                                 tracing::trace!(encrypted = true, raw_len = raw_buf.len(), new_bytes = n, "Read");
                                 match handler.decrypt_incoming(&raw_buf) {
                                     Some((plain, consumed)) => {
@@ -308,8 +313,6 @@ fn spawn_accept_loop(
                                     break;
                                 }
                             }
-                            // Loop back to check is_complete() before reading more
-                            continue;
                         }
                         tracing::info!(%remote, "Connection closed");
                     });

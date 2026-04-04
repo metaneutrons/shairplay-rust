@@ -1,3 +1,5 @@
+//! HTTP Digest authentication (RFC 2617) for optional password protection.
+
 use md5::{Digest, Md5};
 use rand::Rng;
 

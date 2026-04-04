@@ -1,3 +1,5 @@
+//! FairPlay garble function (inlined from C reference, explicit wrapping arithmetic).
+
 #![allow(clippy::all, unused_assignments, non_snake_case, unused_mut, unused_variables, unused_parens)]
 
 fn weird_ror8(input: u8, count: u32) -> u32 {

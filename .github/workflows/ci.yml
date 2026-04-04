@@ -2,9 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
   pull_request:
-    branches: [main]
 
 env:
   CARGO_TERM_COLOR: always
@@ -14,6 +12,7 @@ jobs:
     name: Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         os: [macos-latest, ubuntu-latest]
     steps:
@@ -22,12 +21,16 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Build (default)
         run: cargo build
-      - name: Build (airplay2)
-        run: cargo build --features airplay2
+      - name: Build (ap2)
+        run: cargo build --features ap2
+      - name: Build (video)
+        run: cargo build --features video
       - name: Test (default)
         run: cargo test
-      - name: Test (airplay2)
-        run: cargo test --features airplay2
+      - name: Test (ap2)
+        run: cargo test --features ap2
+      - name: Test (video)
+        run: cargo test --features video
 
   clippy:
     name: Clippy
@@ -38,7 +41,7 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
-      - run: cargo clippy --features airplay2 -- -D warnings -A clippy::style -A clippy::complexity -W clippy::correctness
+      - run: cargo clippy --features video -- -D warnings
 
   fmt:
     name: Format
@@ -49,3 +52,12 @@ jobs:
         with:
           components: rustfmt
       - run: cargo fmt --all -- --check
+
+  audit:
+    name: Security audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: rustsec/audit-check@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}

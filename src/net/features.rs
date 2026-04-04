@@ -143,17 +143,18 @@ pub fn receiver_features() -> u64 {
         SupportsRfc2198Redundancy,
     ];
 
+    #[allow(unused_mut)]
+    let mut val = features_from(&bits);
+
     #[cfg(feature = "video")]
     {
-        bits.push(SupportsAirPlayVideoV1);
-        bits.push(SupportsAirPlayScreen);
-        bits.push(SupportsScreenMultiCodec);
+        val |= features_from(&[
+            SupportsAirPlayVideoV1,
+            SupportsAirPlayScreen,
+            SupportsScreenMultiCodec,
+        ]);
     }
 
-    let mut val: u64 = 0;
-    for bit in bits {
-        val |= 1 << (bit as u8);
-    }
     val
 }
 

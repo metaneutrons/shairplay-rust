@@ -1,42 +1,61 @@
+//! Binary plist helpers for AirPlay 2 protocol messages.
+
 use std::collections::HashMap;
 
 /// Plist value types matching the C library's PLIST_TYPE_* constants.
 #[derive(Debug, Clone)]
+/// Simplified plist value type for AirPlay protocol messages.
 pub enum PlistValue {
+    /// Boolean value.
     Boolean(bool),
+    /// Integer value.
     Integer(i64),
+    /// Floating-point value.
     Real(f64),
+    /// Raw byte data.
     Data(Vec<u8>),
+    /// String value.
     String(String),
+    /// Ordered array.
     Array(Vec<PlistValue>),
+    /// Key-value dictionary.
     Dict(HashMap<String, PlistValue>),
 }
 
 impl PlistValue {
+    /// Extract as boolean.
     pub fn as_bool(&self) -> Option<bool> {
         match self { PlistValue::Boolean(v) => Some(*v), _ => None }
     }
+    /// Extract as integer.
     pub fn as_integer(&self) -> Option<i64> {
         match self { PlistValue::Integer(v) => Some(*v), _ => None }
     }
+    /// Extract as floating-point number.
     pub fn as_real(&self) -> Option<f64> {
         match self { PlistValue::Real(v) => Some(*v), _ => None }
     }
+    /// Extract as raw byte data.
     pub fn as_data(&self) -> Option<&[u8]> {
         match self { PlistValue::Data(v) => Some(v), _ => None }
     }
+    /// Extract as string.
     pub fn as_string(&self) -> Option<&str> {
         match self { PlistValue::String(v) => Some(v), _ => None }
     }
+    /// Extract as array.
     pub fn as_array(&self) -> Option<&[PlistValue]> {
         match self { PlistValue::Array(v) => Some(v), _ => None }
     }
+    /// Extract as dictionary.
     pub fn as_dict(&self) -> Option<&HashMap<String, PlistValue>> {
         match self { PlistValue::Dict(v) => Some(v), _ => None }
     }
+    /// Look up a key in a dictionary value.
     pub fn dict_get(&self, key: &str) -> Option<&PlistValue> {
         self.as_dict()?.get(key)
     }
+    /// Get an element from an array value by index.
     pub fn array_get(&self, idx: usize) -> Option<&PlistValue> {
         self.as_array()?.get(idx)
     }

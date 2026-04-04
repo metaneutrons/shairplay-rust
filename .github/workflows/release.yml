@@ -11,44 +11,69 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  test:
-    name: Test before release
-    runs-on: macos-latest
+  ci:
+    name: CI (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test --features airplay2
+      - run: cargo fmt --all -- --check
+      - run: cargo build
+      - run: cargo build --features ap2
+      - run: cargo build --features video
+      - run: cargo clippy --features video -- -D warnings
+      - run: cargo test
+      - run: cargo test --features ap2
+      - run: cargo test --features video
+
+  changelog-check:
+    name: Verify CHANGELOG.md updated
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check CHANGELOG.md contains this version
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          if ! grep -q "\[${VERSION}\]" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md does not contain an entry for [${VERSION}]. Add release notes before tagging."
+            exit 1
+          fi
 
   publish:
     name: Publish to crates.io
-    needs: test
+    needs: [ci, changelog-check]
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo publish --allow-dirty
+      - run: cargo publish
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
   github-release:
     name: GitHub Release
-    needs: test
+    needs: [ci, changelog-check]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Generate changelog
+      - name: Extract changelog for this version
         run: |
-          PREV_TAG=$(git tag --sort=-version:refname | head -2 | tail -1)
-          if [ -z "$PREV_TAG" ]; then
-            PREV_TAG=$(git rev-list --max-parents=0 HEAD)
+          VERSION="${GITHUB_REF_NAME#v}"
+          # Extract section between ## [VERSION] and the next ## [ (or EOF)
+          awk "/^## \[${VERSION}\]/{found=1; next} /^## \[/{if(found) exit} found" CHANGELOG.md > release_notes.md
+          if [ ! -s release_notes.md ]; then
+            echo "No release notes found for ${VERSION}" > release_notes.md
           fi
-          echo "## Changes" > changelog.md
-          echo "" >> changelog.md
-          git log ${PREV_TAG}..HEAD --pretty=format:"- %s" --no-merges >> changelog.md
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
-          body_path: changelog.md
+          body_path: release_notes.md

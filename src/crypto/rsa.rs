@@ -1,3 +1,5 @@
+//! RSA key handling for the well-known AirPort Express private key.
+
 use rsa::pkcs1::DecodeRsaPrivateKey;
 use rsa::pkcs1v15::SigningKey;
 use rsa::signature::hazmat::PrehashSigner;

@@ -22,6 +22,7 @@ pub struct CipherContext {
 }
 
 impl CipherContext {
+    /// Create a new encryption context from a 256-bit key.
     pub fn new(key: [u8; 32]) -> Self {
         Self { key, counter: 0 }
     }
@@ -92,7 +93,9 @@ impl CipherContext {
 
 /// Bidirectional encrypted channel for an RTSP connection.
 pub struct EncryptedChannel {
+    /// Encrypts outgoing RTSP responses.
     pub encrypt_ctx: CipherContext,
+    /// Decrypts incoming RTSP requests.
     pub decrypt_ctx: CipherContext,
 }
 

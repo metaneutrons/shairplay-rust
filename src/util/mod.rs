@@ -1,3 +1,5 @@
+//! Utility functions — hardware address formatting, hex encoding.
+
 pub mod base64;
 
 use std::fmt::Write;
@@ -7,6 +9,7 @@ use crate::error::ShairplayError;
 
 /// Read an entire file into a String. Equivalent to utils_read_file.
 #[allow(dead_code)]
+/// Read a file to string. Returns a ShairplayError on failure.
 pub fn read_file(path: &Path) -> Result<String, ShairplayError> {
     std::fs::read_to_string(path).map_err(|e| {
         crate::error::NetworkError::Io(e).into()

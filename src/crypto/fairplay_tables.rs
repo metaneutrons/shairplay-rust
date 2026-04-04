@@ -1,4 +1,4 @@
-// Auto-generated from playfair/omg_hax.h — FairPlay lookup tables
+//! Auto-generated from playfair/omg_hax.h — FairPlay lookup tables
 #![allow(clippy::all, dead_code)]
 
 pub const Z_KEY: [u8; 16] = [

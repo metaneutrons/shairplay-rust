@@ -6,17 +6,26 @@
 /// SSRC values identifying the audio format (from shairport-sync player.h).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
+/// Audio format identifier from the RTP SSRC field. Apple uses magic values to signal codec/rate.
 pub enum AudioSsrc {
+    /// Unknown or unrecognized format.
     None = 0,
+    /// ALAC 44100 Hz 16-bit stereo.
     Alac44100S16Stereo = 0x0000FACE,
+    /// ALAC 48000 Hz 24-bit stereo.
     Alac48000S24Stereo = 0x15000000,
+    /// AAC 44100 Hz 24-bit float stereo.
     Aac44100F24Stereo = 0x16000000,
+    /// AAC 48000 Hz 24-bit float stereo.
     Aac48000F24Stereo = 0x17000000,
+    /// AAC 48000 Hz 24-bit float 5.1 surround.
     Aac48000F24Surround51 = 0x27000000,
+    /// AAC 48000 Hz 24-bit float 7.1 surround.
     Aac48000F24Surround71 = 0x28000000,
 }
 
 impl AudioSsrc {
+    /// Parse an SSRC value into a known audio format.
     pub fn from_u32(v: u32) -> Self {
         match v {
             0x0000FACE => Self::Alac44100S16Stereo,
@@ -29,10 +38,12 @@ impl AudioSsrc {
         }
     }
 
+    /// Whether this format uses AAC encoding.
     pub fn is_aac(self) -> bool {
         matches!(self, Self::Aac44100F24Stereo | Self::Aac48000F24Stereo | Self::Aac48000F24Surround51 | Self::Aac48000F24Surround71)
     }
 
+    /// Source sample rate for this format.
     pub fn sample_rate(self) -> u32 {
         match self {
             Self::Alac44100S16Stereo | Self::Aac44100F24Stereo => 44100,
@@ -40,6 +51,7 @@ impl AudioSsrc {
         }
     }
 
+    /// Number of audio channels for this format.
     pub fn channels(self) -> u8 {
         match self {
             Self::Aac48000F24Surround51 => 6,
@@ -48,6 +60,7 @@ impl AudioSsrc {
         }
     }
 
+    /// ADTS channel configuration index for this format.
     pub fn adts_channel_config(self) -> u8 {
         match self {
             Self::Aac48000F24Surround51 => 6,
@@ -131,7 +144,7 @@ mod tests {
     }
 }
 
-/// Persistent AAC decoder using symphonia. Decodes ADTS-wrapped AAC to S16LE PCM.
+/// Persistent AAC decoder using symphonia. Decodes ADTS-wrapped AAC to F32LE PCM.
 pub struct AacDecoder {
     decoder: Box<dyn symphonia::core::codecs::Decoder>,
     sample_rate: u32,
@@ -185,6 +198,8 @@ impl AacDecoder {
         Some(pcm)
     }
 
+    /// Source sample rate for this format.
     pub fn sample_rate(&self) -> u32 { self.sample_rate }
+    /// Number of audio channels for this format.
     pub fn channels(&self) -> u8 { self.channels }
 }

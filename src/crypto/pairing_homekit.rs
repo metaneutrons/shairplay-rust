@@ -185,8 +185,11 @@ impl SrpServer {
         }
     }
 
+    /// Whether this is a transient (PIN-less) pairing session.
     pub fn is_transient(&self) -> bool { self.is_transient }
+    /// Whether pair-verify completed successfully.
     pub fn is_verified(&self) -> bool { self.verified }
+    /// Returns the derived session key (only available after successful pair-verify).
     pub fn session_key(&self) -> Option<&[u8]> {
         if self.verified { Some(&self.session_key) } else { None }
     }
@@ -417,6 +420,7 @@ pub struct PairVerifyServer {
 }
 
 impl PairVerifyServer {
+    /// Create a new pair-verify server for the given device ID.
     pub fn new(device_id: &str) -> Self {
         let (sk, _) = server_keypair(device_id);
 
@@ -524,6 +528,7 @@ impl PairVerifyServer {
         Ok(resp.encode())
     }
 
+    /// Returns the shared secret derived during pair-verify (for HKDF key derivation).
     pub fn shared_secret(&self) -> Option<&[u8; 32]> {
         if self.completed { Some(&self.shared_secret) } else { None }
     }
@@ -576,7 +581,7 @@ mod tests {
         let kgx = (&k * &gx) % &n;
         // Handle potential underflow: (B + N - kgx) mod N
         let base = (&big_b + &n - &kgx) % &n;
-        
+
         let big_s = base.modpow(&(&a + &u * &x), &n);
 
         let session_key = sha512(&to_bytes_be(&big_s));

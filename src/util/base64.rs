@@ -1,3 +1,5 @@
+//! Base64 encoding/decoding (custom implementation for RTSP compatibility).
+
 #[allow(dead_code)]
 const DEFAULT_CHARLIST: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 const BASE64_PADDING: u8 = 0x40;

@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-#![allow(clippy::needless_range_loop, clippy::too_many_arguments, clippy::while_immutable_condition, clippy::explicit_counter_loop)]
+#![warn(missing_docs)]
 #![doc = "Pure Rust AirPlay server library.
 
 `shairplay` is a complete reimplementation of the [shairplay](https://github.com/juhovh/shairplay)
@@ -22,7 +22,7 @@ impl AudioHandler for MyHandler {
 struct MySession;
 impl AudioSession for MySession {
     fn audio_process(&mut self, buffer: &[u8]) {
-        // Handle decoded PCM audio data
+        // F32LE interleaved PCM — same format for AP1 and AP2
     }
 }
 
@@ -43,11 +43,16 @@ server.start().await?;
 # Architecture
 
 - [`raop`] — RAOP/AirPlay server, RTSP handlers, RTP streaming, audio buffering
-- [`crypto`] — RSA, Ed25519/Curve25519 pairing, AES-CTR, FairPlay DRM
-- [`codec`] — ALAC (Apple Lossless) audio decoder
+- [`crypto`] — RSA, Ed25519/Curve25519 pairing, AES-CTR, FairPlay DRM, ChaCha20-Poly1305
+- [`codec`] — Audio decoders (ALAC, AAC) and resampling
 - [`proto`] — SDP, HTTP/RTSP, binary plist, HTTP Digest auth
-- [`net`] — Async TCP server (tokio), mDNS service registration
+- [`net`] — Async TCP server (tokio), mDNS service registration, PTP timing
 - [`error`] — Error types
+
+# Feature Flags
+
+- `ap2` — AirPlay 2 support (SRP-6a pairing, buffered AAC, encrypted transport)
+- `video` — Experimental screen mirroring (implies `ap2`)
 "]
 
 pub mod codec;

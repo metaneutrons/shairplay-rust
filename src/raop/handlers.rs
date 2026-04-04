@@ -1,3 +1,5 @@
+//! RTSP request handlers for AP1 and AP2 AirPlay sessions.
+
 use std::sync::Arc;
 
 use crate::crypto::fairplay::FairPlay;
@@ -42,7 +44,9 @@ pub(crate) struct RaopConnection {
     pub pairing_store: Arc<dyn crate::raop::PairingStore>,
     #[cfg(feature = "ap2")]
     pub playout_cmd: Option<tokio::sync::mpsc::UnboundedSender<crate::raop::buffered_audio::PlayoutCommand>>,
+    #[allow(dead_code)] // used when resample or ap2 enabled
     pub output_sample_rate: Option<u32>,
+    #[allow(dead_code)] // used when ap2 enabled
     pub output_max_channels: Option<u8>,
     #[cfg(feature = "ap2")]
     pub pin: Option<String>,
@@ -72,6 +76,7 @@ fn local_ip_from(conn: &RaopConnection) -> std::net::IpAddr {
 fn bind_addr_for(conn: &RaopConnection) -> String {
     format!("{}:0", local_ip_from(conn))
 }
+/// No-op handler for unsupported RTSP methods.
 pub(crate) fn handle_none(
     _conn: &mut RaopConnection,
     _request: &HttpRequest,
@@ -80,6 +85,7 @@ pub(crate) fn handle_none(
     None
 }
 
+/// AP1 pair-setup: return Ed25519 public key.
 pub(crate) fn handle_pair_setup(
     conn: &mut RaopConnection,
     request: &HttpRequest,
@@ -92,6 +98,7 @@ pub(crate) fn handle_pair_setup(
     Some(public_key.to_vec())
 }
 
+/// AP1 pair-verify: Ed25519/Curve25519 handshake (M1/M2).
 pub(crate) fn handle_pair_verify(
     conn: &mut RaopConnection,
     request: &HttpRequest,
@@ -126,6 +133,7 @@ pub(crate) fn handle_pair_verify(
     }
 }
 
+/// FairPlay DRM handshake (fp-setup M1/M2).
 pub(crate) fn handle_fp_setup(
     conn: &mut RaopConnection,
     request: &HttpRequest,
@@ -147,6 +155,7 @@ pub(crate) fn handle_fp_setup(
     }
 }
 
+/// RTSP OPTIONS: return supported methods.
 pub(crate) fn handle_options(
     _conn: &mut RaopConnection,
     _request: &HttpRequest,
@@ -159,6 +168,7 @@ pub(crate) fn handle_options(
     None
 }
 
+/// RTSP ANNOUNCE: parse SDP, extract AES keys, create RTP session.
 pub(crate) fn handle_announce(
     conn: &mut RaopConnection,
     request: &HttpRequest,
@@ -212,6 +222,7 @@ pub(crate) fn handle_announce(
     None
 }
 
+/// AP1 RTSP SETUP: bind RTP ports and start audio receiver.
 pub(crate) fn handle_setup(
     conn: &mut RaopConnection,
     request: &HttpRequest,
@@ -247,7 +258,7 @@ pub(crate) fn handle_setup(
     if let Some(rtp) = &mut conn.raop_rtp {
         // We need to start RTP in a blocking context — store params for later
         // For now, use tokio::runtime::Handle to block
-        
+
         let (cport, tport, dport) = tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(
                 rtp.start(use_udp, remote_cport, remote_tport)
@@ -270,6 +281,7 @@ pub(crate) fn handle_setup(
     None
 }
 
+/// RTSP GET_PARAMETER: return volume or other parameters.
 pub(crate) fn handle_get_parameter(
     _conn: &mut RaopConnection,
     request: &HttpRequest,
@@ -287,6 +299,7 @@ pub(crate) fn handle_get_parameter(
     None
 }
 
+/// RTSP SET_PARAMETER: handle volume, metadata, artwork, progress.
 pub(crate) fn handle_set_parameter(
     conn: &mut RaopConnection,
     request: &HttpRequest,
@@ -358,6 +371,7 @@ pub(crate) fn handle_set_parameter(
 // --- AirPlay 2 handlers ---
 
 #[cfg(feature = "ap2")]
+/// AP2 pair-setup: SRP-6a + HomeKit pairing (M1→M5).
 pub(crate) fn handle_pair_setup_ap2(
     conn: &mut RaopConnection,
     request: &HttpRequest,
@@ -418,6 +432,7 @@ pub(crate) fn handle_pair_setup_ap2(
 }
 
 #[cfg(feature = "ap2")]
+/// AP2 pair-verify: Ed25519 verify + HKDF shared secret derivation.
 pub(crate) fn handle_pair_verify_ap2(
     conn: &mut RaopConnection,
     request: &HttpRequest,
@@ -468,6 +483,7 @@ pub(crate) fn handle_pair_verify_ap2(
 }
 
 #[cfg(feature = "ap2")]
+/// AP2 GET /info: return device capabilities as binary plist.
 pub(crate) fn handle_get_info(
     conn: &mut RaopConnection,
     _request: &HttpRequest,
@@ -500,6 +516,7 @@ pub(crate) fn handle_get_info(
 }
 
 #[cfg(feature = "ap2")]
+/// AP2 SETUP: configure streams (type 96/103/110/130), event channel, timing.
 pub(crate) fn handle_setup_2(
     conn: &mut RaopConnection,
     request: &HttpRequest,
@@ -597,7 +614,7 @@ pub(crate) fn handle_setup_2(
                 conn.playout_cmd = Some(cmd_tx);
 
                 stream_resp.insert("dataPort".into(), plist::Value::Integer(audio_port.into()));
-                stream_resp.insert("audioBufferSize".into(), plist::Value::Integer(0x100000_i64.into()));
+                stream_resp.insert("audioBufferSize".into(), plist::Value::Integer(0x10_0000_i64.into())); // 1 MB
             }
             130 => {
                 // Remote Control data channel
@@ -808,6 +825,7 @@ pub(crate) fn handle_setup_2(
 }
 
 #[cfg(feature = "ap2")]
+/// AP2 RECORD: start buffered audio playout.
 pub(crate) fn handle_record_2(
     _conn: &mut RaopConnection,
     _request: &HttpRequest,
@@ -819,6 +837,7 @@ pub(crate) fn handle_record_2(
 }
 
 #[cfg(feature = "ap2")]
+/// AP2 SETRATEANCHORTI: set PTP anchor for timed playout.
 pub(crate) fn handle_setrateanchortime(
     conn: &mut RaopConnection,
     request: &HttpRequest,
@@ -855,6 +874,7 @@ pub(crate) fn handle_setrateanchortime(
 }
 
 #[cfg(feature = "ap2")]
+/// AP2 SETPEERS: receive PTP peer addresses (informational).
 pub(crate) fn handle_setpeers(
     _conn: &mut RaopConnection,
     request: &HttpRequest,
@@ -872,6 +892,7 @@ pub(crate) fn handle_setpeers(
 }
 
 #[cfg(feature = "ap2")]
+/// AP2 FLUSHBUFFERED: flush playout buffer up to sequence/timestamp.
 pub(crate) fn handle_flushbuffered(
     conn: &mut RaopConnection,
     request: &HttpRequest,
@@ -894,6 +915,7 @@ pub(crate) fn handle_flushbuffered(
 // --- AP2 POST sub-handlers ---
 
 #[cfg(feature = "ap2")]
+/// AP2 POST /feedback: empty response (required by protocol).
 pub(crate) fn handle_feedback(
     conn: &mut RaopConnection,
     _request: &HttpRequest,
@@ -917,6 +939,7 @@ pub(crate) fn handle_feedback(
 }
 
 #[cfg(feature = "ap2")]
+/// AP2 POST /command: forward binary plist commands to event channel.
 pub(crate) fn handle_command(
     _conn: &mut RaopConnection,
     request: &HttpRequest,
@@ -936,6 +959,7 @@ pub(crate) fn handle_command(
 }
 
 #[cfg(feature = "ap2")]
+/// AP2 POST /audioMode: acknowledge audio mode change.
 pub(crate) fn handle_audiomode(
     _conn: &mut RaopConnection,
     request: &HttpRequest,

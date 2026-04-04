@@ -1,3 +1,5 @@
+//! Cryptographic primitives for AirPlay authentication and encryption.
+
 pub mod aes;
 pub mod fairplay;
 mod fairplay_garble;

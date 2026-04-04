@@ -1,3 +1,5 @@
+//! AES-128 encryption utilities (ECB, CTR) for AP1 audio decryption.
+
 use aes::cipher::{BlockEncrypt, KeyInit, generic_array::GenericArray};
 use aes::Aes128;
 

@@ -1,4 +1,5 @@
 //! AES-128-CTR streaming cipher for video packet decryption.
+#![allow(clippy::needless_range_loop)]
 //!
 //! Video packets use AES-CTR with a key derived from the FairPlay session.
 //! The cipher maintains partial block state across packets (streaming mode).

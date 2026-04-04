@@ -1,3 +1,5 @@
+//! Ed25519/Curve25519 pair-setup and pair-verify for AP1.
+
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use rand::rngs::OsRng;
 use sha2::{Digest, Sha512};

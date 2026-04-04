@@ -28,6 +28,7 @@ use tracing::debug;
 /// // client.play_pause().await.ok();
 /// ```
 #[derive(Debug)]
+/// HTTP client for sending DACP playback commands to the iPhone.
 pub struct DacpClient {
     #[allow(dead_code)]
     dacp_id: String,

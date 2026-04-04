@@ -6,48 +6,71 @@
 /// Well-known TLV types from the HomeKit pairing protocol.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// HomeKit pairing TLV message types (from HAP specification).
 pub enum TlvType {
+    /// Pairing method.
     Method = 0,
+    /// Device identifier.
     Identifier = 1,
+    /// SRP salt.
     Salt = 2,
+    /// SRP/Ed25519 public key.
     PublicKey = 3,
+    /// SRP proof.
     Proof = 4,
+    /// Encrypted payload.
     EncryptedData = 5,
+    /// Pairing state (M1-M6).
     State = 6,
+    /// Error code.
     Error = 7,
+    /// Retry delay in seconds.
     RetryDelay = 8,
+    /// MFi certificate.
     Certificate = 9,
+    /// Ed25519 signature.
     Signature = 10,
+    /// Pairing permissions.
     Permissions = 11,
+    /// Fragment data.
     FragmentData = 13,
+    /// Last fragment marker.
     FragmentLast = 14,
+    /// Pairing flags (transient bit).
     Flags = 19,
+    /// TLV separator.
     Separator = 0xff,
 }
 
 /// Ordered collection of TLV entries (preserves insertion order).
 #[derive(Debug, Clone, Default)]
+/// Collection of TLV entries, keyed by type. Supports encode/decode.
 pub struct TlvValues {
     entries: Vec<(u8, Vec<u8>)>,
 }
 
 impl TlvValues {
+    /// Create an empty TLV collection.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Add a TLV entry by raw tag number.
     pub fn add(&mut self, tag: u8, value: &[u8]) {
         self.entries.push((tag, value.to_vec()));
     }
 
+    /// Add a TLV entry by typed tag.
     pub fn add_type(&mut self, tag: TlvType, value: &[u8]) {
         self.add(tag as u8, value);
     }
 
+    /// Get a TLV value by raw tag number.
     pub fn get(&self, tag: u8) -> Option<&[u8]> {
         self.entries.iter().find(|(t, _)| *t == tag).map(|(_, v)| v.as_slice())
     }
 
+    /// Get a TLV value by typed tag.
     pub fn get_type(&self, tag: TlvType) -> Option<&[u8]> {
         self.get(tag as u8)
     }
@@ -101,8 +124,10 @@ impl TlvValues {
 }
 
 #[derive(Debug, thiserror::Error)]
+/// TLV parsing errors.
 pub enum TlvError {
     #[error("TLV data truncated")]
+    /// TLV data was truncated (incomplete length field).
     Truncated,
 }
 

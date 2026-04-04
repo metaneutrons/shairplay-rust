@@ -1,7 +1,13 @@
-//! AirPlay 2 buffered audio processor with format-aware decoding.
+//! AirPlay 2 buffered audio processor (stream type 103).
 //!
-//! Detects audio format from SSRC, decodes AAC via symphonia, resamples
-//! via rubato if needed, mixes down channels if needed, delivers F32 PCM.
+//! Receives encrypted AAC packets over TCP, decrypts with ChaCha20-Poly1305,
+//! decodes via symphonia, resamples/mixes down, and delivers F32LE PCM through
+//! a timed playout buffer.
+//!
+//! Three concurrent tasks:
+//! - **Receiver** (tokio): accepts TCP, decrypts, decodes, buffers by RTP timestamp
+//! - **Command handler** (tokio): processes SetRate/Flush/Stop from RTSP thread
+//! - **Delivery** (std::thread): timed playout using anchor-based scheduling
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, Condvar};
@@ -13,24 +19,56 @@ use crate::codec::aac::{AudioSsrc, AacDecoder};
 use crate::error::NetworkError;
 use crate::raop::{AudioHandler, AudioFormat, AudioCodec};
 
+/// RTP header length in bytes.
 const RTP_HEADER_LEN: usize = 12;
+/// Trailing nonce bytes appended to each ChaCha20-Poly1305 encrypted packet.
 const NONCE_TRAIL_LEN: usize = 8;
 
 #[derive(Debug, Clone)]
+/// Output configuration passed from the server builder.
 pub struct OutputConfig {
-    pub sample_rate: Option<u32>,   // None = native
-    pub max_channels: Option<u8>,   // None = pass through
+    /// Target sample rate, or None for source native rate.
+    pub sample_rate: Option<u32>,
+    /// Maximum output channels, or None to pass through.
+    pub max_channels: Option<u8>,
 }
 
 #[derive(Debug)]
+/// Commands sent from the RTSP handler thread to the playout engine.
 pub enum PlayoutCommand {
-    SetRate { anchor_rtp: u32, anchor_time_ns: u64, rate: u32 },
-    Flush { from_seq: u32, until_seq: u32 },
+    /// Set playback rate and anchor point. rate=0 means pause.
+    SetRate {
+        /// RTP timestamp at the anchor point.
+        anchor_rtp: u32,
+        /// Network time at the anchor point (ns).
+        anchor_time_ns: u64,
+        /// Playback rate (1 = playing, 0 = paused).
+        rate: u32,
+    },
+    /// Flush buffered frames in the given RTP timestamp range.
+    Flush {
+        /// First timestamp to flush.
+        from_seq: u32,
+        /// Last timestamp to flush.
+        until_seq: u32,
+    },
+    /// Stop playback and tear down.
     Stop,
+    /// Volume change (dB).
     Volume(f32),
+    /// DMAP track metadata.
     Metadata(Vec<u8>),
+    /// Album artwork.
     Coverart(Vec<u8>),
-    Progress { start: u32, current: u32, end: u32 },
+    /// Playback progress.
+    Progress {
+        /// Start position (RTP timestamp).
+        start: u32,
+        /// Current position (RTP timestamp).
+        current: u32,
+        /// End position (RTP timestamp).
+        end: u32,
+    },
 }
 
 struct PlayoutState {
@@ -45,18 +83,23 @@ struct PlayoutState {
     pending_meta: Vec<PlayoutCommand>, // Volume/Metadata/Coverart/Progress
 }
 
+/// TCP listener for buffered audio. Binds a port and spawns the processing pipeline.
 pub struct BufferedAudioProcessor {
+    /// TCP listener waiting for the iPhone to connect.
     pub listener: TcpListener,
+    /// Port number the listener is bound to.
     pub port: u16,
 }
 
 impl BufferedAudioProcessor {
+    /// Bind a TCP listener for buffered audio on the given address.
     pub async fn bind(addr: &str) -> Result<Self, NetworkError> {
         let listener = TcpListener::bind(addr).await?;
         let port = listener.local_addr()?.port();
         Ok(Self { listener, port })
     }
 
+    /// Start the processing pipeline. Returns a command sender for playback control.
     pub fn start(
         self,
         shk: [u8; 32],
@@ -162,6 +205,7 @@ impl BufferedAudioProcessor {
     }
 }
 
+/// TCP receive loop: reads length-prefixed packets, decrypts, decodes, buffers.
 async fn receive_loop(
     mut stream: TcpStream,
     shk: &[u8; 32],
@@ -275,6 +319,7 @@ async fn receive_loop(
     debug!("Buffered audio receive loop ended");
 }
 
+/// Timed playout delivery thread. Wakes on condvar, delivers due frames to AudioSession.
 fn delivery_loop(
     state: Arc<(Mutex<PlayoutState>, Condvar)>,
     handler: Arc<dyn AudioHandler>,
@@ -341,6 +386,7 @@ fn delivery_loop(
     info!("Delivery loop ended");
 }
 
+/// Current wall-clock time in nanoseconds since UNIX epoch.
 fn now_ns() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

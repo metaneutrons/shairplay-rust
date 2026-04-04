@@ -1,3 +1,5 @@
+//! HTTP/RTSP request and response parsing.
+
 use std::collections::HashMap;
 use std::fmt::Write;
 
@@ -118,26 +120,32 @@ impl HttpRequest {
         }
     }
 
+    /// Whether a complete HTTP request has been parsed.
     pub fn is_complete(&self) -> bool {
         self.complete
     }
 
+    /// Whether all headers have been parsed (body may still be pending).
     pub fn headers_complete(&self) -> bool {
         self.headers_complete
     }
 
+    /// Whether a parse error occurred.
     pub fn has_error(&self) -> bool {
         self.error.is_some()
     }
 
+    /// The parse error message, if any.
     pub fn error(&self) -> Option<&str> {
         self.error.as_deref()
     }
 
+    /// The HTTP method (GET, POST, SETUP, etc.).
     pub fn method(&self) -> Option<&str> {
         self.method.as_deref()
     }
 
+    /// The request URL/path.
     pub fn url(&self) -> Option<&str> {
         self.url.as_deref()
     }
@@ -147,6 +155,7 @@ impl HttpRequest {
         self.headers.get(name).map(|s| s.as_str())
     }
 
+    /// The request body, if present.
     pub fn data(&self) -> Option<&[u8]> {
         self.body.as_deref()
     }
@@ -198,12 +207,15 @@ impl HttpResponse {
         self.complete = true;
     }
 
+    /// Mark this response as requiring connection close after sending.
     pub fn set_disconnect(&mut self, disconnect: bool) {
         self.disconnect = disconnect;
     }
 
+    /// The HTTP status code.
     pub fn status_code(&self) -> u16 { self.code }
 
+    /// Whether the connection should be closed after this response.
     pub fn get_disconnect(&self) -> bool {
         self.disconnect
     }

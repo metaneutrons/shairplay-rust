@@ -1,3 +1,5 @@
+//! Protocol implementations (HTTP/RTSP, SDP, binary plist, HTTP Digest auth).
+
 pub mod digest;
 pub mod http;
 pub mod plist;

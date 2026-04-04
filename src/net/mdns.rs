@@ -1,48 +1,82 @@
+//! mDNS service registration for AirPlay network discovery.
+//!
+//! Platform-conditional: uses `astro-dnssd` (native Bonjour) on macOS,
+//! `mdns-sd` (pure Rust) on Linux and other platforms.
+
 use crate::error::NetworkError;
 use crate::util;
 
+// --- AP1 mDNS TXT record constants ---
+
+/// TXT record version.
 pub const RAOP_TXTVERS: &str = "1";
+/// Audio channels.
 pub const RAOP_CH: &str = "2";
+/// Codecs: 0=PCM, 1=ALAC.
 pub const RAOP_CN: &str = "0,1";
+/// Encryption types: 0=none, 1=RSA.
 pub const RAOP_ET: &str = "0,1";
+/// Server version flag.
 pub const RAOP_SV: &str = "false";
+/// Digest auth supported.
 pub const RAOP_DA: &str = "true";
+/// Sample rate.
 pub const RAOP_SR: &str = "44100";
+/// Sample size (bits).
 pub const RAOP_SS: &str = "16";
+/// Protocol version.
 pub const RAOP_VN: &str = "3";
+/// Transport protocols.
 pub const RAOP_TP: &str = "TCP,UDP";
+/// Metadata types: 0=text, 1=artwork, 2=progress.
 pub const RAOP_MD: &str = "0,1,2";
+/// System managed.
 pub const RAOP_SM: &str = "false";
+/// Encryption key type.
 pub const RAOP_EK: &str = "1";
 
+/// Global feature bitmask for AP1 discovery.
 pub const GLOBAL_FEATURES: u32 = 0x7;
+/// Device model identifier.
 pub const GLOBAL_MODEL: &str = "AppleTV2,1";
+/// Software version string.
 pub const GLOBAL_VERSION: &str = "130.14";
 
-// AirPlay 2 defaults (from shairport-sync bonjour_strings.c)
-#[cfg(feature = "ap2")]
+// --- AP2 mDNS TXT record constants ---
+
+/// Status flags (0x4 = audio receiver).
 #[cfg(feature = "ap2")]
 pub const AP2_STATUS_FLAGS: u32 = 0x4;
+/// Source version string.
 #[cfg(feature = "ap2")]
 pub const AP2_SRCVERS: &str = "377.40.00";
+/// OS version string.
 #[cfg(feature = "ap2")]
 pub const AP2_OSVERS: &str = "15.6";
+/// Firmware version string.
 #[cfg(feature = "ap2")]
 pub const AP2_FW_VERSION: &str = "77.40.00";
+/// Protocol version string.
 #[cfg(feature = "ap2")]
 pub const AP2_PROTOVERS: &str = "1.1";
 
 /// mDNS service information for AirPlay network discovery.
 #[derive(Debug, Clone)]
 pub struct AirPlayServiceInfo {
+    /// RAOP service name ("AABBCCDDEEFF@Display Name").
     pub raop_name: String,
+    /// AirPlay display name.
     pub airplay_name: String,
+    /// RTSP listening port.
     pub port: u16,
+    /// TXT records for _raop._tcp.
     pub raop_txt: Vec<(String, String)>,
+    /// TXT records for _airplay._tcp.
     pub airplay_txt: Vec<(String, String)>,
 }
 
 impl AirPlayServiceInfo {
+    /// Create AP1 service info for mDNS registration.
     pub fn new(name: &str, port: u16, hwaddr: &[u8], password: bool) -> Self {
         let hw_raop = util::hwaddr_raop(hwaddr);
         let hw_airplay = util::hwaddr_airplay(hwaddr);
@@ -132,8 +166,17 @@ impl AirPlayServiceInfo {
     }
 }
 
+/// Convert TXT record pairs to a `HashMap` for mDNS registration.
+fn txt_map(txt: &[(String, String)]) -> std::collections::HashMap<String, String> {
+    txt.iter().cloned().collect()
+}
+
 // --- macOS: native Bonjour via astro-dnssd ---
 
+/// mDNS service registration for AirPlay.
+///
+/// On macOS, uses native Bonjour via `astro-dnssd`.
+/// On Linux and other platforms, uses pure Rust `mdns-sd`.
 #[cfg(target_os = "macos")]
 pub struct MdnsService {
     _raop_reg: Option<astro_dnssd::RegisteredDnsService>,
@@ -142,18 +185,16 @@ pub struct MdnsService {
 
 #[cfg(target_os = "macos")]
 impl MdnsService {
+    /// Create a new mDNS service manager.
     pub fn new() -> Result<Self, NetworkError> {
         Ok(Self { _raop_reg: None, _airplay_reg: None })
     }
 
-    fn txt_map(txt: &[(String, String)]) -> std::collections::HashMap<String, String> {
-        txt.iter().cloned().collect()
-    }
-
+    /// Register the _raop._tcp mDNS service.
     pub fn register_raop(&mut self, info: &AirPlayServiceInfo) -> Result<(), NetworkError> {
         let reg = astro_dnssd::DNSServiceBuilder::new("_raop._tcp", info.port)
             .with_name(&info.raop_name)
-            .with_txt_record(Self::txt_map(&info.raop_txt))
+            .with_txt_record(txt_map(&info.raop_txt))
             .register()
             .map_err(|e| NetworkError::Mdns(format!("{e:?}")))?;
         tracing::info!(name = %info.raop_name, port = info.port, "mDNS: _raop._tcp registered");
@@ -161,10 +202,11 @@ impl MdnsService {
         Ok(())
     }
 
+    /// Register the _airplay._tcp mDNS service.
     pub fn register_airplay(&mut self, info: &AirPlayServiceInfo) -> Result<(), NetworkError> {
         let reg = astro_dnssd::DNSServiceBuilder::new("_airplay._tcp", info.port)
             .with_name(&info.airplay_name)
-            .with_txt_record(Self::txt_map(&info.airplay_txt))
+            .with_txt_record(txt_map(&info.airplay_txt))
             .register()
             .map_err(|e| NetworkError::Mdns(format!("{e:?}")))?;
         tracing::info!(name = %info.airplay_name, port = info.port, "mDNS: _airplay._tcp registered");
@@ -172,7 +214,9 @@ impl MdnsService {
         Ok(())
     }
 
+    /// Unregister the _raop._tcp mDNS service.
     pub fn unregister_raop(&mut self) { self._raop_reg = None; }
+    /// Unregister the _airplay._tcp mDNS service.
     pub fn unregister_airplay(&mut self) { self._airplay_reg = None; }
 }
 
@@ -187,6 +231,7 @@ impl Drop for MdnsService {
 // --- Linux/other: pure Rust mdns-sd ---
 
 #[cfg(not(target_os = "macos"))]
+/// mDNS service registration for AirPlay (Linux: pure Rust mdns-sd).
 pub struct MdnsService {
     daemon: mdns_sd::ServiceDaemon,
     raop_fullname: Option<String>,
@@ -195,16 +240,14 @@ pub struct MdnsService {
 
 #[cfg(not(target_os = "macos"))]
 impl MdnsService {
+    /// Create a new mDNS service manager.
     pub fn new() -> Result<Self, NetworkError> {
         let daemon = mdns_sd::ServiceDaemon::new()
             .map_err(|e| NetworkError::Mdns(format!("{e}")))?;
         Ok(Self { daemon, raop_fullname: None, airplay_fullname: None })
     }
 
-    fn txt_map(txt: &[(String, String)]) -> std::collections::HashMap<String, String> {
-        txt.iter().cloned().collect()
-    }
-
+    /// Register the _raop._tcp mDNS service.
     pub fn register_raop(&mut self, info: &AirPlayServiceInfo) -> Result<(), NetworkError> {
         let svc = mdns_sd::ServiceInfo::new(
             "_raop._tcp.local.",
@@ -212,7 +255,7 @@ impl MdnsService {
             &format!("{}.local.", gethostname::gethostname().to_string_lossy()),
             "",
             info.port,
-            Self::txt_map(&info.raop_txt),
+            txt_map(&info.raop_txt),
         ).map_err(|e| NetworkError::Mdns(format!("{e}")))?;
         self.raop_fullname = Some(svc.get_fullname().to_string());
         self.daemon.register(svc).map_err(|e| NetworkError::Mdns(format!("{e}")))?;
@@ -220,6 +263,7 @@ impl MdnsService {
         Ok(())
     }
 
+    /// Register the _airplay._tcp mDNS service.
     pub fn register_airplay(&mut self, info: &AirPlayServiceInfo) -> Result<(), NetworkError> {
         let svc = mdns_sd::ServiceInfo::new(
             "_airplay._tcp.local.",
@@ -227,7 +271,7 @@ impl MdnsService {
             &format!("{}.local.", gethostname::gethostname().to_string_lossy()),
             "",
             info.port,
-            Self::txt_map(&info.airplay_txt),
+            txt_map(&info.airplay_txt),
         ).map_err(|e| NetworkError::Mdns(format!("{e}")))?;
         self.airplay_fullname = Some(svc.get_fullname().to_string());
         self.daemon.register(svc).map_err(|e| NetworkError::Mdns(format!("{e}")))?;
@@ -235,12 +279,14 @@ impl MdnsService {
         Ok(())
     }
 
+    /// Unregister the _raop._tcp mDNS service.
     pub fn unregister_raop(&mut self) {
         if let Some(name) = self.raop_fullname.take() {
             let _ = self.daemon.unregister(&name);
         }
     }
 
+    /// Unregister the _airplay._tcp mDNS service.
     pub fn unregister_airplay(&mut self) {
         if let Some(name) = self.airplay_fullname.take() {
             let _ = self.daemon.unregister(&name);

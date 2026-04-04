@@ -32,6 +32,7 @@ impl EventSender {
 /// Async event channel that accepts one encrypted TCP connection.
 pub struct EventChannel {
     listener: TcpListener,
+    /// Port number the listener is bound to.
     pub port: u16,
 }
 

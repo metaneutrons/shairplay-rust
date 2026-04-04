@@ -11,9 +11,13 @@ use std::time::{SystemTime, UNIX_EPOCH};
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PtpMessageType {
+    /// Sync message.
     Sync = 0,
+    /// Follow-up message (carries precise timestamp).
     FollowUp = 8,
+    /// Announce message (master clock election).
     Announce = 11,
+    /// Unrecognized message type.
     Other = 0xFF,
 }
 
@@ -31,9 +35,13 @@ impl From<u8> for PtpMessageType {
 /// Clock info shared between PTP receiver and audio pipeline.
 #[derive(Debug, Clone, Default)]
 pub struct PtpClockInfo {
+    /// IEEE 1588 clock identity of the current master.
     pub master_clock_id: u64,
+    /// Local time (ns) when offset was last calculated.
     pub local_time: u64,           // ns, when offset was last calculated
+    /// Add to local time to get master time (ns).
     pub offset: u64,               // add to local time to get master time
+    /// Local time (ns) when this master was first seen.
     pub mastership_start_time: u64, // ns
 }
 
@@ -46,14 +54,17 @@ pub struct PtpClock {
 impl Default for PtpClock { fn default() -> Self { Self::new() } }
 
 impl PtpClock {
+    /// Create a new instance with default state.
     pub fn new() -> Self {
         Self { info: Arc::new(RwLock::new(PtpClockInfo::default())) }
     }
 
+    /// Get a snapshot of the current clock state.
     pub fn get_info(&self) -> PtpClockInfo {
         self.info.read().unwrap().clone()
     }
 
+    /// Update the clock state with a new offset measurement.
     pub fn update(&self, clock_id: u64, local_time: u64, offset: u64, mastership_start: u64) {
         let mut info = self.info.write().unwrap();
         info.master_clock_id = clock_id;
@@ -115,6 +126,7 @@ pub struct OffsetSmoother {
 impl Default for OffsetSmoother { fn default() -> Self { Self::new() } }
 
 impl OffsetSmoother {
+    /// Create a new instance with default state.
     pub fn new() -> Self {
         Self { previous_offset: 0, previous_time: 0, mastership_start: 0, initialized: false }
     }
@@ -153,6 +165,7 @@ impl OffsetSmoother {
         smoothed
     }
 
+    /// Reset the smoother to uninitialized state.
     pub fn reset(&mut self) {
         self.initialized = false;
     }
@@ -232,9 +245,13 @@ mod tests {
 /// PTP-anchored audio playout timing.
 /// Converts RTP timestamps to local playout times using PTP clock offset.
 pub struct PtpAnchor {
+    /// PTP master clock identity.
     pub clock_id: u64,
+    /// RTP timestamp at the anchor point.
     pub anchor_rtp: u32,
+    /// Master network time (ns) at the anchor point.
     pub anchor_network_time_ns: u64,
+    /// Audio sample rate (for RTP timestamp → time conversion).
     pub sample_rate: u32,
 }
 

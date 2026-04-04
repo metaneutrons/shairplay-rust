@@ -1,17 +1,30 @@
-#[allow(clippy::needless_range_loop, clippy::too_many_arguments, clippy::manual_div_ceil, clippy::while_immutable_condition)]
+//! Apple Lossless Audio Codec (ALAC) decoder.
+#![allow(clippy::needless_range_loop, clippy::too_many_arguments, clippy::explicit_counter_loop)]
+
 /// ALAC decoder configuration, parsed from the fmtp SDP attribute.
 #[derive(Debug, Clone)]
 pub struct AlacConfig {
+    /// Samples per frame.
     pub frame_length: u32,
+    /// ALAC version.
     pub compatible_version: u8,
+    /// Bits per sample (16 or 24).
     pub bit_depth: u8,
+    /// Rice parameter history mult.
     pub pb: u8,
+    /// Rice initial history.
     pub mb: u8,
+    /// Rice limit.
     pub kb: u8,
+    /// Number of audio channels.
     pub num_channels: u8,
+    /// Maximum run length.
     pub max_run: u16,
+    /// Maximum encoded frame size.
     pub max_frame_bytes: u32,
+    /// Average bit rate.
     pub avg_bit_rate: u32,
+    /// Sample rate in Hz.
     pub sample_rate: u32,
 }
 
@@ -313,6 +326,7 @@ pub struct AlacDecoder {
 }
 
 impl AlacDecoder {
+    /// Create a new ALAC decoder for the given sample size (bits) and channel count.
     pub fn new(sample_size: i32, num_channels: i32) -> Self {
         Self {
             sample_size,
@@ -336,6 +350,7 @@ impl AlacDecoder {
         }
     }
 
+    /// Initialize the decoder with a 48-byte ALACSpecificConfig block.
     pub fn set_info(&mut self, config: &[u8]) {
         let mut p = 24; // skip: size(4) + frma(4) + alac(4) + size(4) + alac(4) + 0(4)
         self.max_samples_per_frame = u32::from_be_bytes([config[p], config[p+1], config[p+2], config[p+3]]);
@@ -353,6 +368,7 @@ impl AlacDecoder {
         self.allocate_buffers();
     }
 
+    /// Allocate internal decode buffers. Called automatically by set_info.
     pub fn allocate_buffers(&mut self) {
         let n = self.max_samples_per_frame as usize;
         self.predicterror_buffer_a = vec![0i32; n];
@@ -363,6 +379,7 @@ impl AlacDecoder {
         self.uncompressed_bytes_buffer_b = vec![0i32; n];
     }
 
+    /// Decode one ALAC frame. Returns the number of bytes written to output (S16LE).
     pub fn decode_frame(&mut self, input: &[u8], output: &mut [u8]) -> usize {
         let mut reader = BitReader::new(input);
         let mut output_samples = self.max_samples_per_frame as usize;

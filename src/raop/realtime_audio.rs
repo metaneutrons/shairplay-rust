@@ -9,15 +9,19 @@ use tracing::{debug, info, warn};
 
 use chacha20poly1305::{ChaCha20Poly1305, KeyInit, aead::Aead, Nonce, aead::Payload};
 
-use crate::codec::resample::StreamResampler;
 use crate::raop::{AudioHandler, AudioFormat, AudioCodec};
+
+#[cfg(feature = "resample")]
+use crate::codec::resample::StreamResampler;
 
 const RTP_HEADER_LEN: usize = 12;
 const NONCE_TRAIL_LEN: usize = 8;
 
 /// Output configuration for resampling/mixdown.
 pub struct OutputConfig {
+    /// Target sample rate, or None for source native rate.
     pub sample_rate: Option<u32>,
+    /// Maximum output channels, or None to pass through.
     pub max_channels: Option<u8>,
 }
 
@@ -31,6 +35,7 @@ pub async fn run(
     let cipher = ChaCha20Poly1305::new((&shk).into());
     let mut buf = vec![0u8; 4096];
     let mut decoder: Option<crate::codec::alac::AlacDecoder> = None;
+    #[cfg(feature = "resample")]
     let mut resampler: Option<StreamResampler> = None;
     let mut session: Option<Box<dyn crate::raop::AudioSession>> = None;
     #[allow(unused_assignments)]
@@ -58,6 +63,7 @@ pub async fn run(
             out_ch = output_config.max_channels.map(|m| src_ch.min(m)).unwrap_or(src_ch);
 
             decoder = Some(crate::codec::alac::AlacDecoder::new(16, src_ch as i32));
+            #[cfg(feature = "resample")]
             if target_sr != src_sr {
                 resampler = StreamResampler::new(src_sr, target_sr, out_ch as usize);
             }
@@ -93,11 +99,13 @@ pub async fn run(
         };
 
         // Mixdown if needed
+        #[cfg(feature = "resample")]
         if src_ch > out_ch {
             samples = crate::codec::resample::mixdown(&samples, src_ch as usize, out_ch as usize);
         }
 
         // Resample if needed
+        #[cfg(feature = "resample")]
         if let Some(ref mut rs) = resampler {
             samples = rs.process(&samples);
         }

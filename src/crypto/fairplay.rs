@@ -1,3 +1,13 @@
+//! FairPlay DRM handshake (fp-setup M1/M2) for AirPlay authentication.
+#![allow(clippy::needless_range_loop, clippy::too_many_arguments, clippy::explicit_counter_loop)]
+//!
+//! The iPhone sends two fp-setup requests:
+//! - **M1** (16 bytes): mode selection → server replies with 142-byte pre-computed response
+//! - **M2** (164 bytes): key message → server replies with 32-byte header + echo
+//!
+//! After M2, the server can decrypt the 72-byte AES session key using the
+//! playfair algorithm (ported from the C reference implementation).
+
 use crate::crypto::fairplay_tables::*;
 use crate::error::CryptoError;
 
@@ -43,7 +53,9 @@ const REPLY_MESSAGE: [[u8; 142]; 4] = [
 
 const FP_HEADER: [u8; 12] = [0x46, 0x50, 0x4c, 0x59, 0x03, 0x01, 0x04, 0x00, 0x00, 0x00, 0x00, 0x14];
 
-/// FairPlay handshake state. Equivalent to fairplay_t.
+/// FairPlay handshake state machine.
+///
+/// Holds the 164-byte key message from M2, used to decrypt the AES session key.
 pub struct FairPlay {
     keymsg: [u8; 164],
     keymsglen: usize,
@@ -56,10 +68,12 @@ impl Default for FairPlay {
 }
 
 impl FairPlay {
+    /// Create a new FairPlay handshake state.
     pub fn new() -> Self {
         Self { keymsg: [0u8; 164], keymsglen: 0 }
     }
 
+    /// Process M1 (mode selection). Returns the 142-byte pre-computed reply.
     pub fn setup(&mut self, request: &[u8; 16]) -> Result<[u8; 142], CryptoError> {
         if request[4] != 0x03 {
             return Err(CryptoError::FairPlay("unsupported version".into()));
@@ -72,6 +86,7 @@ impl FairPlay {
         Ok(REPLY_MESSAGE[mode])
     }
 
+    /// Process M2 (key message). Stores the key message and returns the 32-byte reply.
     pub fn handshake(&mut self, request: &[u8; 164]) -> Result<[u8; 32], CryptoError> {
         if request[4] != 0x03 {
             return Err(CryptoError::FairPlay("unsupported version".into()));
@@ -84,6 +99,7 @@ impl FairPlay {
         Ok(res)
     }
 
+    /// Decrypt the 72-byte AES session key. Must be called after handshake().
     pub fn decrypt(&self, input: &[u8; 72]) -> Result<[u8; 16], CryptoError> {
         if self.keymsglen != 164 {
             return Err(CryptoError::FairPlay("handshake not complete".into()));
@@ -453,7 +469,6 @@ fn sap_hash(block_in: &[u8], key_out: &mut [u8; 16]) {
 
 // --- hand_garble.c port (full mechanical translation in fairplay_garble.rs) ---
 
-#[allow(clippy::all, unused_assignments)]
 fn garble(buffer0: &mut [u8; 20], buffer1: &mut [u8; 210], buffer2: &mut [u8; 35], buffer3: &mut [u8; 132], buffer4: &[u8; 21]) {
     super::fairplay_garble::garble(buffer0, buffer1, buffer2, buffer3, buffer4);
 }

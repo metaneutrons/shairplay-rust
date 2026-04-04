@@ -1,3 +1,5 @@
+//! RAOP/AirPlay server core — connection handling, audio pipeline, and public API.
+
 pub mod buffer;
 #[cfg(feature = "ap2")]
 pub mod buffered_audio;
@@ -25,32 +27,39 @@ use crate::net::server::{ConnectionHandler, HttpServer, HttpdCallbacks};
 use crate::proto::digest;
 use crate::proto::http::{HttpRequest, HttpResponse};
 
+/// Maximum hardware address length in bytes.
 pub const MAX_HWADDR_LEN: usize = 6;
+/// Maximum password length in bytes.
 pub const MAX_PASSWORD_LEN: usize = 64;
+/// Maximum HTTP Digest nonce length in bytes.
 pub const MAX_NONCE_LEN: usize = 32;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// Audio codec type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AudioCodec {
-    /// Decoded PCM (S16LE interleaved). Always delivered regardless of AP1/AP2.
+    /// Decoded PCM (F32LE interleaved). Always delivered regardless of AP1/AP2.
     Pcm,
 }
 
-#[derive(Debug, Clone, Copy)]
 /// Audio format descriptor passed to [`AudioHandler::audio_init`].
+#[derive(Debug, Clone, Copy)]
 pub struct AudioFormat {
+    /// Audio codec (always PCM for decoded output).
     pub codec: AudioCodec,
+    /// Bits per sample (32 for F32LE).
     pub bits: u8,
+    /// Number of channels.
     pub channels: u8,
+    /// Sample rate in Hz.
     pub sample_rate: u32,
 }
 
-/// Trait for handling audio output. Equivalent to raop_callbacks_t.
 /// Trait for receiving decoded audio data from AirPlay clients.
 ///
 /// Implement this trait to handle audio output. A new [`AudioSession`] is created
 /// for each client connection via [`audio_init`](AudioHandler::audio_init).
 pub trait AudioHandler: Send + Sync + 'static {
+    /// Called when a new audio stream starts. Return a session to receive PCM data.
     fn audio_init(&self, format: AudioFormat) -> Box<dyn AudioSession>;
 }
 
@@ -92,33 +101,46 @@ impl PairingStore for MemoryPairingStore {
     }
 }
 
-/// Per-connection audio session.
 /// Per-connection audio session receiving decoded PCM samples.
 ///
 /// Created by [`AudioHandler::audio_init`]. Dropped when the client disconnects.
 pub trait AudioSession: Send + Sync {
+    /// Receive decoded F32LE interleaved PCM audio data.
     fn audio_process(&mut self, buffer: &[u8]);
+    /// Flush the audio buffer (e.g. on seek).
     fn audio_flush(&mut self) {}
+    /// Volume change in dB (0.0 = max, -144.0 = mute).
     fn audio_set_volume(&mut self, _volume: f32) {}
+    /// DMAP track metadata (binary).
     fn audio_set_metadata(&mut self, _metadata: &[u8]) {}
+    /// Album artwork (JPEG or PNG).
     fn audio_set_coverart(&mut self, _coverart: &[u8]) {}
+    /// DACP remote control identifiers (AP1 only).
     fn audio_remote_control_id(&mut self, _dacp_id: &str, _active_remote: &str, _remote_addr: &[u8]) {}
+    /// Playback progress (start, current, end in RTP timestamps).
     fn audio_set_progress(&mut self, _start: u32, _current: u32, _end: u32) {}
-    /// Called when a remote control interface becomes available.
-    /// Use it to send playback commands to the source device (iPhone/Mac).
+    /// Called when a remote control interface becomes available (AP1 DACP).
     fn remote_control_available(&mut self, _remote: Arc<dyn RemoteControl>) {}
 }
 
 /// Playback command to send to the source device.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RemoteCommand {
+    /// Start playback.
     Play,
+    /// Pause playback.
     Pause,
+    /// Skip to next track.
     NextTrack,
+    /// Skip to previous track.
     PreviousTrack,
-    SetVolume(u8),  // 0-100
+    /// Set volume (0-100).
+    SetVolume(u8),
+    /// Toggle shuffle mode.
     ToggleShuffle,
+    /// Toggle repeat mode.
     ToggleRepeat,
+    /// Stop playback.
     Stop,
 }
 
@@ -283,13 +305,9 @@ fn airport_rsakey() -> Arc<RsaKey> {
     KEY.get_or_init(|| Arc::new(RsaKey::from_pem(AIRPORT_KEY).expect("built-in airport.key is invalid"))).clone()
 }
 
-/// The main AirPlay/RAOP server.
-///
-/// Listens for RTSP connections, handles pairing and encryption,
-/// decodes ALAC audio, and delivers PCM samples via [`AudioSession`].
-/// Automatically registers mDNS services for network discovery.
 pub use crate::net::server::BindConfig;
 
+/// Builder for [`RaopServer`].
 pub struct RaopServerBuilder {
     max_clients: usize,
     hwaddr: Option<Vec<u8>>,
@@ -313,6 +331,7 @@ impl Default for RaopServerBuilder {
 }
 
 impl RaopServerBuilder {
+    /// Create a new builder with default settings.
     pub fn new() -> Self {
         Self {
             max_clients: 10,
@@ -331,13 +350,17 @@ impl RaopServerBuilder {
         }
     }
 
+    /// Set the maximum number of concurrent connections. Default: 10.
     pub fn max_clients(mut self, n: usize) -> Self { self.max_clients = n; self }
+    /// Set the 6-byte hardware address for mDNS registration.
     pub fn hwaddr(mut self, addr: impl Into<Vec<u8>>) -> Self { self.hwaddr = Some(addr.into()); self }
+    /// Set an optional HTTP Digest authentication password.
     pub fn password(mut self, pw: impl Into<String>) -> Self { self.password = Some(pw.into()); self }
     /// Set the RTSP listening port. Default: 5000.
     pub fn port(mut self, port: u16) -> Self { self.bind.port = port; self }
     /// Set full bind configuration (address, port, auto-sensing, IPv6).
     pub fn bind(mut self, config: BindConfig) -> Self { self.bind = config; self }
+    /// Set the AirPlay display name. Default: "Shairplay".
     pub fn name(mut self, name: impl Into<String>) -> Self { self.name = name.into(); self }
 
     /// Set a pairing store for persisting device keys across restarts.
@@ -361,15 +384,18 @@ impl RaopServerBuilder {
     }
 
     #[cfg(feature = "ap2")]
+    /// Set the HomeKit pairing PIN. Default: "3939".
     pub fn pin(mut self, pin: impl Into<String>) -> Self {
         self.pin = Some(pin.into()); self
     }
 
     #[cfg(feature = "video")]
+    /// Set a video handler for screen mirroring (experimental).
     pub fn video_handler(mut self, handler: Arc<dyn crate::raop::video::VideoHandler>) -> Self {
         self.video_handler = Some(handler); self
     }
 
+    /// Build the server with the given audio handler.
     pub fn build(self, handler: Arc<dyn AudioHandler>) -> Result<RaopServer, ShairplayError> {
         let rsakey = airport_rsakey();
         let pairing = Arc::new(Pairing::generate()?);
@@ -405,11 +431,10 @@ impl RaopServerBuilder {
     }
 }
 
-/// The main RAOP/AirPlay server. Equivalent to raop_t.
 /// The main AirPlay/RAOP server.
 ///
 /// Listens for RTSP connections, handles pairing and encryption,
-/// decodes ALAC audio, and delivers PCM samples via [`AudioSession`].
+/// decodes audio, and delivers F32LE PCM samples via [`AudioSession`].
 /// Automatically registers mDNS services for network discovery.
 pub struct RaopServer {
     shared: Arc<RaopShared>,
@@ -421,19 +446,19 @@ pub struct RaopServer {
 }
 
 impl RaopServer {
+    /// Create a new server builder.
     pub fn builder() -> RaopServerBuilder {
         RaopServerBuilder::new()
     }
 
+    /// Start the server: bind ports, register mDNS services, begin accepting connections.
     pub async fn start(&mut self) -> Result<(), ShairplayError> {
         let _actual_port = self.httpd.start(self.bind.port).await?;
-        
 
         // Register mDNS services
         let info = self.service_info();
         let mut mdns = MdnsService::new()?;
         mdns.register_raop(&info)?;
-        #[cfg(feature = "ap2")]
         #[cfg(feature = "ap2")]
         mdns.register_airplay(&info)?;
         self.mdns = Some(mdns);
@@ -441,10 +466,12 @@ impl RaopServer {
         Ok(())
     }
 
+    /// Whether the server is currently running.
     pub fn is_running(&self) -> bool {
         self.httpd.is_running()
     }
 
+    /// Stop the server: unregister mDNS services and close all listeners.
     pub async fn stop(&mut self) {
         if let Some(mut mdns) = self.mdns.take() {
             mdns.unregister_raop();
@@ -453,6 +480,7 @@ impl RaopServer {
         self.httpd.stop().await;
     }
 
+    /// Get the mDNS service info for this server.
     pub fn service_info(&self) -> AirPlayServiceInfo {
         #[cfg(feature = "ap2")]
         {
@@ -487,6 +515,7 @@ pub(crate) struct DacpRemoteControl {
 }
 
 impl DacpRemoteControl {
+    /// Create a new DACP remote control client for the given iPhone.
     pub fn new(dacp_id: &str, active_remote: &str, remote_addr: &[u8]) -> Self {
         let mut client = crate::dacp::DacpClient::new(dacp_id, active_remote);
         let ip = match remote_addr.len() {
