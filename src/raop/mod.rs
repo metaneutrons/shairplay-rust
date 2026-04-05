@@ -14,6 +14,7 @@ pub mod handlers_ap2;
 pub mod handlers_hls;
 #[cfg(feature = "hls")]
 pub mod hls;
+pub mod ntp;
 #[cfg(feature = "ap2")]
 pub mod realtime_audio;
 pub mod rtp;

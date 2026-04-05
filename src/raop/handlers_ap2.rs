@@ -678,7 +678,7 @@ pub(crate) fn handle_setup(
                     let local_port = tsock.local_addr()?.port();
                     let mut remote_timing = conn.remote_socket;
                     remote_timing.set_port(timing_rport);
-                    crate::raop::rtp::spawn_ntp_responder(tsock, remote_timing);
+                    crate::raop::ntp::spawn_ntp_responder(tsock, remote_timing);
                     Ok::<_, std::io::Error>(local_port)
                 })
             })
