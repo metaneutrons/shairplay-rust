@@ -80,7 +80,7 @@ impl AirPlayServiceInfo {
     pub fn new(name: &str, port: u16, hwaddr: &[u8], password: bool) -> Self {
         let hw_raop = util::hwaddr_raop(hwaddr);
         let hw_airplay = util::hwaddr_airplay(hwaddr);
-        let raop_name = format!("{}@{}", hw_raop, name);
+        let raop_name = format!("{hw_raop}@{name}");
 
         let raop_txt = vec![
             ("txtvers".into(), RAOP_TXTVERS.into()),
@@ -102,7 +102,7 @@ impl AirPlayServiceInfo {
 
         let airplay_txt = vec![
             ("deviceid".into(), hw_airplay),
-            ("features".into(), format!("0x{:x}", GLOBAL_FEATURES)),
+            ("features".into(), format!("0x{GLOBAL_FEATURES:x}")),
             ("model".into(), GLOBAL_MODEL.into()),
         ];
 
@@ -121,11 +121,11 @@ impl AirPlayServiceInfo {
     pub fn new_airplay2(name: &str, port: u16, hwaddr: &[u8], password: bool, pk_hex: &str, pi: &str) -> Self {
         let hw_raop = util::hwaddr_raop(hwaddr);
         let hw_airplay = util::hwaddr_airplay(hwaddr);
-        let raop_name = format!("{}@{}", hw_raop, name);
+        let raop_name = format!("{hw_raop}@{name}");
 
         let features_lo = super::features::receiver_features() & 0xFFFFFFFF;
         let features_hi = (super::features::receiver_features() >> 32) & 0xFFFFFFFF;
-        let ft = format!("0x{:X},0x{:X}", features_lo, features_hi);
+        let ft = format!("0x{features_lo:X},0x{features_hi:X}");
 
         let raop_txt = vec![
             // AP1 compatibility fields (allows classic AirPlay fallback)
@@ -136,7 +136,7 @@ impl AirPlayServiceInfo {
             // AP2 fields
             ("ft".into(), ft.clone()),
             ("fv".into(), AP2_FW_VERSION.into()),
-            ("sf".into(), format!("0x{:X}", AP2_STATUS_FLAGS)),
+            ("sf".into(), format!("0x{AP2_STATUS_FLAGS:X}")),
             ("md".into(), "0,1,2".into()),
             ("am".into(), GLOBAL_MODEL.into()),
             ("pk".into(), pk_hex.into()),
@@ -151,7 +151,7 @@ impl AirPlayServiceInfo {
             ("btaddr".into(), "00:00:00:00:00:00".into()),
             ("deviceid".into(), hw_airplay),
             ("features".into(), ft),
-            ("flags".into(), format!("0x{:X}", AP2_STATUS_FLAGS)),
+            ("flags".into(), format!("0x{AP2_STATUS_FLAGS:X}")),
             ("gid".into(), pi.into()),
             ("igl".into(), "0".into()),
             ("gcgl".into(), "0".into()),

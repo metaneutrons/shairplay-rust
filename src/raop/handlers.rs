@@ -101,7 +101,7 @@ pub(crate) fn bind_addr_for(conn: &RaopConnection) -> String {
         }
         other => other,
     };
-    format!("{}:0", bind_ip)
+    format!("{bind_ip}:0")
 }
 /// AP1 pair-setup: return Ed25519 public key.
 pub(crate) fn handle_pair_setup(
@@ -309,11 +309,10 @@ pub(crate) fn handle_setup(
 
         let transport_resp = if use_udp {
             format!(
-                "RTP/AVP/UDP;unicast;mode=record;timing_port={};events;control_port={};server_port={}",
-                tport, cport, dport
+                "RTP/AVP/UDP;unicast;mode=record;timing_port={tport};events;control_port={cport};server_port={dport}"
             )
         } else {
-            format!("RTP/AVP/TCP;unicast;interleaved=0-1;mode=record;server_port={}", dport)
+            format!("RTP/AVP/TCP;unicast;interleaved=0-1;mode=record;server_port={dport}")
         };
         response.add_header("Transport", &transport_resp);
         response.add_header("Session", "DEADBEEF");

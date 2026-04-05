@@ -9,7 +9,7 @@ use std::fmt::Write;
 pub fn hwaddr_raop(hwaddr: &[u8]) -> String {
     let mut s = String::with_capacity(hwaddr.len() * 2);
     for &b in hwaddr {
-        write!(s, "{:02X}", b).unwrap();
+        write!(s, "{b:02X}").unwrap();
     }
     s
 }
@@ -22,7 +22,7 @@ pub fn hwaddr_airplay(hwaddr: &[u8]) -> String {
         if i > 0 {
             s.push(':');
         }
-        write!(s, "{:02x}", b).unwrap();
+        write!(s, "{b:02x}").unwrap();
     }
     s
 }

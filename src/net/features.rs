@@ -113,7 +113,7 @@ pub fn features_from(flags: &[AirPlayFeature]) -> u64 {
 pub fn features_to_mdns(features: u64) -> String {
     let lo = features & 0xFFFFFFFF;
     let hi = (features >> 32) & 0xFFFFFFFF;
-    format!("0x{:X},0x{:X}", lo, hi)
+    format!("0x{lo:X},0x{hi:X}")
 }
 
 /// Features for an audio-only AirPlay 2 receiver.

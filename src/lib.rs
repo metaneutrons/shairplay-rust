@@ -1,5 +1,8 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
+#![warn(clippy::redundant_closure)]
+#![warn(clippy::implicit_clone)]
+#![warn(clippy::uninlined_format_args)]
 #![doc = "Pure Rust AirPlay server library.
 
 `shairplay` is a complete reimplementation of the [shairplay](https://github.com/juhovh/shairplay)

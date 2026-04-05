@@ -561,7 +561,7 @@ impl RaopServer {
         {
             let device_id = crate::util::hwaddr_airplay(&self.hwaddr);
             let (_, vk) = crate::crypto::pairing_homekit::server_keypair(&device_id);
-            let pk_hex: String = vk.as_bytes().iter().map(|b| format!("{:02x}", b)).collect();
+            let pk_hex: String = vk.as_bytes().iter().map(|b| format!("{b:02x}")).collect();
             let pi = uuid::Uuid::new_v4().to_string();
             AirPlayServiceInfo::new_airplay2(
                 &self.name,

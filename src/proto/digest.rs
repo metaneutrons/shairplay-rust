@@ -6,7 +6,7 @@ use rand::Rng;
 fn md5_to_hex(hash: &[u8; 16]) -> String {
     let mut s = String::with_capacity(32);
     for &b in hash {
-        s.push_str(&format!("{:02x}", b));
+        s.push_str(&format!("{b:02x}"));
     }
     s
 }
@@ -110,7 +110,7 @@ pub fn is_valid(
 
 /// Extract a quoted value from a "key=\"value\"" pair.
 fn extract_quoted<'a>(part: &'a str, key: &str) -> Option<&'a str> {
-    let prefix = format!("{}=\"", key);
+    let prefix = format!("{key}=\"");
     if part.starts_with(&prefix) && part.ends_with('"') {
         Some(&part[prefix.len()..part.len() - 1])
     } else {

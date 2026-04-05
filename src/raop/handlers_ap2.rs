@@ -142,7 +142,7 @@ pub(crate) fn handle_get_info(
     let _features_hi = (crate::net::features::receiver_features() >> 32) & 0xFFFFFFFF;
 
     let (_, vk) = crate::crypto::pairing_homekit::server_keypair(&conn.device_id);
-    let pk_hex: String = vk.as_bytes().iter().map(|b| format!("{:02x}", b)).collect();
+    let pk_hex: String = vk.as_bytes().iter().map(|b| format!("{b:02x}")).collect();
 
     let hw = crate::util::hwaddr_airplay(&conn.hwaddr);
 
