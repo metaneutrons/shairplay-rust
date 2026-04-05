@@ -1,7 +1,7 @@
 //! Per-connection state and RTSP request handling.
 
 use super::MAX_NONCE_LEN;
-use super::handlers;
+use super::handlers_ap1 as handlers;
 use super::rtsp;
 use super::types::*;
 use crate::crypto::fairplay::FairPlay;

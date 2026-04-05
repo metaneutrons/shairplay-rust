@@ -4,11 +4,11 @@ use crate::crypto::pairing_homekit::{PairVerifyServer, SrpServer};
 use crate::proto::http::{HttpRequest, HttpResponse};
 use crate::raop::rtp::RaopRtp;
 
-use super::handlers::{RaopConnection, bind_addr_for, local_ip_from};
+use super::handlers_ap1::{RaopConnection, bind_addr_for, local_ip_from};
 
 #[cfg(feature = "ap2")]
 /// AP2 pair-setup: SRP-6a + HomeKit pairing (M1→M5).
-pub(crate) fn handle_pair_setup_ap2(
+pub(crate) fn handle_pair_setup(
     conn: &mut RaopConnection,
     request: &HttpRequest,
     response: &mut HttpResponse,
@@ -19,7 +19,7 @@ pub(crate) fn handle_pair_setup_ap2(
     // Try AP2 TLV-based pairing first; fall back to AP1 if not valid TLV
     let tlv = match crate::crypto::tlv::TlvValues::decode(data) {
         Ok(t) if t.get(6).is_some() => t, // Must have State field
-        _ => return super::handlers::handle_pair_setup(conn, request, response),
+        _ => return super::handlers_ap1::handle_pair_setup(conn, request, response),
     };
     let state = *tlv.get(6)?.first()?;
 
@@ -69,7 +69,7 @@ pub(crate) fn handle_pair_setup_ap2(
 
 #[cfg(feature = "ap2")]
 /// AP2 pair-verify: Ed25519 verify + HKDF shared secret derivation.
-pub(crate) fn handle_pair_verify_ap2(
+pub(crate) fn handle_pair_verify(
     conn: &mut RaopConnection,
     request: &HttpRequest,
     response: &mut HttpResponse,
@@ -84,7 +84,7 @@ pub(crate) fn handle_pair_verify_ap2(
                 data_len = data.len(),
                 "pair-verify: no TLV state, falling back to legacy"
             );
-            return super::handlers::handle_pair_verify(conn, request, response);
+            return super::handlers_ap1::handle_pair_verify(conn, request, response);
         }
     };
     let state = *tlv.get(6)?.first()?;
@@ -131,7 +131,7 @@ pub(crate) fn handle_pair_verify_ap2(
 
 #[cfg(feature = "ap2")]
 /// AP2 GET /info: return device capabilities as binary plist.
-pub(crate) fn handle_get_info(
+pub(crate) fn handle_info(
     conn: &mut RaopConnection,
     _request: &HttpRequest,
     response: &mut HttpResponse,
@@ -189,7 +189,7 @@ pub(crate) fn handle_get_info(
 
 #[cfg(feature = "ap2")]
 /// AP2 SETUP: configure streams (type 96/103/110/130), event channel, timing.
-pub(crate) fn handle_setup_2(
+pub(crate) fn handle_setup(
     conn: &mut RaopConnection,
     request: &HttpRequest,
     response: &mut HttpResponse,
@@ -703,7 +703,7 @@ pub(crate) fn handle_setup_2(
 
 #[cfg(feature = "ap2")]
 /// AP2 RECORD: start buffered audio playout.
-pub(crate) fn handle_record_2(
+pub(crate) fn handle_record(
     _conn: &mut RaopConnection,
     _request: &HttpRequest,
     response: &mut HttpResponse,
@@ -715,7 +715,7 @@ pub(crate) fn handle_record_2(
 
 #[cfg(feature = "ap2")]
 /// AP2 SETRATEANCHORTI: set PTP anchor for timed playout.
-pub(crate) fn handle_setrateanchortime(
+pub(crate) fn handle_set_rate_anchor_time(
     conn: &mut RaopConnection,
     request: &HttpRequest,
     _response: &mut HttpResponse,
@@ -758,7 +758,7 @@ pub(crate) fn handle_setrateanchortime(
 
 #[cfg(feature = "ap2")]
 /// AP2 SETPEERS: receive PTP peer addresses (informational).
-pub(crate) fn handle_setpeers(
+pub(crate) fn handle_set_peers(
     _conn: &mut RaopConnection,
     request: &HttpRequest,
     _response: &mut HttpResponse,
@@ -776,7 +776,7 @@ pub(crate) fn handle_setpeers(
 
 #[cfg(feature = "ap2")]
 /// AP2 FLUSHBUFFERED: flush playout buffer up to sequence/timestamp.
-pub(crate) fn handle_flushbuffered(
+pub(crate) fn handle_flush_buffered(
     conn: &mut RaopConnection,
     request: &HttpRequest,
     _response: &mut HttpResponse,
@@ -851,7 +851,7 @@ pub(crate) fn handle_command(
 
 #[cfg(feature = "ap2")]
 /// AP2 POST /audioMode: acknowledge audio mode change.
-pub(crate) fn handle_audiomode(
+pub(crate) fn handle_audio_mode(
     _conn: &mut RaopConnection,
     request: &HttpRequest,
     _response: &mut HttpResponse,

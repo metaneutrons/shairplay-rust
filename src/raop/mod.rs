@@ -7,7 +7,7 @@ pub mod buffer;
 pub mod buffered_audio;
 #[cfg(feature = "ap2")]
 pub mod event_channel;
-pub mod handlers;
+pub mod handlers_ap1;
 #[cfg(feature = "ap2")]
 pub mod handlers_ap2;
 #[cfg(feature = "hls")]

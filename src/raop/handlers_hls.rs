@@ -1,6 +1,6 @@
 //! HLS HTTP handlers — /play, /playback-info, /scrub, /rate, /stop, /server-info.
 
-use super::handlers::RaopConnection;
+use super::handlers_ap1::RaopConnection;
 use crate::proto::http::{HttpRequest, HttpResponse};
 
 /// `GET /server-info` — server capabilities for HLS mode.
