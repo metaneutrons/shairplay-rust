@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.0.0](https://github.com/metaneutrons/shairplay-rust/compare/v0.1.0...v1.0.0) (2026-04-05)
+
+
+### ⚠ BREAKING CHANGES
+
+* move metadata/volume/coverart/progress off audio path
+
+### Features
+
+* add error and lifecycle callbacks, rename RaopError to ServerError ([53e55a6](https://github.com/metaneutrons/shairplay-rust/commit/53e55a6f8a648bbe9571f676daafcdafd4bd8612))
+* move metadata/volume/coverart/progress off audio path ([2a53225](https://github.com/metaneutrons/shairplay-rust/commit/2a532252ccd38d390cc99087f7b4bf78961d3d9b))
+* parse DMAP metadata — deliver TrackMetadata struct instead of raw bytes ([8dc0ad8](https://github.com/metaneutrons/shairplay-rust/commit/8dc0ad8777b97eb29342d4bcd37f5b7abedd3ea4))
+
+
+### Performance Improvements
+
+* move DMAP parsing off audio delivery path ([a17bda0](https://github.com/metaneutrons/shairplay-rust/commit/a17bda002d7213ca2796eec4ad496186bacb3dff))
+
 ## 0.1.0 (2026-04-05)
 
 
