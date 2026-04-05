@@ -1,0 +1,8 @@
+#!/bin/sh
+# Pre-push hook: run cargo audit before pushing
+echo "Running cargo audit..."
+cargo audit --quiet
+if [ $? -ne 0 ]; then
+    echo "cargo audit failed — fix vulnerabilities before pushing"
+    exit 1
+fi
