@@ -19,3 +19,18 @@ jobs:
         id: release
         with:
           release-type: rust
+
+  publish:
+    name: Publish to crates.io
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install ALSA (Linux)
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+      - name: Publish
+        run: cargo publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
