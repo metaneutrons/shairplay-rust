@@ -1,5 +1,7 @@
 //! RAOP/AirPlay server core — connection handling, audio pipeline, and public API.
 
+pub use crate::proto::dmap::TrackMetadata;
+
 pub mod buffer;
 #[cfg(feature = "ap2")]
 pub mod buffered_audio;
@@ -125,8 +127,8 @@ pub trait AudioSession: Send + Sync {
     fn audio_flush(&mut self) {}
     /// Volume change in dB (0.0 = max, -144.0 = mute).
     fn audio_set_volume(&mut self, _volume: f32) {}
-    /// DMAP track metadata (binary).
-    fn audio_set_metadata(&mut self, _metadata: &[u8]) {}
+    /// Track metadata (parsed from DMAP).
+    fn audio_set_metadata(&mut self, _metadata: &crate::proto::dmap::TrackMetadata) {}
     /// Album artwork (JPEG or PNG).
     fn audio_set_coverart(&mut self, _coverart: &[u8]) {}
     /// DACP remote control identifiers (AP1 only).

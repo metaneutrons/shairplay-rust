@@ -402,7 +402,9 @@ fn delivery_loop(
             for cmd in meta {
                 match cmd {
                     PlayoutCommand::Volume(v) => sess.audio_set_volume(v),
-                    PlayoutCommand::Metadata(d) => sess.audio_set_metadata(&d),
+                    PlayoutCommand::Metadata(d) => {
+                        sess.audio_set_metadata(&crate::proto::dmap::TrackMetadata::from_dmap(&d))
+                    }
                     PlayoutCommand::Coverart(d) => sess.audio_set_coverart(&d),
                     PlayoutCommand::Progress { start, current, end } => sess.audio_set_progress(start, current, end),
                     _ => {}

@@ -245,7 +245,7 @@ impl RaopRtp {
                             st.flush = NO_FLUSH;
                         }
                         if let Some(m) = st.metadata.take() {
-                            session.audio_set_metadata(&m);
+                            session.audio_set_metadata(&crate::proto::dmap::TrackMetadata::from_dmap(&m));
                         }
                         if let Some(c) = st.coverart.take() {
                             session.audio_set_coverart(&c);
@@ -367,7 +367,7 @@ impl RaopRtp {
                             st.flush = NO_FLUSH;
                         }
                         if let Some(m) = st.metadata.take() {
-                            session.audio_set_metadata(&m);
+                            session.audio_set_metadata(&crate::proto::dmap::TrackMetadata::from_dmap(&m));
                         }
                         if let Some(c) = st.coverart.take() {
                             session.audio_set_coverart(&c);

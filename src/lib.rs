@@ -74,6 +74,7 @@ pub use net::server::BindConfig;
 pub use raop::hls::{HlsHandler, HlsSession};
 pub use raop::{
     AudioCodec, AudioFormat, AudioHandler, AudioSession, RaopServer, RaopServerBuilder, RemoteCommand, RemoteControl,
+    TrackMetadata,
 };
 #[cfg(feature = "ap2")]
 pub use raop::{MemoryPairingStore, PairingStore};
