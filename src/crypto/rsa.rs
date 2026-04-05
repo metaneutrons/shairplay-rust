@@ -2,8 +2,8 @@
 
 use rsa::pkcs1::DecodeRsaPrivateKey;
 use rsa::pkcs1v15::SigningKey;
-use rsa::signature::hazmat::PrehashSigner;
 use rsa::signature::SignatureEncoding;
+use rsa::signature::hazmat::PrehashSigner;
 use rsa::traits::PublicKeyParts;
 use rsa::{Oaep, RsaPrivateKey};
 

@@ -1,7 +1,7 @@
 [package]
 name = "shairplay"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 license = "LGPL-3.0-or-later"
 description = "Pure Rust AirPlay server library"
 keywords = ["airplay", "raop", "audio", "streaming", "apple"]
@@ -9,7 +9,7 @@ categories = ["multimedia::audio", "network-programming"]
 readme = "README.md"
 homepage = "https://github.com/metaneutrons/shairplay-rust"
 repository = "https://github.com/fabianlindfors/shairplay"
-rust-version = "1.75"
+rust-version = "1.85"
 
 [dependencies]
 # Async runtime

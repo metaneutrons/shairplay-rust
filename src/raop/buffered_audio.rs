@@ -231,7 +231,7 @@ async fn receive_loop(
     output_config: OutputConfig,
     state: Arc<(Mutex<PlayoutState>, Condvar)>,
 ) {
-    use chacha20poly1305::{aead::Aead, aead::Payload, ChaCha20Poly1305, KeyInit, Nonce};
+    use chacha20poly1305::{ChaCha20Poly1305, KeyInit, Nonce, aead::Aead, aead::Payload};
 
     let cipher = ChaCha20Poly1305::new(shk.into());
     let mut len_buf = [0u8; 2];
@@ -388,7 +388,7 @@ fn delivery_loop(
         let ready: Vec<(u32, Vec<f32>)> = s
             .buffer
             .iter()
-            .filter(|(&ts, _)| (target_rtp.wrapping_sub(ts) as i32) >= 0)
+            .filter(|(ts, _)| (target_rtp.wrapping_sub(**ts) as i32) >= 0)
             .map(|(&ts, data)| (ts, data.clone()))
             .collect();
 

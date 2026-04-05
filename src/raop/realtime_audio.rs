@@ -7,7 +7,7 @@ use std::sync::Arc;
 use tokio::net::UdpSocket;
 use tracing::{debug, info, warn};
 
-use chacha20poly1305::{aead::Aead, aead::Payload, ChaCha20Poly1305, KeyInit, Nonce};
+use chacha20poly1305::{ChaCha20Poly1305, KeyInit, Nonce, aead::Aead, aead::Payload};
 
 use crate::raop::{AudioCodec, AudioFormat, AudioHandler};
 

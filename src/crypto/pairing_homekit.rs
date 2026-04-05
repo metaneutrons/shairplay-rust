@@ -2,7 +2,7 @@
 //!
 //! Implements PAIR_SERVER_HOMEKIT for AirPlay 2 pair-setup and pair-verify.
 
-use chacha20poly1305::{aead::Aead, ChaCha20Poly1305, KeyInit, Nonce};
+use chacha20poly1305::{ChaCha20Poly1305, KeyInit, Nonce, aead::Aead};
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use hkdf::Hkdf;
 use num_bigint::BigUint;
@@ -211,11 +211,7 @@ impl SrpServer {
     }
     /// Returns the derived session key (only available after successful pair-verify).
     pub fn session_key(&self) -> Option<&[u8]> {
-        if self.verified {
-            Some(&self.session_key)
-        } else {
-            None
-        }
+        if self.verified { Some(&self.session_key) } else { None }
     }
 }
 
@@ -229,11 +225,7 @@ fn sha512(data: &[u8]) -> [u8; 64] {
 
 fn to_bytes_be(n: &BigUint) -> Vec<u8> {
     let b = n.to_bytes_be();
-    if b.is_empty() {
-        vec![0]
-    } else {
-        b
-    }
+    if b.is_empty() { vec![0] } else { b }
 }
 
 fn to_bytes_be_padded(n: &BigUint, len: usize) -> Vec<u8> {

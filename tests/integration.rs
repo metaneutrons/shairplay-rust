@@ -267,10 +267,11 @@ mod ap2_tests {
 
         // Helper to send RTSP and read response
         async fn rtsp_post(stream: &mut TcpStream, url: &str, cseq: u32, body: &[u8]) -> (String, Vec<u8>) {
-            let req =
-                format!(
+            let req = format!(
                 "POST {} RTSP/1.0\r\nCSeq: {}\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\n\r\n",
-                url, cseq, body.len()
+                url,
+                cseq,
+                body.len()
             );
             stream.write_all(req.as_bytes()).await.unwrap();
             stream.write_all(body).await.unwrap();
@@ -317,11 +318,7 @@ mod ap2_tests {
         use sha2::{Digest, Sha512};
         fn to_bytes_be(n: &BigUint) -> Vec<u8> {
             let b = n.to_bytes_be();
-            if b.is_empty() {
-                vec![0]
-            } else {
-                b
-            }
+            if b.is_empty() { vec![0] } else { b }
         }
         fn to_padded(n: &BigUint, len: usize) -> Vec<u8> {
             let b = n.to_bytes_be();

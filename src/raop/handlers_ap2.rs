@@ -4,7 +4,7 @@ use crate::crypto::pairing_homekit::{PairVerifyServer, SrpServer};
 use crate::proto::http::{HttpRequest, HttpResponse};
 use crate::raop::rtp::RaopRtp;
 
-use super::handlers::{bind_addr_for, local_ip_from, RaopConnection};
+use super::handlers::{RaopConnection, bind_addr_for, local_ip_from};
 
 #[cfg(feature = "ap2")]
 /// AP2 pair-setup: SRP-6a + HomeKit pairing (M1→M5).

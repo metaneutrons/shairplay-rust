@@ -16,11 +16,11 @@ use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 
 use tokio::net::UdpSocket;
-use tokio::sync::{watch, Mutex};
+use tokio::sync::{Mutex, watch};
 use tracing::{debug, info};
 
 use crate::error::{NetworkError, ShairplayError};
-use crate::raop::buffer::{RaopBuffer, RAOP_PACKET_LEN};
+use crate::raop::buffer::{RAOP_PACKET_LEN, RaopBuffer};
 use crate::raop::{AudioCodec, AudioFormat, AudioHandler};
 
 /// Sentinel value for [`RtpState::flush`] indicating no flush is pending.
