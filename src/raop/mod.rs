@@ -67,6 +67,14 @@ pub struct AudioFormat {
 pub trait AudioHandler: Send + Sync + 'static {
     /// Called when a new audio stream starts. Return a session to receive PCM data.
     fn audio_init(&self, format: AudioFormat) -> Box<dyn AudioSession>;
+    /// Called when a client connects.
+    fn on_client_connected(&self, _addr: &str) {}
+    /// Called when a client disconnects.
+    fn on_client_disconnected(&self, _addr: &str) {}
+    /// Called on runtime errors. Default: log at warn level.
+    fn on_error(&self, error: &crate::error::ShairplayError) {
+        tracing::warn!(%error, "AirPlay error");
+    }
 }
 
 /// Storage for paired device keys. Implement this to persist pairing across restarts.
@@ -243,8 +251,11 @@ impl HttpdCallbacks for RaopShared {
             #[cfg(feature = "hls")]
             hls_state: crate::raop::hls::HlsState::new(),
         };
+        let remote_str = remote.ip().to_string();
+        conn.handler.on_client_connected(&remote_str);
         Some(Box::new(RaopConnectionHandler {
             conn,
+            remote_addr: remote_str,
             #[cfg(feature = "ap2")]
             cipher: None,
             #[cfg(feature = "ap2")]
@@ -255,10 +266,17 @@ impl HttpdCallbacks for RaopShared {
 
 struct RaopConnectionHandler {
     conn: handlers::RaopConnection,
+    remote_addr: String,
     #[cfg(feature = "ap2")]
     cipher: Option<crate::crypto::chacha_transport::EncryptedChannel>,
     #[cfg(feature = "ap2")]
-    pending_secret: Option<Vec<u8>>, // activate encryption AFTER current response is sent
+    pending_secret: Option<Vec<u8>>,
+}
+
+impl Drop for RaopConnectionHandler {
+    fn drop(&mut self) {
+        self.conn.handler.on_client_disconnected(&self.remote_addr);
+    }
 }
 
 impl ConnectionHandler for RaopConnectionHandler {

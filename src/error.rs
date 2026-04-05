@@ -5,9 +5,9 @@ use thiserror::Error;
 /// Top-level error type for the shairplay library.
 #[derive(Debug, Error)]
 pub enum ShairplayError {
-    /// RAOP server or session error.
-    #[error("RAOP error: {0}")]
-    Raop(#[from] RaopError),
+    /// Server or session error.
+    #[error("server error: {0}")]
+    Server(#[from] ServerError),
 
     /// Cryptographic operation failed.
     #[error("crypto error: {0}")]
@@ -26,9 +26,9 @@ pub enum ShairplayError {
     Codec(#[from] CodecError),
 }
 
-/// Errors from the RAOP server and session handling.
+/// Errors from the AirPlay server and session handling.
 #[derive(Debug, Error)]
-pub enum RaopError {
+pub enum ServerError {
     /// Server has not been started yet.
     #[error("server not started")]
     NotStarted,
