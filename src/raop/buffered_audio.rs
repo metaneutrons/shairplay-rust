@@ -54,21 +54,6 @@ pub enum PlayoutCommand {
     },
     /// Stop playback and tear down.
     Stop,
-    /// Volume change (dB).
-    Volume(f32),
-    /// DMAP track metadata.
-    Metadata(crate::proto::dmap::TrackMetadata),
-    /// Album artwork.
-    Coverart(Vec<u8>),
-    /// Playback progress.
-    Progress {
-        /// Start position (RTP timestamp).
-        start: u32,
-        /// Current position (RTP timestamp).
-        current: u32,
-        /// End position (RTP timestamp).
-        end: u32,
-    },
 }
 
 struct PlayoutState {
@@ -80,7 +65,6 @@ struct PlayoutState {
     channels: u8,
     stopped: bool,
     format_changed: bool,
-    pending_meta: Vec<PlayoutCommand>, // Volume/Metadata/Coverart/Progress
 }
 
 /// TCP listener for buffered audio. Binds a port and spawns the processing pipeline.
@@ -119,7 +103,6 @@ impl BufferedAudioProcessor {
                 channels: 2,
                 stopped: false,
                 format_changed: false,
-                pending_meta: Vec::new(),
             }),
             Condvar::new(),
         ));
@@ -193,13 +176,6 @@ impl BufferedAudioProcessor {
                         s.buffer.clear();
                         cvar.notify_all();
                         break;
-                    }
-                    cmd @ (PlayoutCommand::Volume(_)
-                    | PlayoutCommand::Metadata(_)
-                    | PlayoutCommand::Coverart(_)
-                    | PlayoutCommand::Progress { .. }) => {
-                        s.pending_meta.push(cmd);
-                        cvar.notify_all();
                     }
                 }
             }
@@ -395,19 +371,9 @@ fn delivery_loop(
         for (ts, _) in &ready {
             s.buffer.remove(ts);
         }
-        let meta: Vec<PlayoutCommand> = s.pending_meta.drain(..).collect();
         drop(s);
 
         if let Some(ref mut sess) = session {
-            for cmd in meta {
-                match cmd {
-                    PlayoutCommand::Volume(v) => sess.audio_set_volume(v),
-                    PlayoutCommand::Metadata(ref d) => sess.audio_set_metadata(d),
-                    PlayoutCommand::Coverart(d) => sess.audio_set_coverart(&d),
-                    PlayoutCommand::Progress { start, current, end } => sess.audio_set_progress(start, current, end),
-                    _ => {}
-                }
-            }
             for (_, frame) in &ready {
                 sess.audio_process(frame);
             }

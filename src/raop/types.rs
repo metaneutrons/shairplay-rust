@@ -22,13 +22,33 @@ pub struct AudioFormat {
     pub sample_rate: u32,
 }
 
-/// Trait for receiving decoded audio data from AirPlay clients.
+/// Trait for receiving AirPlay events and creating audio sessions.
 ///
-/// Implement this trait to handle audio output. A new [`AudioSession`] is created
-/// for each client connection via [`audio_init`](AudioHandler::audio_init).
+/// `AudioHandler` is `Send + Sync` — all callbacks can be called from any thread
+/// without blocking audio delivery. Metadata, volume, and artwork callbacks are
+/// called directly from the RTSP handler thread, never from the audio path.
+///
+/// A new [`AudioSession`] is created for each audio stream via
+/// [`audio_init`](AudioHandler::audio_init). The session only receives PCM samples.
 pub trait AudioHandler: Send + Sync + 'static {
     /// Called when a new audio stream starts. Return a session to receive PCM data.
     fn audio_init(&self, format: AudioFormat) -> Box<dyn AudioSession>;
+
+    // --- Metadata events (called from RTSP thread, never blocks audio) ---
+
+    /// Volume change in dB (0.0 = max, -144.0 = mute).
+    fn on_volume(&self, _volume: f32) {}
+    /// Track metadata (parsed from DMAP).
+    fn on_metadata(&self, _metadata: &crate::proto::dmap::TrackMetadata) {}
+    /// Album artwork (JPEG or PNG).
+    fn on_coverart(&self, _coverart: &[u8]) {}
+    /// Playback progress (start, current, end in RTP timestamps at 44100 Hz).
+    fn on_progress(&self, _start: u32, _current: u32, _end: u32) {}
+    /// A remote control interface is available (AP1 DACP).
+    fn on_remote_control(&self, _remote: Arc<dyn RemoteControl>) {}
+
+    // --- Connection lifecycle ---
+
     /// Called when a client connects.
     fn on_client_connected(&self, _addr: &str) {}
     /// Called when a client disconnects.
@@ -77,26 +97,16 @@ impl PairingStore for MemoryPairingStore {
     }
 }
 
-/// Per-connection audio session receiving decoded PCM samples.
+/// Per-connection audio session — hot path only.
 ///
 /// Created by [`AudioHandler::audio_init`]. Dropped when the client disconnects.
+/// Only receives decoded PCM samples and flush events. All metadata, volume,
+/// and artwork events go to [`AudioHandler`] instead.
 pub trait AudioSession: Send + Sync {
     /// Receive decoded f32 interleaved PCM audio samples.
     fn audio_process(&mut self, samples: &[f32]);
     /// Flush the audio buffer (e.g. on seek).
     fn audio_flush(&mut self) {}
-    /// Volume change in dB (0.0 = max, -144.0 = mute).
-    fn audio_set_volume(&mut self, _volume: f32) {}
-    /// Track metadata (parsed from DMAP).
-    fn audio_set_metadata(&mut self, _metadata: &crate::proto::dmap::TrackMetadata) {}
-    /// Album artwork (JPEG or PNG).
-    fn audio_set_coverart(&mut self, _coverart: &[u8]) {}
-    /// DACP remote control identifiers (AP1 only).
-    fn audio_remote_control_id(&mut self, _dacp_id: &str, _active_remote: &str, _remote_addr: &[u8]) {}
-    /// Playback progress (start, current, end in RTP timestamps).
-    fn audio_set_progress(&mut self, _start: u32, _current: u32, _end: u32) {}
-    /// Called when a remote control interface becomes available (AP1 DACP).
-    fn remote_control_available(&mut self, _remote: Arc<dyn RemoteControl>) {}
 }
 
 /// Playback command to send to the source device.
