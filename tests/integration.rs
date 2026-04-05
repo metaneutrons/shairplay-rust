@@ -6,43 +6,70 @@ use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
-use shairplay::{AudioFormat, AudioHandler, AudioSession, RaopServer};
+use shairplay::{AudioFormat, AudioHandler, AudioSession, RaopServer, TrackMetadata};
 
 struct TestHandler {
     inits: Arc<Mutex<Vec<AudioFormat>>>,
+    volumes: Arc<Mutex<Vec<f32>>>,
+    metadata: Arc<Mutex<Vec<TrackMetadata>>>,
+    coverart: Arc<Mutex<Vec<Vec<u8>>>>,
 }
 
-struct TestSession {
-    samples: Arc<Mutex<Vec<Vec<f32>>>>,
-}
+struct TestSession;
 
 impl AudioHandler for TestHandler {
     fn audio_init(&self, format: AudioFormat) -> Box<dyn AudioSession> {
         self.inits.lock().unwrap().push(format);
-        Box::new(TestSession {
-            samples: Arc::new(Mutex::new(Vec::new())),
-        })
+        Box::new(TestSession)
+    }
+    fn on_volume(&self, volume: f32) {
+        self.volumes.lock().unwrap().push(volume);
+    }
+    fn on_metadata(&self, metadata: &TrackMetadata) {
+        self.metadata.lock().unwrap().push(metadata.clone());
+    }
+    fn on_coverart(&self, data: &[u8]) {
+        self.coverart.lock().unwrap().push(data.to_vec());
     }
 }
 
 impl AudioSession for TestSession {
-    fn audio_process(&mut self, samples: &[f32]) {
-        self.samples.lock().unwrap().push(samples.to_vec());
-    }
+    fn audio_process(&mut self, _samples: &[f32]) {}
 }
 
-async fn start_server() -> (RaopServer, u16, Arc<Mutex<Vec<AudioFormat>>>) {
+struct TestState {
+    inits: Arc<Mutex<Vec<AudioFormat>>>,
+    volumes: Arc<Mutex<Vec<f32>>>,
+    metadata: Arc<Mutex<Vec<TrackMetadata>>>,
+    coverart: Arc<Mutex<Vec<Vec<u8>>>>,
+}
+
+async fn start_server() -> (RaopServer, u16, TestState) {
     let inits = Arc::new(Mutex::new(Vec::new()));
-    let handler = Arc::new(TestHandler { inits: inits.clone() });
+    let volumes = Arc::new(Mutex::new(Vec::new()));
+    let metadata = Arc::new(Mutex::new(Vec::new()));
+    let coverart = Arc::new(Mutex::new(Vec::new()));
+    let handler = Arc::new(TestHandler {
+        inits: inits.clone(),
+        volumes: volumes.clone(),
+        metadata: metadata.clone(),
+        coverart: coverart.clone(),
+    });
     let mut server = RaopServer::builder()
         .name("IntegrationTest")
         .hwaddr([0x00, 0x11, 0x22, 0x33, 0x44, 0x55])
-        .port(0) // auto-assign
+        .port(0)
         .build(handler)
         .unwrap();
     server.start().await.unwrap();
     let port = server.service_info().port;
-    (server, port, inits)
+    let state = TestState {
+        inits,
+        volumes,
+        metadata,
+        coverart,
+    };
+    (server, port, state)
 }
 
 async fn send_rtsp(stream: &mut TcpStream, request: &str) -> String {
@@ -143,6 +170,9 @@ async fn fp_setup_returns_142_bytes() {
 async fn unauthorized_without_password_header() {
     let handler = Arc::new(TestHandler {
         inits: Arc::new(Mutex::new(Vec::new())),
+        volumes: Arc::new(Mutex::new(Vec::new())),
+        metadata: Arc::new(Mutex::new(Vec::new())),
+        coverart: Arc::new(Mutex::new(Vec::new())),
     });
     let mut server = RaopServer::builder()
         .name("AuthTest")
@@ -267,10 +297,11 @@ mod ap2_tests {
 
         // Helper to send RTSP and read response
         async fn rtsp_post(stream: &mut TcpStream, url: &str, cseq: u32, body: &[u8]) -> (String, Vec<u8>) {
-            let req =
-                format!(
+            let req = format!(
                 "POST {} RTSP/1.0\r\nCSeq: {}\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\n\r\n",
-                url, cseq, body.len()
+                url,
+                cseq,
+                body.len()
             );
             stream.write_all(req.as_bytes()).await.unwrap();
             stream.write_all(body).await.unwrap();
@@ -317,11 +348,7 @@ mod ap2_tests {
         use sha2::{Digest, Sha512};
         fn to_bytes_be(n: &BigUint) -> Vec<u8> {
             let b = n.to_bytes_be();
-            if b.is_empty() {
-                vec![0]
-            } else {
-                b
-            }
+            if b.is_empty() { vec![0] } else { b }
         }
         fn to_padded(n: &BigUint, len: usize) -> Vec<u8> {
             let b = n.to_bytes_be();
@@ -406,4 +433,83 @@ mod ap2_tests {
 
         server.stop().await;
     }
+}
+
+#[tokio::test]
+#[serial]
+async fn set_parameter_volume_calls_handler() {
+    let (mut server, port, state) = start_server().await;
+    let mut stream = TcpStream::connect(format!("127.0.0.1:{port}")).await.unwrap();
+
+    let body = "volume: -20.000000\r\n";
+    let req = format!(
+        "SET_PARAMETER rtsp://127.0.0.1/{} RTSP/1.0\r\nCSeq: 1\r\nContent-Type: text/parameters\r\nContent-Length: {}\r\n\r\n{}",
+        port,
+        body.len(),
+        body
+    );
+    let resp = send_rtsp(&mut stream, &req).await;
+    assert!(resp.contains("200 OK"));
+
+    let volumes = state.volumes.lock().unwrap();
+    assert_eq!(volumes.len(), 1);
+    assert!((volumes[0] - (-20.0)).abs() < 0.01);
+
+    server.stop().await;
+}
+
+#[tokio::test]
+#[serial]
+async fn set_parameter_metadata_calls_handler() {
+    let (mut server, port, state) = start_server().await;
+    let mut stream = TcpStream::connect(format!("127.0.0.1:{port}")).await.unwrap();
+
+    // Minimal DMAP: mlit container with minm("Test")
+    let dmap: &[u8] = &[
+        0x6d, 0x6c, 0x69, 0x74, 0x00, 0x00, 0x00, 0x0c, 0x6d, 0x69, 0x6e, 0x6d, 0x00, 0x00, 0x00, 0x04, 0x54, 0x65,
+        0x73, 0x74,
+    ];
+    let header = format!(
+        "SET_PARAMETER rtsp://127.0.0.1/{} RTSP/1.0\r\nCSeq: 1\r\nContent-Type: application/x-dmap-tagged\r\nContent-Length: {}\r\n\r\n",
+        port,
+        dmap.len()
+    );
+    stream.write_all(header.as_bytes()).await.unwrap();
+    stream.write_all(dmap).await.unwrap();
+    let mut buf = vec![0u8; 4096];
+    let n = stream.read(&mut buf).await.unwrap();
+    let resp = String::from_utf8_lossy(&buf[..n]);
+    assert!(resp.contains("200 OK"));
+
+    let meta = state.metadata.lock().unwrap();
+    assert_eq!(meta.len(), 1);
+    assert_eq!(meta[0].title.as_deref(), Some("Test"));
+
+    server.stop().await;
+}
+
+#[tokio::test]
+#[serial]
+async fn set_parameter_coverart_calls_handler() {
+    let (mut server, port, state) = start_server().await;
+    let mut stream = TcpStream::connect(format!("127.0.0.1:{port}")).await.unwrap();
+
+    let jpeg = b"\xff\xd8\xff\xe0fake-jpeg-data";
+    let header = format!(
+        "SET_PARAMETER rtsp://127.0.0.1/{} RTSP/1.0\r\nCSeq: 1\r\nContent-Type: image/jpeg\r\nContent-Length: {}\r\n\r\n",
+        port,
+        jpeg.len()
+    );
+    stream.write_all(header.as_bytes()).await.unwrap();
+    stream.write_all(jpeg).await.unwrap();
+    let mut buf = vec![0u8; 4096];
+    let n = stream.read(&mut buf).await.unwrap();
+    let resp = String::from_utf8_lossy(&buf[..n]);
+    assert!(resp.contains("200 OK"));
+
+    let art = state.coverart.lock().unwrap();
+    assert_eq!(art.len(), 1);
+    assert_eq!(&art[0], jpeg);
+
+    server.stop().await;
 }

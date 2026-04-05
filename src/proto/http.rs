@@ -87,7 +87,7 @@ impl HttpRequest {
             }
             Ok(httparse::Status::Partial) => Ok(()),
             Err(e) => {
-                let msg = format!("{}", e);
+                let msg = format!("{e}");
                 self.error = Some(msg.clone());
                 Err(ProtocolError::InvalidRtsp(msg))
             }
@@ -170,7 +170,7 @@ impl HttpResponse {
     /// Create a new response with status line. Equivalent to http_response_init.
     pub fn new(protocol: &str, code: u16, message: &str) -> Self {
         let mut data = Vec::with_capacity(1024);
-        let status_line = format!("{} {} {}\r\n", protocol, code, message);
+        let status_line = format!("{protocol} {code} {message}\r\n");
         data.extend_from_slice(status_line.as_bytes());
         Self {
             data,

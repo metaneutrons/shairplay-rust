@@ -161,7 +161,7 @@ impl AacDecoder {
     /// Create a new decoder for the given format.
     pub fn new(sample_rate: u32, channels: u8) -> Result<Self, String> {
         use symphonia::core::audio::Channels;
-        use symphonia::core::codecs::{CodecParameters, DecoderOptions, CODEC_TYPE_AAC};
+        use symphonia::core::codecs::{CODEC_TYPE_AAC, CodecParameters, DecoderOptions};
 
         let mut params = CodecParameters::new();
         params.for_codec(CODEC_TYPE_AAC).with_sample_rate(sample_rate);

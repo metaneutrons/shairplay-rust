@@ -6,7 +6,7 @@
 
 use crate::proto::digest;
 use crate::proto::http::{HttpRequest, HttpResponse};
-use crate::raop::handlers::{self, RaopConnection};
+use crate::raop::handlers_ap1::{self as handlers, RaopConnection};
 #[cfg(feature = "ap2")]
 use crate::raop::handlers_ap2;
 #[cfg(feature = "hls")]
@@ -30,7 +30,7 @@ const ROUTES: &[Route] = &[
     Route {
         method: "POST",
         path: "/pair-setup",
-        handler: handlers_ap2::handle_pair_setup_ap2,
+        handler: handlers_ap2::handle_pair_setup,
     },
     #[cfg(not(feature = "ap2"))]
     Route {
@@ -42,7 +42,7 @@ const ROUTES: &[Route] = &[
     Route {
         method: "POST",
         path: "/pair-verify",
-        handler: handlers_ap2::handle_pair_verify_ap2,
+        handler: handlers_ap2::handle_pair_verify,
     },
     #[cfg(not(feature = "ap2"))]
     Route {
@@ -72,7 +72,7 @@ const ROUTES: &[Route] = &[
     Route {
         method: "POST",
         path: "/audioMode",
-        handler: handlers_ap2::handle_audiomode,
+        handler: handlers_ap2::handle_audio_mode,
     },
     // --- Standard RTSP methods ---
     Route {
@@ -100,32 +100,32 @@ const ROUTES: &[Route] = &[
     Route {
         method: "SETRATEANCHORTIME",
         path: "*",
-        handler: handlers_ap2::handle_setrateanchortime,
+        handler: handlers_ap2::handle_set_rate_anchor_time,
     },
     #[cfg(feature = "ap2")]
     Route {
         method: "SETPEERS",
         path: "*",
-        handler: handlers_ap2::handle_setpeers,
+        handler: handlers_ap2::handle_set_peers,
     },
     #[cfg(feature = "ap2")]
     Route {
         method: "SETPEERSX",
         path: "*",
-        handler: handlers_ap2::handle_setpeers,
+        handler: handlers_ap2::handle_set_peers,
     },
     #[cfg(feature = "ap2")]
     Route {
         method: "FLUSHBUFFERED",
         path: "*",
-        handler: handlers_ap2::handle_flushbuffered,
+        handler: handlers_ap2::handle_flush_buffered,
     },
     // --- Info ---
     #[cfg(feature = "ap2")]
     Route {
         method: "GET",
         path: "/info",
-        handler: handlers_ap2::handle_get_info,
+        handler: handlers_ap2::handle_info,
     },
     // --- HLS (HTTP Live Streaming) ---
     #[cfg(feature = "hls")]
@@ -239,7 +239,7 @@ fn resolve_setup(conn: &RaopConnection, request: &HttpRequest) -> Option<Handler
     {
         let is_plist = request.data().map(|d| d.starts_with(b"bplist")).unwrap_or(false);
         if conn.is_ap2 || is_plist {
-            return Some(handlers_ap2::handle_setup_2);
+            return Some(handlers_ap2::handle_setup);
         }
     }
     let _ = (conn, request); // suppress unused warnings without ap2
@@ -250,7 +250,7 @@ fn resolve_setup(conn: &RaopConnection, request: &HttpRequest) -> Option<Handler
 fn resolve_record(conn: &RaopConnection) -> Option<Handler> {
     #[cfg(feature = "ap2")]
     if conn.is_ap2 {
-        return Some(handlers_ap2::handle_record_2);
+        return Some(handlers_ap2::handle_record);
     }
     let _ = conn;
     None

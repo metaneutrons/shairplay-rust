@@ -7,8 +7,8 @@ use crate::crypto::pairing::{Pairing, PairingSession};
 use crate::crypto::rsa::RsaKey;
 use crate::proto::http::{HttpRequest, HttpResponse};
 use crate::proto::sdp::Sdp;
-use crate::raop::rtp::RaopRtp;
 use crate::raop::AudioHandler;
+use crate::raop::rtp::RaopRtp;
 
 #[cfg(feature = "ap2")]
 use crate::crypto::pairing_homekit::{PairVerifyServer, SrpServer};
@@ -101,7 +101,7 @@ pub(crate) fn bind_addr_for(conn: &RaopConnection) -> String {
         }
         other => other,
     };
-    format!("{}:0", bind_ip)
+    format!("{bind_ip}:0")
 }
 /// AP1 pair-setup: return Ed25519 public key.
 pub(crate) fn handle_pair_setup(
@@ -279,9 +279,9 @@ pub(crate) fn handle_setup(
 
     // Check for DACP remote control headers
     if let (Some(dacp_id), Some(active_remote)) = (request.header("DACP-ID"), request.header("Active-Remote")) {
-        if let Some(rtp) = &conn.raop_rtp {
-            rtp.set_remote_control_id(dacp_id, active_remote);
-        }
+        let addr_bytes = crate::raop::rtp::remote_addr_bytes(&conn.remote_socket.ip().to_string());
+        let remote = std::sync::Arc::new(crate::raop::DacpRemoteControl::new(dacp_id, active_remote, &addr_bytes));
+        conn.handler.on_remote_control(remote);
     }
 
     let use_udp = !transport.starts_with("RTP/AVP/TCP");
@@ -309,11 +309,10 @@ pub(crate) fn handle_setup(
 
         let transport_resp = if use_udp {
             format!(
-                "RTP/AVP/UDP;unicast;mode=record;timing_port={};events;control_port={};server_port={}",
-                tport, cport, dport
+                "RTP/AVP/UDP;unicast;mode=record;timing_port={tport};events;control_port={cport};server_port={dport}"
             )
         } else {
-            format!("RTP/AVP/TCP;unicast;interleaved=0-1;mode=record;server_port={}", dport)
+            format!("RTP/AVP/TCP;unicast;interleaved=0-1;mode=record;server_port={dport}")
         };
         response.add_header("Transport", &transport_resp);
         response.add_header("Session", "DEADBEEF");
@@ -354,49 +353,46 @@ pub(crate) fn handle_set_parameter(
     tracing::debug!(content_type, len = data.len(), "SET_PARAMETER");
 
     // AP2: forward via playout command channel
+    // AP2: metadata goes directly to AudioHandler (never blocks audio).
+    // Only volume and flush go through the playout command channel
+    // because they affect the audio pipeline.
     #[cfg(feature = "ap2")]
-    if let Some(tx) = &conn.playout_cmd {
-        let cmd = match content_type {
+    if conn.playout_cmd.is_some() {
+        match content_type {
             "text/parameters" => {
                 let text = std::str::from_utf8(data).ok()?;
                 if let Some(rest) = text.strip_prefix("volume: ") {
-                    rest.trim()
-                        .parse::<f32>()
-                        .ok()
-                        .map(crate::raop::buffered_audio::PlayoutCommand::Volume)
+                    if let Ok(vol) = rest.trim().parse::<f32>() {
+                        conn.handler.on_volume(vol);
+                    }
                 } else if let Some(rest) = text.strip_prefix("progress: ") {
                     let p: Vec<&str> = rest.trim().split('/').collect();
                     if p.len() == 3 {
-                        Some(crate::raop::buffered_audio::PlayoutCommand::Progress {
-                            start: p[0].parse().unwrap_or(0),
-                            current: p[1].parse().unwrap_or(0),
-                            end: p[2].parse().unwrap_or(0),
-                        })
-                    } else {
-                        None
+                        conn.handler.on_progress(
+                            p[0].parse().unwrap_or(0),
+                            p[1].parse().unwrap_or(0),
+                            p[2].parse().unwrap_or(0),
+                        );
                     }
-                } else {
-                    None
                 }
             }
-            "image/jpeg" | "image/png" => Some(crate::raop::buffered_audio::PlayoutCommand::Coverart(data.to_vec())),
-            "application/x-dmap-tagged" => Some(crate::raop::buffered_audio::PlayoutCommand::Metadata(data.to_vec())),
-            _ => None,
-        };
-        if let Some(c) = cmd {
-            let _ = tx.send(c);
+            "image/jpeg" | "image/png" => conn.handler.on_coverart(data),
+            "application/x-dmap-tagged" => {
+                let meta = crate::proto::dmap::TrackMetadata::from_dmap(data);
+                conn.handler.on_metadata(&meta);
+            }
+            _ => {}
         }
         return None;
     }
 
-    // AP1: forward via raop_rtp
-    let rtp = conn.raop_rtp.as_ref()?;
+    // AP1: deliver metadata directly via AudioHandler (never blocks audio)
     match content_type {
         "text/parameters" => {
             let text = std::str::from_utf8(data).ok()?;
             if let Some(rest) = text.strip_prefix("volume: ") {
                 if let Ok(vol) = rest.trim().parse::<f32>() {
-                    rtp.set_volume(vol);
+                    conn.handler.on_volume(vol);
                 }
             } else if let Some(rest) = text.strip_prefix("progress: ") {
                 let parts: Vec<&str> = rest.trim().split('/').collect();
@@ -404,15 +400,16 @@ pub(crate) fn handle_set_parameter(
                     let s = parts[0].parse().unwrap_or(0);
                     let c = parts[1].parse().unwrap_or(0);
                     let e = parts[2].parse().unwrap_or(0);
-                    rtp.set_progress(s, c, e);
+                    conn.handler.on_progress(s, c, e);
                 }
             }
         }
         "image/jpeg" | "image/png" => {
-            rtp.set_coverart(data);
+            conn.handler.on_coverart(data);
         }
         "application/x-dmap-tagged" => {
-            rtp.set_metadata(data);
+            let meta = crate::proto::dmap::TrackMetadata::from_dmap(data);
+            conn.handler.on_metadata(&meta);
         }
         _ => {}
     }

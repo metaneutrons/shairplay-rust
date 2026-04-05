@@ -336,11 +336,6 @@ impl AudioSession for Session {
 
         self.ring.lock().unwrap().push_samples(&final_samples);
     }
-
-    fn audio_set_volume(&mut self, _volume: f32) {}
-    fn audio_set_metadata(&mut self, _metadata: &[u8]) {}
-    fn audio_set_coverart(&mut self, _coverart: &[u8]) {}
-    fn audio_set_progress(&mut self, _start: u32, _current: u32, _end: u32) {}
 }
 
 impl Drop for Session {

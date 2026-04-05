@@ -8,7 +8,7 @@
 [![crates.io](https://img.shields.io/crates/v/shairplay.svg)](https://crates.io/crates/shairplay)
 [![docs.rs](https://docs.rs/shairplay/badge.svg)](https://docs.rs/shairplay)
 [![License: LGPL-3.0](https://img.shields.io/badge/license-LGPL--3.0-blue.svg)](LICENSE)
-[![Rust](https://img.shields.io/badge/rust-1.75%2B-orange.svg)](https://www.rust-lang.org)
+[![Rust](https://img.shields.io/badge/rust-1.85%2B-orange.svg)](https://www.rust-lang.org)
 
 A complete AirPlay audio and video receiver as a Rust library. Supports both classic AirPlay (AP1) and AirPlay 2 (AP2) with buffered audio, encrypted transport, HomeKit pairing, and screen mirroring. `#![forbid(unsafe_code)]`.
 
@@ -17,6 +17,8 @@ A complete AirPlay audio and video receiver as a Rust library. Supports both cla
 </div>
 
 ---
+
+> ⚠️ **Pre-1.0 notice:** This crate is under active development. Minor version bumps (e.g. 0.1 → 0.2) may include breaking API changes. Pin your dependency to a specific minor version (`shairplay = "0.2"`) and review the [CHANGELOG](CHANGELOG.md) before upgrading.
 
 ## Features
 
@@ -139,7 +141,9 @@ pipeline is implemented but not yet producing correct output. See
 [AP2-STATUS.md](AP2-STATUS.md) and [VIDEO-RESEARCH.md](VIDEO-RESEARCH.md)
 for details.
 
-### 🔬 Remote Control — Research Complete
+### 🔬 Remote Control
+
+AP1 DACP remote control is fully implemented and works.
 
 Third-party AP2 receivers cannot send playback commands (play/pause/skip) to the iPhone. All paths require Apple ecosystem trust:
 
@@ -147,7 +151,7 @@ Third-party AP2 receivers cannot send playback commands (play/pause/skip) to the
 - **Companion-link protocol** — requires same Apple ID
 - **DACP** — iPhone doesn't send Active-Remote header in AP2
 
-AP1 DACP remote control is fully implemented and works. See [AP2-STATUS.md](AP2-STATUS.md) for the full research.
+ See [AP2-STATUS.md](AP2-STATUS.md) for the full research. If you have further insights or want to help investigate, please reach out!
 
 ## Example Player
 
@@ -194,7 +198,7 @@ src/
 ├── codec/               Audio decoders
 │   ├── alac             ALAC decoder (AP1)
 │   ├── aac              AAC decoder via symphonia (AP2)
-│   └── resample         Sample rate conversion + channel mixdown (AP2)
+│   └── resample         Sample rate conversion + channel mixdown
 ├── proto/               SDP, HTTP/RTSP, binary plist, HTTP Digest auth
 ├── net/                 Async TCP server, mDNS, PTP timing, feature flags
 ├── dacp/                DACP remote control client (AP1)
@@ -203,12 +207,12 @@ src/
 
 ## Test Coverage
 
-144 tests including 17 C-verified pairing vectors from [pair_ap](https://github.com/ejurgensen/pair_ap) and 10 C-verified FairPlay vectors generated from the original [shairplay](https://github.com/juhovh/shairplay) C source:
+152 tests including 17 C-verified pairing vectors from [pair_ap](https://github.com/ejurgensen/pair_ap) and 10 C-verified FairPlay vectors generated from the original [shairplay](https://github.com/juhovh/shairplay) C source:
 
-```
+```plain
 cargo test                    # AP1 tests
-cargo test --features ap2  # AP1 + AP2 tests
-cargo test --features video     # All tests
+cargo test --features ap2     # AP1 + AP2 tests
+cargo test --features video   # All tests
 ```
 
 ## Acknowledgments
@@ -230,4 +234,4 @@ LGPL-3.0-or-later
 
 ## Disclaimer
 
-All resources in this repository are written using only freely available information from the internet. The code and related resources are meant for educational purposes only. It is the responsibility of the user to make sure all local laws are adhered to.
+All resources in this repository are written using only freely available information from the internet. The code and related resources are meant for educational purposes only. It is the responsibility of the user to make sure all local laws are adhered to. Parts of this project are generated with the help of AI and the expert-in-the-loop approach.
