@@ -119,8 +119,20 @@ video relay where the app sends a video URL for the receiver to fetch directly.
 - [ ] Test AP2+video hybrid features (can we have both AP2 audio and video?)
 - [ ] Wire up screen mirroring audio (type 96 `usingScreen`)
 - [ ] Improve H.264 decode stability (release build, error recovery)
-- [ ] Research type 120 protocol
 - [ ] Re-test previous key derivation approaches with correct FairPlay key
+
+### Hypothesis: HLS with AP2 Audio
+
+HLS video playback (`/play`, `/playback-info`) is pure HTTP — it relays an
+m3u8 URL to the application and doesn't use the RTP audio pipeline. It may
+be possible to run HLS alongside AP2 buffered audio (type 103) instead of
+requiring the UxPlay legacy feature set. The iPhone could send the video URL
+via HLS while streaming audio via AP2.
+
+Currently untested: all open-source implementations (UxPlay, AirShow) use
+legacy features for HLS. The `hls` feature implies `video` (legacy features)
+as a safe default. Decoupling `hls` from `video` to test with AP2 features
+is a potential future experiment.
 
 ## Known Issues
 
