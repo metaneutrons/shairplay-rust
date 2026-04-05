@@ -46,7 +46,7 @@ fn get_response(username: &str, realm: &str, password: &str, nonce: &str, method
 /// Generate a random hex nonce string. Equivalent to digest_generate_nonce.
 pub fn generate_nonce(len: usize) -> String {
     let mut rng = rand::thread_rng();
-    let bytes: Vec<u8> = (0..16).map(|_| rng.gen()).collect();
+    let bytes: Vec<u8> = (0..16).map(|_| rng.r#gen()).collect();
     let mut h = Md5::new();
     h.update(&bytes);
     let hash: [u8; 16] = h.finalize().into();

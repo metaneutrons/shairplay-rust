@@ -85,11 +85,7 @@ impl<'a> BitReader<'a> {
 }
 
 fn count_leading_zeros(input: u32) -> u32 {
-    if input == 0 {
-        32
-    } else {
-        input.leading_zeros()
-    }
+    if input == 0 { 32 } else { input.leading_zeros() }
 }
 
 fn sign_extend_32(val: i32, bits: u32) -> i32 {
@@ -164,11 +160,7 @@ fn entropy_rice_decode(
         let decoded_value = entropy_decode_value(reader, read_sample_size, k, 0xFFFFFFFF) + sign_modifier;
         let final_value = {
             let v = (decoded_value + 1) / 2;
-            if decoded_value & 1 != 0 {
-                -v
-            } else {
-                v
-            }
+            if decoded_value & 1 != 0 { -v } else { v }
         };
         output[i] = final_value;
         sign_modifier = 0;

@@ -212,7 +212,7 @@ mod tests {
         // Construct a minimal Follow_Up message (54 bytes)
         let mut buf = vec![0u8; 54];
         buf[0] = 0x08; // Follow_Up type
-                       // Clock identity at bytes 20..28
+        // Clock identity at bytes 20..28
         buf[20..28].copy_from_slice(&0xAABBCCDD11223344u64.to_be_bytes());
         // Correction field at bytes 8..16 (0 for simplicity)
         // preciseOriginTimestamp at bytes 34..44

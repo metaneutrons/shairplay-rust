@@ -7,8 +7,8 @@ use crate::crypto::pairing::{Pairing, PairingSession};
 use crate::crypto::rsa::RsaKey;
 use crate::proto::http::{HttpRequest, HttpResponse};
 use crate::proto::sdp::Sdp;
-use crate::raop::rtp::RaopRtp;
 use crate::raop::AudioHandler;
+use crate::raop::rtp::RaopRtp;
 
 #[cfg(feature = "ap2")]
 use crate::crypto::pairing_homekit::{PairVerifyServer, SrpServer};

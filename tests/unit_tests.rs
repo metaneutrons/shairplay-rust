@@ -431,9 +431,11 @@ mod ap2_tests {
 
     #[test]
     fn c_vector_audio_packet_decrypt() {
-        use chacha20poly1305::{aead::Aead, aead::Payload, ChaCha20Poly1305, KeyInit, Nonce};
+        use chacha20poly1305::{ChaCha20Poly1305, KeyInit, Nonce, aead::Aead, aead::Payload};
 
-        let packet = hex_decode("809a000193eda3fd160000004ea11b7fc9f1c33dbf860ff8ae0b52a18df7c4cbe6066082bdc97419157558ec76f55c1e2bc54b119bf70102030405060708");
+        let packet = hex_decode(
+            "809a000193eda3fd160000004ea11b7fc9f1c33dbf860ff8ae0b52a18df7c4cbe6066082bdc97419157558ec76f55c1e2bc54b119bf70102030405060708",
+        );
 
         let shk = [0x42u8; 32];
         let cipher = ChaCha20Poly1305::new((&shk).into());
@@ -457,9 +459,11 @@ mod ap2_tests {
 
     #[test]
     fn audio_packet_wrong_key_fails() {
-        use chacha20poly1305::{aead::Aead, aead::Payload, ChaCha20Poly1305, KeyInit, Nonce};
+        use chacha20poly1305::{ChaCha20Poly1305, KeyInit, Nonce, aead::Aead, aead::Payload};
 
-        let packet = hex_decode("809a000193eda3fd160000004ea11b7fc9f1c33dbf860ff8ae0b52a18df7c4cbe6066082bdc97419157558ec76f55c1e2bc54b119bf70102030405060708");
+        let packet = hex_decode(
+            "809a000193eda3fd160000004ea11b7fc9f1c33dbf860ff8ae0b52a18df7c4cbe6066082bdc97419157558ec76f55c1e2bc54b119bf70102030405060708",
+        );
 
         let wrong_key = [0x00u8; 32];
         let cipher = ChaCha20Poly1305::new((&wrong_key).into());
@@ -470,9 +474,11 @@ mod ap2_tests {
         let aad = &packet[4..12];
         let ciphertext = &packet[12..pkt_len - 8];
 
-        assert!(cipher
-            .decrypt(Nonce::from_slice(&nonce), Payload { msg: ciphertext, aad })
-            .is_err());
+        assert!(
+            cipher
+                .decrypt(Nonce::from_slice(&nonce), Payload { msg: ciphertext, aad })
+                .is_err()
+        );
     }
 
     // --- Buffered audio length-prefix framing ---

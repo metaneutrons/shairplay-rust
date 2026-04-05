@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
-use tokio::sync::{watch, Semaphore};
+use tokio::sync::{Semaphore, watch};
 
 use crate::error::NetworkError;
 use crate::proto::http::{HttpRequest, HttpResponse};

@@ -7,8 +7,8 @@
 //! Nonce: `[0,0,0,0, counter_u64_LE]`, counter increments per block.
 
 use chacha20poly1305::{
-    aead::{Aead, Payload},
     ChaCha20Poly1305, KeyInit,
+    aead::{Aead, Payload},
 };
 use hkdf::Hkdf;
 use sha2::Sha512;
