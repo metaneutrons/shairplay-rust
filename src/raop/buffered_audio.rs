@@ -57,7 +57,7 @@ pub enum PlayoutCommand {
     /// Volume change (dB).
     Volume(f32),
     /// DMAP track metadata.
-    Metadata(Vec<u8>),
+    Metadata(crate::proto::dmap::TrackMetadata),
     /// Album artwork.
     Coverart(Vec<u8>),
     /// Playback progress.
@@ -402,9 +402,7 @@ fn delivery_loop(
             for cmd in meta {
                 match cmd {
                     PlayoutCommand::Volume(v) => sess.audio_set_volume(v),
-                    PlayoutCommand::Metadata(d) => {
-                        sess.audio_set_metadata(&crate::proto::dmap::TrackMetadata::from_dmap(&d))
-                    }
+                    PlayoutCommand::Metadata(ref d) => sess.audio_set_metadata(d),
                     PlayoutCommand::Coverart(d) => sess.audio_set_coverart(&d),
                     PlayoutCommand::Progress { start, current, end } => sess.audio_set_progress(start, current, end),
                     _ => {}

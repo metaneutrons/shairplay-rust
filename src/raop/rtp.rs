@@ -59,7 +59,7 @@ struct RtpState {
     /// Set to true when volume changes; cleared after delivery.
     volume_changed: bool,
     /// Pending DMAP track metadata (binary).
-    metadata: Option<Vec<u8>>,
+    metadata: Option<crate::proto::dmap::TrackMetadata>,
     /// Pending album artwork (JPEG/PNG).
     coverart: Option<Vec<u8>>,
     /// DACP ID for remote control discovery.
@@ -245,7 +245,7 @@ impl RaopRtp {
                             st.flush = NO_FLUSH;
                         }
                         if let Some(m) = st.metadata.take() {
-                            session.audio_set_metadata(&crate::proto::dmap::TrackMetadata::from_dmap(&m));
+                            session.audio_set_metadata(&m);
                         }
                         if let Some(c) = st.coverart.take() {
                             session.audio_set_coverart(&c);
@@ -367,7 +367,7 @@ impl RaopRtp {
                             st.flush = NO_FLUSH;
                         }
                         if let Some(m) = st.metadata.take() {
-                            session.audio_set_metadata(&crate::proto::dmap::TrackMetadata::from_dmap(&m));
+                            session.audio_set_metadata(&m);
                         }
                         if let Some(c) = st.coverart.take() {
                             session.audio_set_coverart(&c);
@@ -435,10 +435,10 @@ impl RaopRtp {
     /// Queue DMAP track metadata for delivery to the AudioSession.
     pub fn set_metadata(&self, data: &[u8]) {
         debug!(bytes = data.len(), "Track metadata received");
-        let d = data.to_vec();
+        let parsed = crate::proto::dmap::TrackMetadata::from_dmap(data);
         let state = self.state.clone();
         tokio::spawn(async move {
-            state.lock().await.metadata = Some(d);
+            state.lock().await.metadata = Some(parsed);
         });
     }
 

@@ -379,7 +379,9 @@ pub(crate) fn handle_set_parameter(
                 }
             }
             "image/jpeg" | "image/png" => Some(crate::raop::buffered_audio::PlayoutCommand::Coverart(data.to_vec())),
-            "application/x-dmap-tagged" => Some(crate::raop::buffered_audio::PlayoutCommand::Metadata(data.to_vec())),
+            "application/x-dmap-tagged" => Some(crate::raop::buffered_audio::PlayoutCommand::Metadata(
+                crate::proto::dmap::TrackMetadata::from_dmap(data),
+            )),
             _ => None,
         };
         if let Some(c) = cmd {
