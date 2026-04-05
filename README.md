@@ -18,6 +18,8 @@ A complete AirPlay audio and video receiver as a Rust library. Supports both cla
 
 ---
 
+> ⚠️ **Pre-1.0 notice:** This crate is under active development. Minor version bumps (e.g. 0.1 → 0.2) may include breaking API changes. Pin your dependency to a specific minor version (`shairplay = "0.2"`) and review the [CHANGELOG](CHANGELOG.md) before upgrading.
+
 ## Features
 
 |  | Feature | Details |
