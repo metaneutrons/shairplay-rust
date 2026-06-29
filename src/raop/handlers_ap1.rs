@@ -333,6 +333,15 @@ pub(crate) fn handle_setup(
     None
 }
 
+/// AP1 RTSP RECORD: acknowledge the start of RTP streaming.
+pub(crate) fn handle_record(
+    _conn: &mut RaopConnection,
+    _request: &HttpRequest,
+    _response: &mut HttpResponse,
+) -> Option<Vec<u8>> {
+    None
+}
+
 /// RTSP GET_PARAMETER: return volume or other parameters.
 pub(crate) fn handle_get_parameter(
     _conn: &mut RaopConnection,

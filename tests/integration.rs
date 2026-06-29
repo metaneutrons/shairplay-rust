@@ -169,6 +169,20 @@ async fn unknown_rtsp_method_returns_404() {
 
 #[tokio::test]
 #[serial]
+async fn ap1_record_returns_200() {
+    let (mut server, port, _) = start_server().await;
+
+    let mut stream = TcpStream::connect(format!("127.0.0.1:{port}")).await.unwrap();
+    let resp = send_rtsp(&mut stream, "RECORD /test RTSP/1.0\r\nCSeq: 8\r\n\r\n").await;
+
+    assert!(resp.contains("RTSP/1.0 200 OK"), "got: {resp}");
+    assert!(resp.contains("CSeq: 8"));
+
+    server.stop().await;
+}
+
+#[tokio::test]
+#[serial]
 async fn oversized_header_returns_400_and_closes_connection() {
     let (mut server, port, _) = start_server().await;
 

@@ -285,7 +285,7 @@ fn resolve_record(conn: &RaopConnection) -> Option<Handler> {
         return Some(handlers_ap2::handle_record);
     }
     let _ = conn;
-    None
+    Some(handlers::handle_record)
 }
 
 /// FLUSH: parse RTP-Info header and flush the buffer inline.

@@ -281,6 +281,7 @@ impl MdnsService {
             info.port,
             txt_map(&info.raop_txt),
         )
+        .map(|svc| svc.enable_addr_auto())
         .map_err(|e| NetworkError::Mdns(format!("{e}")))?;
         self.raop_fullname = Some(svc.get_fullname().to_string());
         self.daemon
@@ -300,6 +301,7 @@ impl MdnsService {
             info.port,
             txt_map(&info.airplay_txt),
         )
+        .map(|svc| svc.enable_addr_auto())
         .map_err(|e| NetworkError::Mdns(format!("{e}")))?;
         self.airplay_fullname = Some(svc.get_fullname().to_string());
         self.daemon
