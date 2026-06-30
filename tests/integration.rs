@@ -402,9 +402,14 @@ mod ap2_tests {
         let raop = |key: &str| info.raop_txt.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str());
         let airplay = |key: &str| info.airplay_txt.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str());
 
-        assert_eq!(raop("ft"), Some("0x405D4A00,0x14340"));
+        let expected_features = if cfg!(feature = "video") {
+            "0x527FFEE6,0x0"
+        } else {
+            "0x405D4A00,0x14340"
+        };
+        assert_eq!(raop("ft"), Some(expected_features));
         assert_eq!(raop("sf"), Some("0x204"));
-        assert_eq!(airplay("features"), Some("0x405D4A00,0x14340"));
+        assert_eq!(airplay("features"), Some(expected_features));
         assert_eq!(airplay("flags"), Some("0x204"));
     }
 

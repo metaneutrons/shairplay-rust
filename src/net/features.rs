@@ -164,6 +164,7 @@ pub fn receiver_features_for_pairing(requires_pin_pairing: bool) -> u64 {
     // No AP2 bits (40, 41, 46, 48) — pure legacy protocol for video.
     #[cfg(feature = "video")]
     {
+        let _ = requires_pin_pairing;
         use AirPlayFeature::*;
         let mut val = features_from(&[
             SupportsAirPlayPhoto,              // bit 1

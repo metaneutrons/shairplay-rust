@@ -417,6 +417,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "video"))]
     fn ap2_pin_pairing_txt_changes_features_and_flags() {
         let info = AirPlayServiceInfo::new_airplay2(
             "Test Speaker",
@@ -432,6 +433,27 @@ mod tests {
 
         assert_eq!(raop("ft"), Some("0x405D4A00,0x14340"));
         assert_eq!(airplay("features"), Some("0x405D4A00,0x14340"));
+        assert_eq!(raop("sf"), Some("0x204"));
+        assert_eq!(airplay("flags"), Some("0x204"));
+    }
+
+    #[test]
+    #[cfg(feature = "video")]
+    fn ap2_pin_pairing_txt_changes_flags_with_video_features() {
+        let info = AirPlayServiceInfo::new_airplay2(
+            "Test Speaker",
+            7000,
+            &[0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF],
+            false,
+            "abcd1234",
+            "my-uuid-here",
+            true,
+        );
+        let raop = |key: &str| info.raop_txt.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str());
+        let airplay = |key: &str| info.airplay_txt.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str());
+
+        assert_eq!(raop("ft"), Some("0x527FFEE6,0x0"));
+        assert_eq!(airplay("features"), Some("0x527FFEE6,0x0"));
         assert_eq!(raop("sf"), Some("0x204"));
         assert_eq!(airplay("flags"), Some("0x204"));
     }
