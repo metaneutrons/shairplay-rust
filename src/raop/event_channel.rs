@@ -9,14 +9,15 @@ use tokio::sync::mpsc;
 use tracing::{debug, warn};
 
 use crate::crypto::chacha_transport::EncryptedChannel;
+use crate::error::NetworkError;
 
 /// Handle for sending commands through the event channel.
 #[derive(Clone)]
 pub(crate) struct EventSender {
-    // Never read, but load-bearing: holding the sender keeps the mpsc channel
-    // open for the lifetime of the connection (it is stored in
-    // `RaopConnection::event_sender`). Dropping it would close the channel and
-    // end the event-channel task. Retained pending review of the event-send path.
+    // Load-bearing AND the outbound channel: holding this keeps the mpsc open for
+    // the connection's lifetime (stored in `RaopConnection::event_sender`), and
+    // `send()` pushes events through it. Currently unwired beyond the initial
+    // `updateInfo` queued at SETUP — see AP2-STATUS.md.
     #[allow(dead_code)]
     tx: mpsc::UnboundedSender<Vec<u8>>,
 }
@@ -25,6 +26,19 @@ impl EventSender {
     /// Create from an existing channel sender.
     pub(crate) fn from_tx(tx: mpsc::UnboundedSender<Vec<u8>>) -> Self {
         Self { tx }
+    }
+
+    /// Push an event to the controller over the encrypted AP2 event channel.
+    ///
+    /// Scaffolding for receiver-initiated outbound events (volume, now-playing,
+    /// progress). Today only the initial `updateInfo` is sent at SETUP time via
+    /// the raw channel sender; wiring this on receiver-side state changes would
+    /// enable fuller AP2 event reporting. Unwired — see AP2-STATUS.md.
+    #[allow(dead_code)] // unwired outbound-event API — see AP2-STATUS.md
+    pub(crate) fn send(&self, data: Vec<u8>) -> Result<(), NetworkError> {
+        self.tx
+            .send(data)
+            .map_err(|_| NetworkError::Mdns("event channel closed".into()))
     }
 }
 

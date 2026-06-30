@@ -9,16 +9,41 @@
 | Normal HomeKit pairing | — | Configurable PIN, PairingStore key persistence |
 | Encrypted RTSP transport | — | ChaCha20-Poly1305, HKDF-SHA512 key derivation |
 | FairPlay handshake | — | Full fp-setup M1/M2 |
-| PTP timing | — | Offset smoothing, anchor-based playout |
+| PTP timing | — | ⚠ Client implemented but **not wired** to playout — see [Open / Unwired](#open--unwired--scaffolding-present-not-connected) |
 | Buffered audio | 103 | AAC decode (symphonia), per-packet ChaCha20 decrypt |
 | Multichannel | 103 | 5.1/7.1 AAC → stereo mixdown (ITU-R BS.775) |
 | Resampling | 103 | rubato StreamResampler, any rate → output rate |
 | Timed playout buffer | 103 | Pause/resume/flush, stale frame discard |
 | Metadata forwarding | — | Volume, artwork, progress, DMAP track info |
-| Event channel | — | Bidirectional encrypted TCP, updateInfo |
+| Event channel | — | Bidirectional encrypted TCP; `updateInfo` sent on connect. Ongoing outbound event reporting **unwired** (see Open) |
 | Realtime audio | 96 | ALAC decode, ChaCha20 decrypt, immediate delivery |
 | **Video (screen mirroring)** | **110** | **AES-128-CTR decrypt, H.264 decode, working on iOS 18** |
 | Unified output | — | Always F32LE interleaved PCM to app |
+
+## Open / Unwired — scaffolding present, not connected
+
+Implemented building blocks that are **not** wired into the runtime path. Kept
+deliberately (behind `#[allow(dead_code)]`) as the foundation for these features —
+do **not** delete them as "dead code"; they are unfinished AP2 capabilities.
+
+- **PTP timing → real clock sync / multi-room** — `src/net/ptp.rs` is a complete
+  IEEE-1588 / Apple-aPTP client (Sync/Follow_Up/Announce parsing, `OffsetSmoother`,
+  `PtpAnchor`) but is **not connected to playout**. The receiver advertises
+  `timingPeerInfo` (PTP) in SETUP yet plays out on best-effort local timing, so there
+  is **no true clock sync and no multi-room sync**. To wire: run the PTP UDP listener
+  (ports 319/320 — needs root / `CAP_NET_BIND_SERVICE`), feed offsets into `PtpClock`,
+  and schedule buffered/realtime playout via `PtpAnchor::delay_until_playout` instead
+  of immediate delivery.
+
+- **Outbound event reporting** — the encrypted event channel is established and the
+  initial `updateInfo` is pushed at SETUP, but the receiver never sends events
+  afterward. `EventSender::send` (held in `RaopConnection::event_sender`,
+  `src/raop/event_channel.rs`) is the API for this; wire calls to it on receiver-side
+  state changes (volume / now-playing / progress) for fuller AP2 event reporting.
+
+> Related already-wired gap closed in 0.6.0: `AudioHandler::on_error` was defined but
+> never called — now wired. The two items above are the remaining "built but unwired"
+> AP2 capabilities.
 
 ## Video — Working (iOS 18)
 
