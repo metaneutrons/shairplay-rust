@@ -248,6 +248,10 @@ fn predictor_decompress_fir_adapt(
     predictor_coef_num: usize,
     predictor_quantitization: i32,
 ) {
+    if output_size == 0 || error_buffer.is_empty() || buffer_out.is_empty() {
+        return;
+    }
+
     buffer_out[0] = error_buffer[0];
 
     if predictor_coef_num == 0 {
@@ -480,6 +484,10 @@ impl AlacDecoder {
 
     /// Decode one ALAC frame. Returns the number of bytes written to output (S16LE).
     pub fn decode_frame(&mut self, input: &[u8], output: &mut [u8]) -> usize {
+        if self.max_samples_per_frame == 0 || self.bytes_per_sample <= 0 {
+            return 0;
+        }
+
         let mut reader = BitReader::new(input);
         let mut output_samples = self.max_samples_per_frame as usize;
         let channels = reader.readbits(3);
@@ -552,6 +560,10 @@ impl AlacDecoder {
     ) {
         let (uncompressed_bytes, is_not_compressed) =
             parse_subframe_header(reader, output_samples, output_size, self.bytes_per_sample as usize);
+        if *output_samples == 0 {
+            *output_size = 0;
+            return;
+        }
 
         let readsamplesize = self.sample_size_config as u32 - uncompressed_bytes * 8;
 
@@ -619,6 +631,10 @@ impl AlacDecoder {
     ) {
         let (uncompressed_bytes, is_not_compressed) =
             parse_subframe_header(reader, output_samples, output_size, self.bytes_per_sample as usize);
+        if *output_samples == 0 {
+            *output_size = 0;
+            return;
+        }
 
         let readsamplesize = self.sample_size_config as u32 - uncompressed_bytes * 8 + 1;
         let mut interlacing_shift = 0u8;
@@ -788,6 +804,33 @@ mod decode_tests {
             expected.extend_from_slice(&(r[i] as i16).to_le_bytes());
         }
         assert_eq!(&out[..16], &expected[..]);
+    }
+
+    #[test]
+    fn decoder_without_info_returns_no_samples() {
+        let mut dec = AlacDecoder::new(16, 2);
+        let mut out = [0u8; 64];
+
+        assert_eq!(dec.decode_frame(&[0u8; 8], &mut out), 0);
+        assert!(dec.decode_frame_f32(&[0u8; 8]).is_none());
+    }
+
+    #[test]
+    fn explicit_zero_sample_frame_returns_no_samples() {
+        let mut dec = AlacDecoder::new(16, 2);
+        dec.set_info(&config_16(4));
+
+        let mut w = BitWriter::new();
+        w.put(1, 3); // channels = 1 (stereo)
+        w.put(0, 4);
+        w.put(0, 12);
+        w.put(1, 1); // has_size = 1
+        w.put(0, 2); // uncompressed_bytes = 0
+        w.put(1, 1); // is_not_compressed = 1
+        w.put(0, 32); // explicit output_samples = 0
+
+        let mut out = [0u8; 64];
+        assert_eq!(dec.decode_frame(&w.bytes, &mut out), 0);
     }
 
     // --- Golden vectors: real Apple-encoded (afconvert) *compressed* ALAC ---

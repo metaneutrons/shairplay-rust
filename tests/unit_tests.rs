@@ -694,6 +694,16 @@ mod ssrc_tests {
     }
 
     #[test]
+    fn alac_ssrc_values_report_bit_depth() {
+        assert!(AudioSsrc::Alac44100S16Stereo.is_alac());
+        assert_eq!(AudioSsrc::Alac44100S16Stereo.bit_depth(), Some(16));
+        assert!(AudioSsrc::Alac48000S24Stereo.is_alac());
+        assert_eq!(AudioSsrc::Alac48000S24Stereo.bit_depth(), Some(24));
+        assert!(!AudioSsrc::Aac44100F24Stereo.is_alac());
+        assert_eq!(AudioSsrc::Aac44100F24Stereo.bit_depth(), None);
+    }
+
+    #[test]
     fn unknown_ssrc_returns_none() {
         assert_eq!(AudioSsrc::from_u32(0x12345678), AudioSsrc::None);
         assert_eq!(AudioSsrc::from_u32(0), AudioSsrc::None);

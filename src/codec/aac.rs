@@ -49,6 +49,11 @@ impl AudioSsrc {
         )
     }
 
+    /// Whether this format uses ALAC encoding.
+    pub fn is_alac(self) -> bool {
+        matches!(self, Self::Alac44100S16Stereo | Self::Alac48000S24Stereo)
+    }
+
     /// Source sample rate for this format.
     pub fn sample_rate(self) -> u32 {
         match self {
@@ -63,6 +68,15 @@ impl AudioSsrc {
             Self::Aac48000F24Surround51 => 6,
             Self::Aac48000F24Surround71 => 8,
             _ => 2,
+        }
+    }
+
+    /// Source bit depth for ALAC formats.
+    pub fn bit_depth(self) -> Option<u8> {
+        match self {
+            Self::Alac44100S16Stereo => Some(16),
+            Self::Alac48000S24Stereo => Some(24),
+            _ => None,
         }
     }
 
