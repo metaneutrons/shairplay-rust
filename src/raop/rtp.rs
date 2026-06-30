@@ -88,23 +88,23 @@ struct RtpState {
 }
 
 /// Configuration for creating an AP1 RTP session, parsed from SDP.
-pub struct RtpConfig {
+pub(crate) struct RtpConfig {
     /// SDP `c=` remote address string (e.g. "192.168.1.5").
-    pub remote: String,
+    pub(crate) remote: String,
     /// Local IP address to bind sockets to.
-    pub local_addr: IpAddr,
+    pub(crate) local_addr: IpAddr,
     /// SDP `a=rtpmap` attribute.
-    pub rtpmap: String,
+    pub(crate) rtpmap: String,
     /// SDP `a=fmtp` attribute (ALAC configuration).
-    pub fmtp: String,
+    pub(crate) fmtp: String,
     /// 128-bit AES session key (decrypted from SDP).
-    pub aes_key: [u8; 16],
+    pub(crate) aes_key: [u8; 16],
     /// 128-bit AES initialization vector.
-    pub aes_iv: [u8; 16],
+    pub(crate) aes_iv: [u8; 16],
     /// If set, resample decoded audio to this rate.
-    pub output_sample_rate: Option<u32>,
+    pub(crate) output_sample_rate: Option<u32>,
     /// Full socket address of the remote peer (preserves scope_id for link-local IPv6).
-    pub remote_socket: std::net::SocketAddr,
+    pub(crate) remote_socket: std::net::SocketAddr,
 }
 
 /// AP1 RTP streaming session.
@@ -115,7 +115,7 @@ pub struct RtpConfig {
 ///
 /// Dropped when the RTSP connection closes, which sends a shutdown signal
 /// to the receive task via the [`watch`] channel.
-pub struct RaopRtp {
+pub(crate) struct RaopRtp {
     handler: Arc<dyn AudioHandler>,
     /// SDP `c=` remote address string (e.g. "192.168.1.5").
     remote: String,
@@ -165,7 +165,7 @@ impl RaopRtp {
     /// Does not bind sockets or start receiving — call [`start`](Self::start) for that.
     ///
     /// Returns `None` if the (peer-supplied) `fmtp` attribute is malformed.
-    pub fn new(callbacks: Arc<dyn AudioHandler>, config: RtpConfig) -> Option<Self> {
+    pub(crate) fn new(callbacks: Arc<dyn AudioHandler>, config: RtpConfig) -> Option<Self> {
         let buffer = RaopBuffer::new(&config.rtpmap, &config.fmtp, &config.aes_key, &config.aes_iv)?;
         let alac_config = buffer.config().clone();
         Some(Self {
@@ -196,7 +196,7 @@ impl RaopRtp {
     ///   Control channel receives retransmit responses (RTP payload type 0x56).
     /// - `use_udp = false`: binds 1 TCP listener. iPhone connects and sends
     ///   `$`-prefixed interleaved RTP frames.
-    pub fn start(
+    pub(crate) fn start(
         &mut self,
         use_udp: bool,
         control_rport: u16,
@@ -398,7 +398,7 @@ impl RaopRtp {
     }
 
     /// Request a buffer flush up to the given sequence number.
-    pub fn flush(&self, next_seq: i32) {
+    pub(crate) fn flush(&self, next_seq: i32) {
         let state = self.state.clone();
         tokio::spawn(async move {
             state.lock().await.flush = next_seq;
@@ -406,7 +406,7 @@ impl RaopRtp {
     }
 
     /// Stop the receive task and flush the buffer.
-    pub fn stop(&mut self) {
+    pub(crate) fn stop(&mut self) {
         if let Some(tx) = self.shutdown_tx.take() {
             let _ = tx.send(true);
         }

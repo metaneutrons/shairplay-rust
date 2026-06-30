@@ -38,7 +38,7 @@ fn rol8x(x: u8, y: u32) -> u32 {
     ((x as u32) << (y & 7)) | ((x as u32) >> (8u32.wrapping_sub(y & 7)))
 }
 
-pub fn garble(
+pub(crate) fn garble(
     buffer0: &mut [u8; 20],
     buffer1: &mut [u8; 210],
     buffer2: &mut [u8; 35],

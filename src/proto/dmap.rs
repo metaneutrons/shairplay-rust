@@ -24,7 +24,7 @@ pub struct TrackMetadata {
 
 impl TrackMetadata {
     /// Parse DMAP binary data into structured metadata.
-    pub fn from_dmap(data: &[u8]) -> Self {
+    pub(crate) fn from_dmap(data: &[u8]) -> Self {
         let mut meta = Self::default();
         let mut pos = 8; // skip mlit header
         while pos + 8 <= data.len() {

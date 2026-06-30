@@ -19,7 +19,7 @@ const MAX_VIDEO_PAYLOAD_LEN: usize = 32 * 1024 * 1024;
 const READ_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Run the video stream receiver. Accepts one TCP connection and processes packets.
-pub async fn run(listener: TcpListener, cipher: VideoCipher, session: Box<dyn VideoSession>) {
+pub(crate) async fn run(listener: TcpListener, cipher: VideoCipher, session: Box<dyn VideoSession>) {
     let (stream, addr) = match listener.accept().await {
         Ok(s) => s,
         Err(e) => {

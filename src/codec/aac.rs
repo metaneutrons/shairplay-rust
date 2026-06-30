@@ -127,15 +127,13 @@ pub fn wrap_adts(raw_aac: &[u8], rate: u32, channels: u8) -> Vec<u8> {
 }
 
 /// Persistent AAC decoder using symphonia. Decodes ADTS-wrapped AAC to F32LE PCM.
-pub struct AacDecoder {
+pub(crate) struct AacDecoder {
     decoder: Box<dyn symphonia::core::codecs::audio::AudioDecoder>,
-    sample_rate: u32,
-    channels: u8,
 }
 
 impl AacDecoder {
     /// Create a new decoder for the given format.
-    pub fn new(sample_rate: u32, channels: u8) -> Result<Self, String> {
+    pub(crate) fn new(sample_rate: u32, channels: u8) -> Result<Self, String> {
         use symphonia::core::audio::{Channels, Position};
         use symphonia::core::codecs::audio::{AudioCodecParameters, AudioDecoderOptions, well_known::CODEC_ID_AAC};
 
@@ -171,15 +169,11 @@ impl AacDecoder {
             .make_audio_decoder(&params, &AudioDecoderOptions::default())
             .map_err(|e| format!("AAC decoder init failed: {e}"))?;
 
-        Ok(Self {
-            decoder,
-            sample_rate,
-            channels,
-        })
+        Ok(Self { decoder })
     }
 
     /// Decode a raw AAC frame (without ADTS header) to interleaved F32 PCM.
-    pub fn decode(&mut self, raw_aac: &[u8]) -> Option<Vec<u8>> {
+    pub(crate) fn decode(&mut self, raw_aac: &[u8]) -> Option<Vec<u8>> {
         use symphonia::core::packet::PacketRef;
         use symphonia::core::units::{Duration, Timestamp};
 
@@ -188,15 +182,6 @@ impl AacDecoder {
         let mut pcm = Vec::new();
         decoded.copy_bytes_to_vec_interleaved_as::<f32>(&mut pcm);
         Some(pcm)
-    }
-
-    /// Source sample rate for this format.
-    pub fn sample_rate(&self) -> u32 {
-        self.sample_rate
-    }
-    /// Number of audio channels for this format.
-    pub fn channels(&self) -> u8 {
-        self.channels
     }
 }
 

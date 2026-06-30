@@ -14,39 +14,39 @@ use crate::crypto::pairing_homekit::{PairVerifyServer, SrpServer};
 
 /// Per-connection state for RTSP handler dispatch. Equivalent to raop_conn_t.
 pub(crate) struct RaopConnection {
-    pub raop_rtp: Option<RaopRtp>,
-    pub fairplay: FairPlay,
-    pub pairing: PairingSession,
-    pub local_addr: Vec<u8>,
+    pub(crate) raop_rtp: Option<RaopRtp>,
+    pub(crate) fairplay: FairPlay,
+    pub(crate) pairing: PairingSession,
+    pub(crate) local_addr: Vec<u8>,
     #[allow(dead_code)] // read in AP2 event channel binding
-    pub remote_addr: Vec<u8>,
-    pub remote_socket: std::net::SocketAddr,
-    pub nonce: String,
+    pub(crate) remote_addr: Vec<u8>,
+    pub(crate) remote_socket: std::net::SocketAddr,
+    pub(crate) nonce: String,
     /// Cheap shared handle to server-wide config (identity, keys, handler, settings).
     /// Replaces the ~17 fields that were previously deep-copied into every connection.
-    pub shared: Arc<crate::raop::connection::RaopShared>,
+    pub(crate) shared: Arc<crate::raop::connection::RaopShared>,
     // AirPlay 2 state
     #[cfg(feature = "ap2")]
-    pub srp_server: Option<SrpServer>,
+    pub(crate) srp_server: Option<SrpServer>,
     #[cfg(feature = "ap2")]
-    pub pair_verify: Option<PairVerifyServer>,
+    pub(crate) pair_verify: Option<PairVerifyServer>,
     #[cfg(feature = "ap2")]
-    pub ap2_shared_secret: Option<Vec<u8>>,
+    pub(crate) ap2_shared_secret: Option<Vec<u8>>,
     /// X25519 shared secret from pair-verify (32 bytes). Used for video key derivation.
     #[cfg(feature = "ap2")]
-    pub pair_verify_secret: Option<[u8; 32]>,
+    pub(crate) pair_verify_secret: Option<[u8; 32]>,
     #[cfg(feature = "ap2")]
-    pub is_ap2: bool,
+    pub(crate) is_ap2: bool,
     #[cfg(feature = "ap2")]
-    pub playout_cmd: Option<tokio::sync::mpsc::UnboundedSender<crate::raop::buffered_audio::PlayoutCommand>>,
+    pub(crate) playout_cmd: Option<tokio::sync::mpsc::UnboundedSender<crate::raop::buffered_audio::PlayoutCommand>>,
     #[cfg(feature = "ap2")]
-    pub event_sender: Option<crate::raop::event_channel::EventSender>,
+    pub(crate) event_sender: Option<crate::raop::event_channel::EventSender>,
     #[cfg(feature = "video")]
-    pub ekey: Option<[u8; 16]>,
+    pub(crate) ekey: Option<[u8; 16]>,
     #[cfg(feature = "video")]
-    pub eiv: Option<[u8; 16]>,
+    pub(crate) eiv: Option<[u8; 16]>,
     #[cfg(feature = "hls")]
-    pub hls_state: std::sync::Arc<std::sync::Mutex<crate::raop::hls::HlsState>>,
+    pub(crate) hls_state: std::sync::Arc<std::sync::Mutex<crate::raop::hls::HlsState>>,
 }
 
 /// Returns the connection's local IP address.

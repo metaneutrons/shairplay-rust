@@ -113,20 +113,11 @@ impl FairPlay {
     }
 
     /// Decrypt the 72-byte AES session key. Must be called after handshake().
-    pub fn decrypt(&self, input: &[u8; 72]) -> Result<[u8; 16], CryptoError> {
+    pub(crate) fn decrypt(&self, input: &[u8; 72]) -> Result<[u8; 16], CryptoError> {
         if self.keymsglen != 164 {
             return Err(CryptoError::FairPlay("handshake not complete".into()));
         }
         Ok(playfair_decrypt(&self.keymsg, input))
-    }
-
-    /// Returns the 164-byte key message from M2, or None if handshake not complete.
-    pub fn keymsg(&self) -> Option<&[u8; 164]> {
-        if self.keymsglen == 164 {
-            Some(&self.keymsg)
-        } else {
-            None
-        }
     }
 }
 

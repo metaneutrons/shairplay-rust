@@ -46,7 +46,7 @@ async fn write_bad_request_and_close<S: AsyncWrite + Unpin>(
 /// let config = BindConfig::new().port(7000);
 /// ```
 /// Default RTSP listening port for AirPlay receivers.
-pub const DEFAULT_RTSP_PORT: u16 = 5000;
+pub(crate) const DEFAULT_RTSP_PORT: u16 = 5000;
 
 #[derive(Debug, Clone)]
 pub struct BindConfig {
@@ -94,7 +94,7 @@ impl BindConfig {
 }
 
 /// Callback trait for HTTP/RTSP connection lifecycle. Equivalent to httpd_callbacks_t.
-pub trait HttpdCallbacks: Send + Sync + 'static {
+pub(crate) trait HttpdCallbacks: Send + Sync + 'static {
     /// Called when a new TCP connection is accepted. Return a handler or None to reject.
     ///
     /// Takes `Arc<Self>` so the implementation can hand each connection a cheap
@@ -103,7 +103,7 @@ pub trait HttpdCallbacks: Send + Sync + 'static {
 }
 
 /// Per-connection request handler. Equivalent to conn_request + conn_destroy.
-pub trait ConnectionHandler: Send {
+pub(crate) trait ConnectionHandler: Send {
     /// Handle an HTTP/RTSP request and return the response.
     fn conn_request(&mut self, request: &HttpRequest) -> HttpResponse;
 
@@ -128,7 +128,7 @@ pub trait ConnectionHandler: Send {
 }
 
 /// Async TCP server supporting IPv4 and IPv6. Equivalent to httpd_t.
-pub struct HttpServer {
+pub(crate) struct HttpServer {
     callbacks: Arc<dyn HttpdCallbacks>,
     max_connections: usize,
     shutdown_tx: Option<watch::Sender<bool>>,
@@ -139,7 +139,7 @@ pub struct HttpServer {
 
 impl HttpServer {
     /// Create a new HTTP server with the given callbacks and connection limit.
-    pub fn new(callbacks: Arc<dyn HttpdCallbacks>, max_connections: usize) -> Self {
+    pub(crate) fn new(callbacks: Arc<dyn HttpdCallbacks>, max_connections: usize) -> Self {
         Self {
             callbacks,
             max_connections,
@@ -151,12 +151,12 @@ impl HttpServer {
     }
 
     /// Set the bind configuration (addresses, port, auto-sensing).
-    pub fn set_bind_config(&mut self, config: BindConfig) {
+    pub(crate) fn set_bind_config(&mut self, config: BindConfig) {
         self.bind_config = config;
     }
 
     /// Start listening. Returns the actual port (may differ if auto-sensing).
-    pub async fn start(&mut self, port: u16) -> Result<u16, NetworkError> {
+    pub(crate) async fn start(&mut self, port: u16) -> Result<u16, NetworkError> {
         if self.running {
             return Ok(self.port);
         }
@@ -204,17 +204,17 @@ impl HttpServer {
     }
 
     /// Whether the server is currently accepting connections.
-    pub fn is_running(&self) -> bool {
+    pub(crate) fn is_running(&self) -> bool {
         self.running
     }
 
     /// The actual port the server is listening on (after auto-sensing).
-    pub fn port(&self) -> u16 {
+    pub(crate) fn port(&self) -> u16 {
         self.port
     }
 
     /// Stop the server and close all listeners.
-    pub async fn stop(&mut self) {
+    pub(crate) async fn stop(&mut self) {
         if let Some(tx) = self.shutdown_tx.take() {
             let _ = tx.send(true);
         }

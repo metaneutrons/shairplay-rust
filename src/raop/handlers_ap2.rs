@@ -28,7 +28,7 @@ fn bind_udp(addr: std::net::SocketAddr) -> Option<tokio::net::UdpSocket> {
 #[cfg(feature = "ap2")]
 impl RaopConnection {
     /// Decouple network event stream listener spawning from high-level RTSP handlers.
-    pub fn spawn_event_channel(
+    pub(crate) fn spawn_event_channel(
         &mut self,
         event_listener: tokio::net::TcpListener,
         event_channel_cipher: crate::crypto::chacha_transport::EncryptedChannel,
@@ -659,10 +659,7 @@ fn setup_stream_buffered(
         max_channels: conn.shared.output_max_channels,
     };
 
-    let proc = crate::raop::buffered_audio::BufferedAudioProcessor {
-        listener,
-        port: audio_port,
-    };
+    let proc = crate::raop::buffered_audio::BufferedAudioProcessor { listener };
     let cmd_tx = proc.start(shk_arr, output_config, handler);
     conn.playout_cmd = Some(cmd_tx);
 

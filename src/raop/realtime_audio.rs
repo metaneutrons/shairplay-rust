@@ -17,19 +17,19 @@ use crate::raop::{AudioCodec, AudioFormat, AudioHandler};
 use crate::codec::resample::StreamResampler;
 
 /// Output configuration for resampling/mixdown.
-pub struct OutputConfig {
+pub(crate) struct OutputConfig {
     /// Source sample rate from the stream SETUP.
-    pub source_sample_rate: u32,
+    pub(crate) source_sample_rate: u32,
     /// Source samples per ALAC frame from the stream SETUP.
-    pub samples_per_frame: u32,
+    pub(crate) samples_per_frame: u32,
     /// Source channel count.
-    pub channels: u8,
+    pub(crate) channels: u8,
     /// Source bit depth.
-    pub bit_depth: u8,
+    pub(crate) bit_depth: u8,
     /// Target sample rate, or None for source native rate.
-    pub sample_rate: Option<u32>,
+    pub(crate) sample_rate: Option<u32>,
     /// Maximum output channels, or None to pass through.
-    pub max_channels: Option<u8>,
+    pub(crate) max_channels: Option<u8>,
 }
 
 fn alac_decoder_info(config: &OutputConfig) -> [u8; 48] {
@@ -46,7 +46,7 @@ fn alac_decoder_info(config: &OutputConfig) -> [u8; 48] {
 }
 
 /// Run the realtime audio receiver loop.
-pub async fn run(socket: UdpSocket, shk: [u8; 32], handler: Arc<dyn AudioHandler>, output_config: OutputConfig) {
+pub(crate) async fn run(socket: UdpSocket, shk: [u8; 32], handler: Arc<dyn AudioHandler>, output_config: OutputConfig) {
     let cipher = ChaCha20Poly1305::new((&shk).into());
     let mut buf = vec![0u8; 4096];
     let mut decoder: Option<crate::codec::alac::AlacDecoder> = None;

@@ -67,10 +67,6 @@ pub struct PairingSession {
 }
 
 impl PairingSession {
-    /// Returns the ECDH shared secret (available after handshake).
-    pub fn ecdh_secret(&self) -> &[u8; 32] {
-        &self.ecdh_secret
-    }
     fn derive_key_internal(&self, salt: &[u8], key_len: usize) -> Result<Vec<u8>, CryptoError> {
         if key_len > 64 {
             return Err(CryptoError::PairingHandshake("key_len > 64".into()));
@@ -140,7 +136,7 @@ impl PairingSession {
     }
 
     /// Verify the remote's signature. Equivalent to pairing_session_finish.
-    pub fn finish(&mut self, signature: &[u8; 64]) -> Result<(), CryptoError> {
+    pub(crate) fn finish(&mut self, signature: &[u8; 64]) -> Result<(), CryptoError> {
         if self.status != Status::Handshake {
             return Err(CryptoError::PairingHandshake("not in handshake state".into()));
         }

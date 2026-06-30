@@ -119,7 +119,7 @@ impl HttpRequest {
     }
 
     /// Return any bytes in the buffer beyond the complete request.
-    pub fn take_leftover(&mut self) -> Vec<u8> {
+    pub(crate) fn take_leftover(&mut self) -> Vec<u8> {
         if !self.complete {
             return Vec::new();
         }
@@ -137,18 +137,8 @@ impl HttpRequest {
     }
 
     /// Whether all headers have been parsed (body may still be pending).
-    pub fn headers_complete(&self) -> bool {
+    pub(crate) fn headers_complete(&self) -> bool {
         self.headers_complete
-    }
-
-    /// Whether a parse error occurred.
-    pub fn has_error(&self) -> bool {
-        self.error.is_some()
-    }
-
-    /// The parse error message, if any.
-    pub fn error(&self) -> Option<&str> {
-        self.error.as_deref()
     }
 
     /// The HTTP method (GET, POST, SETUP, etc.).
@@ -219,7 +209,7 @@ impl HttpResponse {
 
     /// Set a binary property list body, automatically adding the Content-Type header.
     #[cfg(feature = "ap2")]
-    pub fn set_plist_body(&mut self, plist_dict: &plist::Dictionary) -> Option<Vec<u8>> {
+    pub(crate) fn set_plist_body(&mut self, plist_dict: &plist::Dictionary) -> Option<Vec<u8>> {
         let mut buf = Vec::new();
         plist::to_writer_binary(&mut buf, plist_dict).ok()?;
         self.add_header("Content-Type", "application/x-apple-binary-plist");
@@ -232,7 +222,7 @@ impl HttpResponse {
     }
 
     /// The HTTP status code.
-    pub fn status_code(&self) -> u16 {
+    pub(crate) fn status_code(&self) -> u16 {
         self.code
     }
 

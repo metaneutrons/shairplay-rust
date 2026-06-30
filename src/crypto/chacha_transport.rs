@@ -26,7 +26,7 @@ pub struct CipherContext {
 
 impl CipherContext {
     /// Create a new encryption context from a 256-bit key.
-    pub fn new(key: [u8; 32]) -> Self {
+    pub(crate) fn new(key: [u8; 32]) -> Self {
         Self { key, counter: 0 }
     }
 
@@ -139,7 +139,7 @@ impl EncryptedChannel {
     }
 
     /// Create a control channel (channel 3 = server-side control).
-    pub fn control(shared_secret: &[u8]) -> Result<Self, CryptoError> {
+    pub(crate) fn control(shared_secret: &[u8]) -> Result<Self, CryptoError> {
         Self::new(
             shared_secret,
             "Control-Salt",
@@ -150,7 +150,7 @@ impl EncryptedChannel {
     }
 
     /// Create an event channel (channel 4 = server-side events).
-    pub fn events(shared_secret: &[u8]) -> Result<Self, CryptoError> {
+    pub(crate) fn events(shared_secret: &[u8]) -> Result<Self, CryptoError> {
         Self::new(
             shared_secret,
             "Events-Salt",

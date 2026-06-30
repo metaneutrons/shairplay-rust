@@ -60,11 +60,6 @@ impl TlvValues {
         self.entries.push((tag, value.to_vec()));
     }
 
-    /// Add a TLV entry by typed tag.
-    pub fn add_type(&mut self, tag: TlvType, value: &[u8]) {
-        self.add(tag as u8, value);
-    }
-
     /// Get a TLV value by raw tag number.
     pub fn get(&self, tag: u8) -> Option<&[u8]> {
         self.entries.iter().find(|(t, _)| *t == tag).map(|(_, v)| v.as_slice())

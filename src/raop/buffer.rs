@@ -13,15 +13,11 @@ pub const RAOP_AESKEY_LEN: usize = 16;
 /// AES-128 IV length in bytes.
 pub const RAOP_AESIV_LEN: usize = 16;
 /// Maximum RTP packet size (including 12-byte header).
-pub const RAOP_PACKET_LEN: usize = 32768;
+pub(crate) const RAOP_PACKET_LEN: usize = 32768;
 /// Number of slots in the circular buffer. Must be a power of two for modulo indexing.
 const RAOP_BUFFER_LENGTH: usize = 32;
 
 type Aes128CbcDec = cbc::Decryptor<aes::Aes128>;
-
-/// Callback invoked when missing packets are detected.
-/// Parameters: (first_missing_seqnum, count_of_missing_packets).
-pub type ResendCallback = Box<dyn Fn(u16, u16) -> i32 + Send + Sync>;
 
 /// A single slot in the circular buffer holding one decoded audio frame.
 struct BufferEntry {
@@ -174,7 +170,7 @@ impl RaopBuffer {
     }
 
     /// Returns the ALAC configuration parsed from the SDP fmtp attribute.
-    pub fn config(&self) -> &AlacConfig {
+    pub(crate) fn config(&self) -> &AlacConfig {
         &self.alac_config
     }
 
@@ -293,31 +289,6 @@ impl RaopBuffer {
         let len = self.entries[idx].audio_buffer_len;
         self.entries[idx].audio_buffer_len = 0;
         Some(&self.entries[idx].audio_buffer[..len])
-    }
-
-    /// Scan for gaps in the buffer and request retransmission via `resend_cb`.
-    ///
-    /// Walks from `first_seqnum` forward until it finds an available entry,
-    /// then calls the callback with the starting sequence number and count
-    /// of consecutive missing packets.
-    pub fn handle_resends(&self, resend_cb: &ResendCallback) {
-        if seqnum_cmp(self.first_seqnum, self.last_seqnum) >= 0 {
-            return;
-        }
-
-        let mut seqnum = self.first_seqnum;
-        while seqnum_cmp(seqnum, self.last_seqnum) < 0 {
-            let idx = seqnum as usize % RAOP_BUFFER_LENGTH;
-            if self.entries[idx].available {
-                break;
-            }
-            seqnum = seqnum.wrapping_add(1);
-        }
-        if seqnum_cmp(seqnum, self.first_seqnum) == 0 {
-            return;
-        }
-        let count = seqnum_cmp(seqnum, self.first_seqnum) as u16;
-        resend_cb(self.first_seqnum, count);
     }
 
     /// Flush the buffer, discarding all queued frames.

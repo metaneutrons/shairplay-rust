@@ -8,7 +8,7 @@ use ctr::Ctr128BE;
 use ctr::cipher::{KeyIvInit, StreamCipher};
 
 /// Streaming AES-128-CTR cipher that maintains state across packets.
-pub struct VideoCipher {
+pub(crate) struct VideoCipher {
     cipher: Ctr128BE<Aes128>,
     /// Leftover keystream bytes from the previous partial block.
     leftover: [u8; 16],
@@ -18,7 +18,7 @@ pub struct VideoCipher {
 
 impl VideoCipher {
     /// Create a new video cipher from a 16-byte key and 16-byte IV.
-    pub fn new(key: &[u8; 16], iv: &[u8; 16]) -> Self {
+    pub(crate) fn new(key: &[u8; 16], iv: &[u8; 16]) -> Self {
         Self {
             cipher: Ctr128BE::<Aes128>::new(key.into(), iv.into()),
             leftover: [0u8; 16],
@@ -27,7 +27,7 @@ impl VideoCipher {
     }
 
     /// Decrypt a video payload in-place, maintaining streaming CTR state.
-    pub fn decrypt(&mut self, payload: &mut [u8]) {
+    pub(crate) fn decrypt(&mut self, payload: &mut [u8]) {
         let n = self.leftover_count;
 
         // Apply leftover keystream from previous partial block

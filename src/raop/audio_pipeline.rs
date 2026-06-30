@@ -5,9 +5,9 @@
 use chacha20poly1305::{ChaCha20Poly1305, Nonce, aead::Aead, aead::Payload};
 
 /// RTP fixed header length (bytes).
-pub const RTP_HEADER_LEN: usize = 12;
+pub(crate) const RTP_HEADER_LEN: usize = 12;
 /// Trailing per-packet nonce length appended after the ciphertext (bytes).
-pub const NONCE_TRAIL_LEN: usize = 8;
+pub(crate) const NONCE_TRAIL_LEN: usize = 8;
 
 /// Decrypt an AP2 RTP audio packet (ChaCha20-Poly1305).
 ///

@@ -4,6 +4,10 @@
 //! messages. Tracks master clock ID and computes local-to-master time offset with smoothing.
 //! Ports 319/320 require root or CAP_NET_BIND_SERVICE.
 
+// Unwired AP2 PTP timing client — implemented but not yet connected to the playout
+// path; retained for future multi-room sync.
+#![allow(dead_code)]
+
 use std::sync::{Arc, RwLock};
 
 use crate::util::now_ns;

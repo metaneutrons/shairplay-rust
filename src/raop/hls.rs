@@ -37,12 +37,12 @@ pub trait HlsSession: Send {
 
 /// Shared HLS state accessible from RTSP handlers.
 pub(crate) struct HlsState {
-    pub session: Option<Box<dyn HlsSession>>,
-    pub session_id: Option<String>,
+    pub(crate) session: Option<Box<dyn HlsSession>>,
+    pub(crate) session_id: Option<String>,
 }
 
 impl HlsState {
-    pub fn new() -> Arc<Mutex<Self>> {
+    pub(crate) fn new() -> Arc<Mutex<Self>> {
         Arc::new(Mutex::new(Self {
             session: None,
             session_id: None,

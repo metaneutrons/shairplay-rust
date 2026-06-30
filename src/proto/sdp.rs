@@ -3,11 +3,7 @@
 /// Parsed SDP session description with fields needed for AirPlay audio setup.
 pub struct Sdp {
     version: Option<String>,
-    origin: Option<String>,
-    session: Option<String>,
     connection: Option<String>,
-    time: Option<String>,
-    media: Option<String>,
     rtpmap: Option<String>,
     fmtp: Option<String>,
     rsaaeskey: Option<String>,
@@ -21,11 +17,7 @@ impl Sdp {
     pub fn parse(data: &str) -> Self {
         let mut sdp = Self {
             version: None,
-            origin: None,
-            session: None,
             connection: None,
-            time: None,
-            media: None,
             rtpmap: None,
             fmtp: None,
             rsaaeskey: None,
@@ -42,11 +34,7 @@ impl Sdp {
             let value = &line[2..];
             match line.as_bytes()[0] {
                 b'v' => sdp.version = Some(value.to_string()),
-                b'o' => sdp.origin = Some(value.to_string()),
-                b's' => sdp.session = Some(value.to_string()),
                 b'c' => sdp.connection = Some(value.to_string()),
-                b't' => sdp.time = Some(value.to_string()),
-                b'm' => sdp.media = Some(value.to_string()),
                 b'a' => {
                     if let Some(colon) = value.find(':') {
                         let key = &value[..colon];
@@ -77,25 +65,9 @@ impl Sdp {
     pub fn version(&self) -> Option<&str> {
         self.version.as_deref()
     }
-    /// Session origin (o=).
-    pub fn origin(&self) -> Option<&str> {
-        self.origin.as_deref()
-    }
-    /// Session name (s=).
-    pub fn session(&self) -> Option<&str> {
-        self.session.as_deref()
-    }
     /// Connection address (c=). Used to determine IPv4/IPv6.
     pub fn connection(&self) -> Option<&str> {
         self.connection.as_deref()
-    }
-    /// Timing (t=).
-    pub fn time(&self) -> Option<&str> {
-        self.time.as_deref()
-    }
-    /// Media description (m=).
-    pub fn media(&self) -> Option<&str> {
-        self.media.as_deref()
     }
     /// RTP map (a=rtpmap).
     pub fn rtpmap(&self) -> Option<&str> {

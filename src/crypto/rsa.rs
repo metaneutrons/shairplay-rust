@@ -23,13 +23,13 @@ const B64: base64::engine::GeneralPurpose = base64::engine::GeneralPurpose::new(
 );
 
 /// RSA key for RAOP authentication. Equivalent to rsakey_t.
-pub struct RsaKey {
+pub(crate) struct RsaKey {
     key: RsaPrivateKey,
 }
 
 impl RsaKey {
     /// Load an RSA private key from a PEM string. Equivalent to rsakey_init_pem.
-    pub fn from_pem(pem: &str) -> Result<Self, CryptoError> {
+    pub(crate) fn from_pem(pem: &str) -> Result<Self, CryptoError> {
         let key = RsaPrivateKey::from_pkcs1_pem(pem).map_err(|e| CryptoError::RsaKey(e.to_string()))?;
         Ok(Self { key })
     }
@@ -44,7 +44,12 @@ impl RsaKey {
     /// field order and padding must match the AirPort/shairport reference exactly.
     /// Signed with PKCS#1 v1.5 (type 1 padding, no hash-OID prefix); returns the
     /// base64-encoded signature.
-    pub fn sign_challenge(&self, b64_challenge: &str, ip_addr: &[u8], hw_addr: &[u8]) -> Result<String, CryptoError> {
+    pub(crate) fn sign_challenge(
+        &self,
+        b64_challenge: &str,
+        ip_addr: &[u8],
+        hw_addr: &[u8],
+    ) -> Result<String, CryptoError> {
         let challenge = B64
             .decode(b64_challenge)
             .map_err(|_| CryptoError::RsaKey("invalid base64 challenge".into()))?;
@@ -70,7 +75,7 @@ impl RsaKey {
 
     /// Base64-decode and RSA-OAEP-decrypt (SHA-1) to extract an AES key.
     /// Equivalent to rsakey_decrypt.
-    pub fn decrypt(&self, b64_input: &str) -> Result<Vec<u8>, CryptoError> {
+    pub(crate) fn decrypt(&self, b64_input: &str) -> Result<Vec<u8>, CryptoError> {
         let ciphertext = B64.decode(b64_input).map_err(|_| CryptoError::RsaDecrypt)?;
 
         let key_len = self.key.n().bits() / 8;
@@ -89,7 +94,7 @@ impl RsaKey {
     }
 
     /// Base64-decode only (no decryption). Equivalent to rsakey_decode.
-    pub fn decode(&self, b64_input: &str) -> Result<Vec<u8>, CryptoError> {
+    pub(crate) fn decode(&self, b64_input: &str) -> Result<Vec<u8>, CryptoError> {
         B64.decode(b64_input)
             .map_err(|_| CryptoError::RsaKey("invalid base64 input".into()))
     }

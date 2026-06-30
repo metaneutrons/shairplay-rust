@@ -8,32 +8,32 @@ pub mod buffer;
 #[cfg(feature = "ap2")]
 pub mod buffered_audio;
 #[cfg(feature = "ap2")]
-pub mod event_channel;
-pub mod handlers_ap1;
+pub(crate) mod event_channel;
+pub(crate) mod handlers_ap1;
 #[cfg(feature = "ap2")]
-pub mod handlers_ap2;
+pub(crate) mod handlers_ap2;
 #[cfg(feature = "hls")]
-pub mod handlers_hls;
+pub(crate) mod handlers_hls;
 #[cfg(feature = "hls")]
 pub mod hls;
-pub mod ntp;
+pub(crate) mod ntp;
 #[cfg(feature = "ap2")]
-pub mod realtime_audio;
-pub mod rtp;
+pub(crate) mod realtime_audio;
+pub(crate) mod rtp;
 mod rtsp;
 #[cfg(feature = "video")]
 pub mod video;
 #[cfg(feature = "video")]
-pub mod video_stream;
+pub(crate) mod video_stream;
 
-pub mod config;
+pub(crate) mod config;
 
 /// Maximum hardware address length in bytes.
-pub const MAX_HWADDR_LEN: usize = 6;
+pub(crate) const MAX_HWADDR_LEN: usize = 6;
 /// Maximum password length in bytes.
-pub const MAX_PASSWORD_LEN: usize = 64;
+pub(crate) const MAX_PASSWORD_LEN: usize = 64;
 /// Maximum HTTP Digest nonce length in bytes.
-pub const MAX_NONCE_LEN: usize = 32;
+pub(crate) const MAX_NONCE_LEN: usize = 32;
 
 mod types;
 pub use types::*;
@@ -48,7 +48,7 @@ pub(crate) struct DacpRemoteControl {
 
 impl DacpRemoteControl {
     /// Create a new DACP remote control client for the given iPhone.
-    pub fn new(dacp_id: &str, active_remote: &str, remote_addr: &[u8]) -> Self {
+    pub(crate) fn new(dacp_id: &str, active_remote: &str, remote_addr: &[u8]) -> Self {
         let mut client = crate::dacp::DacpClient::new(dacp_id, active_remote);
         let ip = match remote_addr.len() {
             4 => std::net::IpAddr::V4(std::net::Ipv4Addr::new(

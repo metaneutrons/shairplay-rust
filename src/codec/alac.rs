@@ -2,29 +2,29 @@
 
 /// ALAC decoder configuration, parsed from the fmtp SDP attribute.
 #[derive(Debug, Clone)]
-pub struct AlacConfig {
+pub(crate) struct AlacConfig {
     /// Samples per frame.
-    pub frame_length: u32,
+    pub(crate) frame_length: u32,
     /// ALAC version.
-    pub compatible_version: u8,
+    pub(crate) compatible_version: u8,
     /// Bits per sample (16 or 24).
-    pub bit_depth: u8,
+    pub(crate) bit_depth: u8,
     /// Rice parameter history mult.
-    pub pb: u8,
+    pub(crate) pb: u8,
     /// Rice initial history.
-    pub mb: u8,
+    pub(crate) mb: u8,
     /// Rice limit.
-    pub kb: u8,
+    pub(crate) kb: u8,
     /// Number of audio channels.
-    pub num_channels: u8,
+    pub(crate) num_channels: u8,
     /// Maximum run length.
-    pub max_run: u16,
+    pub(crate) max_run: u16,
     /// Maximum encoded frame size.
-    pub max_frame_bytes: u32,
+    pub(crate) max_frame_bytes: u32,
     /// Average bit rate.
-    pub avg_bit_rate: u32,
+    pub(crate) avg_bit_rate: u32,
     /// Sample rate in Hz.
-    pub sample_rate: u32,
+    pub(crate) sample_rate: u32,
 }
 
 /// ALAC format selected in an AirPlay 2 `audioFormat` SETUP field.
@@ -512,7 +512,7 @@ impl AlacDecoder {
     }
 
     /// Allocate internal decode buffers. Called automatically by set_info.
-    pub fn allocate_buffers(&mut self) {
+    pub(crate) fn allocate_buffers(&mut self) {
         let n = self.max_samples_per_frame as usize;
         self.predicterror_buffer_a = vec![0i32; n];
         self.predicterror_buffer_b = vec![0i32; n];
@@ -523,7 +523,7 @@ impl AlacDecoder {
     }
 
     /// Decode one ALAC frame. Returns the number of bytes written to output (little-endian PCM).
-    pub fn decode_frame(&mut self, input: &[u8], output: &mut [u8]) -> usize {
+    pub(crate) fn decode_frame(&mut self, input: &[u8], output: &mut [u8]) -> usize {
         if self.max_samples_per_frame == 0 || self.bytes_per_sample <= 0 {
             return 0;
         }
@@ -542,7 +542,10 @@ impl AlacDecoder {
     }
 
     /// Decode an ALAC frame and return F32LE interleaved samples.
-    pub fn decode_frame_f32(&mut self, input: &[u8]) -> Option<Vec<f32>> {
+    // Consumed by the AP2 realtime audio path (and the unit tests). Dead in the
+    // default `--lib` build where neither is compiled.
+    #[cfg_attr(not(feature = "ap2"), allow(dead_code))]
+    pub(crate) fn decode_frame_f32(&mut self, input: &[u8]) -> Option<Vec<f32>> {
         if self.max_samples_per_frame == 0 || self.bytes_per_sample <= 0 {
             return None;
         }

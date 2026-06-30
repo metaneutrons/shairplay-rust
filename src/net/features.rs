@@ -5,9 +5,15 @@
 
 /// Individual AirPlay feature flags.
 /// Source: <https://emanuelecozzi.net/docs/airplay2/features/>
+///
+/// Complete reference enum: only a feature-dependent subset of variants is
+/// referenced by `receiver_features()` (the audio-only and `video` builds use
+/// different sets), so the remaining variants are intentionally unused. Kept as
+/// an exhaustive, documented bit map rather than pruned per build.
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
-pub enum AirPlayFeature {
+pub(crate) enum AirPlayFeature {
     /// Bit 0 — AirPlay video v1
     SupportsAirPlayVideoV1 = 0,
     /// Bit 1 — AirPlay photo
@@ -101,19 +107,12 @@ pub enum AirPlayFeature {
 }
 
 /// Build a 64-bit features bitmask from a set of feature flags.
-pub fn features_from(flags: &[AirPlayFeature]) -> u64 {
+pub(crate) fn features_from(flags: &[AirPlayFeature]) -> u64 {
     let mut val: u64 = 0;
     for &f in flags {
         val |= 1u64 << (f as u8);
     }
     val
-}
-
-/// Format features as the mDNS `features=` value: `"0x{lo},0x{hi}"`.
-pub fn features_to_mdns(features: u64) -> String {
-    let lo = features & 0xFFFFFFFF;
-    let hi = (features >> 32) & 0xFFFFFFFF;
-    format!("0x{lo:X},0x{hi:X}")
 }
 
 /// Features for an audio-only AirPlay 2 receiver.
@@ -223,13 +222,6 @@ mod tests {
         assert!(f & (1 << 9) != 0);
         assert!(f & (1 << 41) != 0);
         assert!(f & (1 << 0) == 0);
-    }
-
-    #[test]
-    fn mdns_format() {
-        let f = 0x1234567890ABCDEFu64;
-        let s = features_to_mdns(f);
-        assert_eq!(s, "0x90ABCDEF,0x12345678");
     }
 
     #[test]

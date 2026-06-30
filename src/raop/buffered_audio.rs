@@ -23,11 +23,11 @@ use crate::util::now_ns;
 
 #[derive(Debug, Clone)]
 /// Output configuration passed from the server builder.
-pub struct OutputConfig {
+pub(crate) struct OutputConfig {
     /// Target sample rate, or None for source native rate.
-    pub sample_rate: Option<u32>,
+    pub(crate) sample_rate: Option<u32>,
     /// Maximum output channels, or None to pass through.
-    pub max_channels: Option<u8>,
+    pub(crate) max_channels: Option<u8>,
 }
 
 #[derive(Debug)]
@@ -65,23 +65,14 @@ struct PlayoutState {
 }
 
 /// TCP listener for buffered audio. Binds a port and spawns the processing pipeline.
-pub struct BufferedAudioProcessor {
+pub(crate) struct BufferedAudioProcessor {
     /// TCP listener waiting for the iPhone to connect.
-    pub listener: TcpListener,
-    /// Port number the listener is bound to.
-    pub port: u16,
+    pub(crate) listener: TcpListener,
 }
 
 impl BufferedAudioProcessor {
-    /// Bind a TCP listener for buffered audio on the given address.
-    pub async fn bind(addr: &str) -> Result<Self, NetworkError> {
-        let listener = TcpListener::bind(addr).await?;
-        let port = listener.local_addr()?.port();
-        Ok(Self { listener, port })
-    }
-
     /// Start the processing pipeline. Returns a command sender for playback control.
-    pub fn start(
+    pub(crate) fn start(
         self,
         shk: [u8; 32],
         output_config: OutputConfig,

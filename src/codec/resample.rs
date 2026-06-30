@@ -5,7 +5,7 @@ use rubato::{Async, FixedAsync, Resampler, SincInterpolationParameters, SincInte
 
 /// Persistent F32 resampler for streaming audio.
 /// Buffers input internally and processes in fixed chunks.
-pub struct StreamResampler {
+pub(crate) struct StreamResampler {
     resampler: Async<f32>,
     channels: usize,
     chunk_size: usize,
@@ -17,7 +17,7 @@ pub struct StreamResampler {
 
 impl StreamResampler {
     /// Create a new resampler. Returns `None` if rates are equal.
-    pub fn new(from_rate: u32, to_rate: u32, channels: usize) -> Option<Self> {
+    pub(crate) fn new(from_rate: u32, to_rate: u32, channels: usize) -> Option<Self> {
         if from_rate == to_rate {
             return None;
         }
@@ -41,7 +41,7 @@ impl StreamResampler {
     }
 
     /// Resample interleaved F32 audio. Returns resampled interleaved F32.
-    pub fn process(&mut self, interleaved: &[f32]) -> Vec<f32> {
+    pub(crate) fn process(&mut self, interleaved: &[f32]) -> Vec<f32> {
         self.pending.extend_from_slice(interleaved);
 
         let samples_per_chunk = self.chunk_size * self.channels;
@@ -130,7 +130,7 @@ pub fn mixdown(input: &[f32], in_channels: usize, out_channels: usize) -> Vec<f3
 /// Mix `samples` down to `out_channels` (if `src_channels` is larger) and then
 /// resample through `resampler` (if present). This is the shared tail of the AP2
 /// realtime and buffered receive pipelines.
-pub fn mixdown_and_resample(
+pub(crate) fn mixdown_and_resample(
     mut samples: Vec<f32>,
     src_channels: u8,
     out_channels: u8,

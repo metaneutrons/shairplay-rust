@@ -7,8 +7,6 @@
 use std::io::{Read, Write};
 use std::net::SocketAddr;
 use std::time::Duration;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpStream;
 
 use crate::error::NetworkError;
 use tracing::debug;
@@ -74,17 +72,15 @@ fn discover_dacp_port(dacp_id: &str, _remote_ip: std::net::IpAddr) -> Option<u16
 /// Created from the DACP ID and Active-Remote header received by the AirPlay session.
 ///
 /// # Example
-/// ```rust,no_run
-/// use shairplay::dacp::DacpClient;
-///
+/// ```text
 /// let mut client = DacpClient::new("7711DA8B47838CB5", "1986535575");
 /// client.discover_from_remote("192.168.1.5".parse().unwrap());
-/// // Then in an async context:
-/// // client.play_pause().await.ok();
+/// // Then from a synchronous remote-control callback:
+/// // client.play_pause_blocking().ok();
 /// ```
 /// HTTP client for sending DACP playback commands to the iPhone.
 #[derive(Debug)]
-pub struct DacpClient {
+pub(crate) struct DacpClient {
     /// DACP-ID from the RTSP session. Identifies the `_dacp._tcp` mDNS service.
     dacp_id: String,
     active_remote: String,
@@ -93,7 +89,7 @@ pub struct DacpClient {
 
 impl DacpClient {
     /// Create a new DACP client from the values received in the AirPlay session.
-    pub fn new(dacp_id: &str, active_remote: &str) -> Self {
+    pub(crate) fn new(dacp_id: &str, active_remote: &str) -> Self {
         Self {
             dacp_id: dacp_id.to_string(),
             active_remote: active_remote.to_string(),
@@ -106,7 +102,7 @@ impl DacpClient {
     /// Browses `_dacp._tcp.local.` for a service matching the DACP-ID,
     /// with a 2-second timeout. Falls back to port 3689 on the remote IP
     /// if mDNS discovery fails.
-    pub fn discover_from_remote(&mut self, remote_ip: std::net::IpAddr) {
+    pub(crate) fn discover_from_remote(&mut self, remote_ip: std::net::IpAddr) {
         self.addr = match discover_dacp_port(&self.dacp_id, remote_ip) {
             Some(port) => {
                 debug!(port, dacp_id = %self.dacp_id, "DACP service discovered via mDNS");
@@ -117,65 +113,6 @@ impl DacpClient {
                 Some(SocketAddr::new(remote_ip, DACP_DEFAULT_PORT))
             }
         };
-    }
-
-    /// Set the device address directly (skip mDNS discovery).
-    pub fn set_addr(&mut self, addr: SocketAddr) {
-        self.addr = Some(addr);
-    }
-
-    /// Toggle play/pause.
-    pub async fn play_pause(&self) -> Result<(), NetworkError> {
-        debug!("DACP: play_pause");
-        self.command(PLAY_PAUSE_PATH).await
-    }
-
-    /// Next track.
-    pub async fn next(&self) -> Result<(), NetworkError> {
-        debug!("DACP: next");
-        self.command(NEXT_PATH).await
-    }
-
-    /// Previous track.
-    pub async fn prev(&self) -> Result<(), NetworkError> {
-        debug!("DACP: prev");
-        self.command(PREVIOUS_PATH).await
-    }
-
-    /// Stop playback.
-    pub async fn stop(&self) -> Result<(), NetworkError> {
-        self.command(STOP_PATH).await
-    }
-
-    /// Set volume (0–100).
-    pub async fn set_volume(&self, volume: u8) -> Result<(), NetworkError> {
-        self.command(&volume_path(volume)).await
-    }
-
-    /// Set shuffle state (true = on).
-    pub async fn set_shuffle(&self, on: bool) -> Result<(), NetworkError> {
-        self.command(&shuffle_path(on)).await
-    }
-
-    /// Set repeat state (0 = off, 1 = single, 2 = all).
-    pub async fn set_repeat(&self, state: u8) -> Result<(), NetworkError> {
-        self.command(&repeat_path(state)).await
-    }
-
-    /// Send a raw DACP command (GET request with Active-Remote header).
-    pub async fn command(&self, path: &str) -> Result<(), NetworkError> {
-        let addr = self
-            .addr
-            .ok_or_else(|| NetworkError::Mdns("DACP not discovered yet — call discover() first".into()))?;
-
-        let mut stream = TcpStream::connect(addr).await?;
-        let request = self.command_request(path, addr);
-        stream.write_all(request.as_bytes()).await?;
-
-        // Read response (we don't parse it, just ensure the connection succeeds)
-        let mut buf = [0u8; 1024];
-        let _ = tokio::time::timeout(Duration::from_secs(2), stream.read(&mut buf)).await;
-        Ok(())
     }
 
     /// Send a raw DACP command from synchronous callbacks.

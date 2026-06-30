@@ -63,10 +63,4 @@ impl AesCtr {
             self.available -= n;
         }
     }
-
-    /// Encrypt from src into dst. Equivalent to AES_ctr_encrypt with separate buffers.
-    pub fn encrypt_to(&mut self, src: &[u8], dst: &mut [u8]) {
-        dst[..src.len()].copy_from_slice(src);
-        self.encrypt(&mut dst[..src.len()]);
-    }
 }
