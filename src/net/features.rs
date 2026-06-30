@@ -142,6 +142,15 @@ pub fn features_to_mdns(features: u64) -> String {
 /// - bit 52 (SupportsSetPeersExtendedMessage) — causes discovery failure
 /// - bit 59/60/61 (AudioStreamConn/MediaDataCtrl/Rfc2198) — causes discovery failure
 pub fn receiver_features() -> u64 {
+    receiver_features_for_pairing(false)
+}
+
+/// Features for an audio-only AirPlay 2 receiver with explicit pairing mode.
+///
+/// The default receiver profile mirrors shairport-sync and supports transient
+/// PIN-less pairing. When a one-time PIN is required, clear the transient
+/// pairing bit so clients choose normal M1-M6 HomeKit pair-setup.
+pub fn receiver_features_for_pairing(requires_pin_pairing: bool) -> u64 {
     #[cfg(not(feature = "video"))]
     use AirPlayFeature::*;
 
@@ -202,7 +211,11 @@ pub fn receiver_features() -> u64 {
             SupportsTransientPairing,              // bit 47
         ];
 
-        features_from(&bits)
+        let mut features = features_from(&bits);
+        if requires_pin_pairing {
+            features &= !(1u64 << (SupportsTransientPairing as u8));
+        }
+        features
     }
 }
 
@@ -247,6 +260,16 @@ mod tests {
         assert!(f & (1 << 38) != 0, "SupportsUnifiedMediaControl");
         assert!(f & (1 << 46) != 0, "SupportsHKPairing");
         assert!(f & (1 << 48) != 0, "SupportsCoreUtilsPairing");
+    }
+
+    #[test]
+    #[cfg(not(feature = "video"))]
+    fn pin_pairing_clears_transient_bit() {
+        let f = receiver_features_for_pairing(true);
+        assert_eq!(f, 0x0001_4340_405D_4A00, "PIN pairing features drifted");
+        assert!(f & (1 << 46) != 0, "SupportsHKPairing");
+        assert!(f & (1 << 48) != 0, "SupportsCoreUtilsPairing");
+        assert_eq!(f & (1 << 47), 0, "transient pairing bit must be off");
     }
 
     #[test]

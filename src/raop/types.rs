@@ -90,6 +90,10 @@ pub trait PairingStore: Send + Sync + 'static {
     fn put(&self, device_id: &str, public_key: [u8; 32]);
     /// Remove a paired device.
     fn remove(&self, device_id: &str);
+    /// List paired device IDs and Ed25519 public keys.
+    fn list(&self) -> Vec<(String, [u8; 32])> {
+        Vec::new()
+    }
 
     /// Load the accessory's persistent Ed25519 **identity** seed, if one was saved.
     ///
@@ -134,6 +138,12 @@ impl PairingStore for MemoryPairingStore {
         if let Ok(mut keys) = self.keys.lock() {
             keys.remove(device_id);
         }
+    }
+    fn list(&self) -> Vec<(String, [u8; 32])> {
+        self.keys
+            .lock()
+            .map(|keys| keys.iter().map(|(id, key)| (id.clone(), *key)).collect())
+            .unwrap_or_default()
     }
 }
 

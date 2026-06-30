@@ -61,6 +61,30 @@ const ROUTES: &[Route] = &[
         path: "/pair-verify",
         handler: handlers::handle_pair_verify,
     },
+    #[cfg(feature = "ap2")]
+    Route {
+        method: "POST",
+        path: "/pair-pin-start",
+        handler: handlers_ap2::handle_pair_pin_start,
+    },
+    #[cfg(feature = "ap2")]
+    Route {
+        method: "POST",
+        path: "/pair-add",
+        handler: handlers_ap2::handle_pair_add,
+    },
+    #[cfg(feature = "ap2")]
+    Route {
+        method: "POST",
+        path: "/pair-remove",
+        handler: handlers_ap2::handle_pair_remove,
+    },
+    #[cfg(feature = "ap2")]
+    Route {
+        method: "POST",
+        path: "/pair-list",
+        handler: handlers_ap2::handle_pair_list,
+    },
     Route {
         method: "POST",
         path: "/fp-setup",

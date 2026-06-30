@@ -171,7 +171,11 @@ impl RaopServerBuilder {
     }
 
     #[cfg(feature = "ap2")]
-    /// Set the HomeKit pairing PIN. Default: "3939".
+    /// Require normal HomeKit pair-setup with this one-time PIN.
+    ///
+    /// Without a PIN, AP2 uses the shairport-sync-style transient pairing
+    /// profile. Setting a PIN changes mDNS/GET /info status flags so clients
+    /// perform persistent M1-M6 pair-setup and later use pair-verify.
     pub fn pin(mut self, pin: impl Into<String>) -> Self {
         self.pin = Some(pin.into());
         self
@@ -350,6 +354,7 @@ impl RaopServer {
                     !self.shared.password.is_empty(),
                     &pk_hex,
                     &pi,
+                    self.shared.pin.is_some(),
                 );
             }
         }

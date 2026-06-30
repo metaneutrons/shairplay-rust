@@ -12,8 +12,23 @@ pub const AP2_PROTOVERS: &str = "1.1";
 /// Software build/source version reported in GET /info and mDNS.
 pub const AP2_SRCVERS: &str = "366.0";
 
-/// AP2 statusFlags indicating standard receiver attributes (transient state).
-pub const AP2_STATUS_FLAGS: u32 = 0x4;
+/// AP2 status flag: audio output is available.
+pub const AP2_STATUS_AUDIO_ATTACHED: u32 = 1 << 2;
+
+/// AP2 status flag: a one-time PIN is required for normal HomeKit pairing.
+pub const AP2_STATUS_ONE_TIME_PAIRING_REQUIRED: u32 = 1 << 9;
+
+/// AP2 statusFlags for the default PIN-less transient receiver profile.
+pub const AP2_STATUS_FLAGS: u32 = AP2_STATUS_AUDIO_ATTACHED;
+
+/// Build AP2 statusFlags for the selected pairing mode.
+pub fn ap2_status_flags(requires_pin_pairing: bool) -> u32 {
+    let mut flags = AP2_STATUS_AUDIO_ATTACHED;
+    if requires_pin_pairing {
+        flags |= AP2_STATUS_ONE_TIME_PAIRING_REQUIRED;
+    }
+    flags
+}
 
 // --- Screen Mirroring (Video) Display Specifications ---
 

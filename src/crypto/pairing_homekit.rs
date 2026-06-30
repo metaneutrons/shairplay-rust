@@ -14,6 +14,13 @@ use crate::error::CryptoError;
 
 const USERNAME: &str = "Pair-Setup";
 const TRANSIENT_PIN: &str = "3939";
+const PAIRING_METHOD_PAIR_SETUP: u8 = 0x00;
+const PAIRING_METHOD_ADD_PAIRING: u8 = 0x03;
+const PAIRING_METHOD_REMOVE_PAIRING: u8 = 0x04;
+const PAIRING_METHOD_LIST_PAIRINGS: u8 = 0x05;
+const PAIRING_FLAGS_TRANSIENT: u8 = 0x10;
+const PAIRING_PERMISSION_ADMIN: u8 = 0x01;
+const TLV_ERROR_AUTHENTICATION: u8 = 0x02;
 
 // HKDF salt/info labels reused across the pair-setup and pair-verify handshakes.
 const PS_ENCRYPT_SALT: &str = "Pair-Setup-Encrypt-Salt";
@@ -48,12 +55,17 @@ pub struct SrpServer {
     session_key: Vec<u8>,
     m2: Vec<u8>,
     is_transient: bool,
+    allow_transient: bool,
     verified: bool,
 }
 
 impl SrpServer {
     /// Create a new SRP server for the given PIN.
+    ///
+    /// `None` keeps the shairport-sync-style transient profile, using the fixed
+    /// transient PIN 3939. `Some(pin)` requires normal M1-M6 HomeKit pairing.
     pub fn new(pin: Option<&str>) -> Result<Self, CryptoError> {
+        let allow_transient = pin.is_none();
         let pin = pin.unwrap_or(TRANSIENT_PIN);
         let n = BigUint::parse_bytes(N_3072_HEX.as_bytes(), 16)
             .ok_or_else(|| CryptoError::PairingHandshake("Failed to parse N".into()))?;
@@ -93,6 +105,7 @@ impl SrpServer {
             session_key: Vec::new(),
             m2: Vec::new(),
             is_transient: false,
+            allow_transient,
             verified: false,
         })
     }
@@ -104,14 +117,19 @@ impl SrpServer {
         let method = tlv
             .get_type(TlvType::Method)
             .ok_or_else(|| CryptoError::PairingHandshake("Missing Method".into()))?;
-        if method != [0] {
+        if method != [PAIRING_METHOD_PAIR_SETUP] {
             return Err(CryptoError::PairingHandshake("Unexpected pairing method".into()));
         }
 
         self.is_transient = tlv
             .get_type(TlvType::Flags)
-            .map(|f| f.len() == 1 && f[0] == 0x10)
+            .map(|f| f.len() == 1 && f[0] == PAIRING_FLAGS_TRANSIENT)
             .unwrap_or(false);
+        if self.is_transient && !self.allow_transient {
+            return Err(CryptoError::PairingHandshake(
+                "transient pair-setup is disabled when a PIN is configured".into(),
+            ));
+        }
 
         Ok(())
     }
@@ -521,6 +539,89 @@ fn setup_build_accessory_identity(
 /// Lookup function for resolving a client identifier to its stored Ed25519 public key.
 pub type PairingKeyLookup<'a> = Option<&'a dyn Fn(&str) -> Option<[u8; 32]>>;
 
+/// Build a HomeKit pairing error TLV for request handlers.
+pub fn pairing_error_response(state: u8) -> Vec<u8> {
+    let mut tlv = TlvValues::new();
+    tlv.add(TlvType::State as u8, &[state]);
+    tlv.add(TlvType::Error as u8, &[TLV_ERROR_AUTHENTICATION]);
+    tlv.encode()
+}
+
+/// Process `/pair-add` and return the controller identity to store.
+pub fn process_pair_add(data: &[u8]) -> Result<(String, [u8; 32]), CryptoError> {
+    let tlv = pairing_management_request(data, PAIRING_METHOD_ADD_PAIRING)?;
+    let identifier = tlv
+        .get_type(TlvType::Identifier)
+        .ok_or_else(|| CryptoError::PairingHandshake("pair-add: missing identifier".into()))?;
+    let public_key = tlv
+        .get_type(TlvType::PublicKey)
+        .ok_or_else(|| CryptoError::PairingHandshake("pair-add: missing public key".into()))?;
+    let key: [u8; 32] = public_key
+        .try_into()
+        .map_err(|_| CryptoError::PairingHandshake("pair-add: invalid public key length".into()))?;
+    let identifier = String::from_utf8(identifier.to_vec())
+        .map_err(|_| CryptoError::PairingHandshake("pair-add: invalid identifier encoding".into()))?;
+    Ok((identifier, key))
+}
+
+/// Process `/pair-remove` and return the controller identifier to remove.
+pub fn process_pair_remove(data: &[u8]) -> Result<String, CryptoError> {
+    let tlv = pairing_management_request(data, PAIRING_METHOD_REMOVE_PAIRING)?;
+    let identifier = tlv
+        .get_type(TlvType::Identifier)
+        .ok_or_else(|| CryptoError::PairingHandshake("pair-remove: missing identifier".into()))?;
+    String::from_utf8(identifier.to_vec())
+        .map_err(|_| CryptoError::PairingHandshake("pair-remove: invalid identifier encoding".into()))
+}
+
+/// Validate `/pair-list`; the response is built from the pairing store.
+pub fn process_pair_list(data: &[u8]) -> Result<(), CryptoError> {
+    pairing_management_request(data, PAIRING_METHOD_LIST_PAIRINGS).map(|_| ())
+}
+
+/// Build the standard success response for `/pair-add` and `/pair-remove`.
+pub fn pair_management_success_response() -> Vec<u8> {
+    let mut tlv = TlvValues::new();
+    tlv.add(TlvType::State as u8, &[2]);
+    tlv.encode()
+}
+
+/// Build a `/pair-list` response from stored controller identities.
+pub fn pair_list_response(pairings: impl IntoIterator<Item = (String, [u8; 32])>) -> Vec<u8> {
+    let mut tlv = TlvValues::new();
+    tlv.add(TlvType::State as u8, &[2]);
+    for (index, (identifier, public_key)) in pairings.into_iter().enumerate() {
+        if index > 0 {
+            tlv.add(TlvType::Separator as u8, &[]);
+        }
+        tlv.add(TlvType::Identifier as u8, identifier.as_bytes());
+        tlv.add(TlvType::PublicKey as u8, &public_key);
+        tlv.add(TlvType::Permissions as u8, &[PAIRING_PERMISSION_ADMIN]);
+    }
+    tlv.encode()
+}
+
+fn pairing_management_request(data: &[u8], expected_method: u8) -> Result<TlvValues, CryptoError> {
+    let tlv = TlvValues::decode(data).map_err(|e| CryptoError::PairingHandshake(e.to_string()))?;
+    let state = tlv
+        .get_type(TlvType::State)
+        .ok_or_else(|| CryptoError::PairingHandshake("pair management: missing state".into()))?;
+    if state != [1] {
+        return Err(CryptoError::PairingHandshake(
+            "pair management: unexpected state".into(),
+        ));
+    }
+    let method = tlv
+        .get_type(TlvType::Method)
+        .ok_or_else(|| CryptoError::PairingHandshake("pair management: missing method".into()))?;
+    if method != [expected_method] {
+        return Err(CryptoError::PairingHandshake(
+            "pair management: unexpected method".into(),
+        ));
+    }
+    Ok(tlv)
+}
+
 // --- Pair-Verify (server side) ---
 
 /// Server-side pair-verify using Curve25519 ECDH + Ed25519 signatures.
@@ -683,7 +784,7 @@ mod tests {
     #[test]
     fn transient_pairing_self_test() {
         // Simulate a transient pair-setup between our server and a mock client
-        let mut server = SrpServer::new(Some("3939")).unwrap();
+        let mut server = SrpServer::new(None).unwrap();
 
         // Client sends M1
         let mut m1 = TlvValues::new();
@@ -750,6 +851,46 @@ mod tests {
 
         // Shared secret should match
         assert_eq!(server.shared_secret().unwrap(), &session_key[..]);
+    }
+
+    #[test]
+    fn pin_pairing_rejects_transient_flag() {
+        let mut server = SrpServer::new(Some("1234")).unwrap();
+        let mut m1 = TlvValues::new();
+        m1.add(TlvType::State as u8, &[1]);
+        m1.add(TlvType::Method as u8, &[PAIRING_METHOD_PAIR_SETUP]);
+        m1.add(TlvType::Flags as u8, &[PAIRING_FLAGS_TRANSIENT]);
+        assert!(server.process_m1(&m1.encode()).is_err());
+    }
+
+    #[test]
+    fn pair_management_roundtrip() {
+        let key = [0x42u8; 32];
+        let mut add = TlvValues::new();
+        add.add(TlvType::State as u8, &[1]);
+        add.add(TlvType::Method as u8, &[PAIRING_METHOD_ADD_PAIRING]);
+        add.add(TlvType::Identifier as u8, b"controller-1");
+        add.add(TlvType::PublicKey as u8, &key);
+
+        let (id, stored_key) = process_pair_add(&add.encode()).unwrap();
+        assert_eq!(id, "controller-1");
+        assert_eq!(stored_key, key);
+
+        let response = pair_list_response(vec![(id, stored_key)]);
+        let decoded = TlvValues::decode(&response).unwrap();
+        assert_eq!(decoded.get_type(TlvType::State), Some(&[2u8][..]));
+        assert_eq!(decoded.get_type(TlvType::Identifier), Some(&b"controller-1"[..]));
+        assert_eq!(decoded.get_type(TlvType::PublicKey), Some(&key[..]));
+        assert_eq!(
+            decoded.get_type(TlvType::Permissions),
+            Some(&[PAIRING_PERMISSION_ADMIN][..])
+        );
+
+        let mut remove = TlvValues::new();
+        remove.add(TlvType::State as u8, &[1]);
+        remove.add(TlvType::Method as u8, &[PAIRING_METHOD_REMOVE_PAIRING]);
+        remove.add(TlvType::Identifier as u8, b"controller-1");
+        assert_eq!(process_pair_remove(&remove.encode()).unwrap(), "controller-1");
     }
 
     /// C-verified: HKDF-SHA512 with known IKM (0x00..0x3f), salt, info.
