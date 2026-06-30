@@ -3,6 +3,8 @@ updates:
   - package-ecosystem: "cargo"
     directory: "/"
     target-branch: "main"
+    commit-message:
+      prefix: "chore"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
@@ -22,6 +24,8 @@ updates:
   - package-ecosystem: "cargo"
     directory: "/fuzz"
     target-branch: "main"
+    commit-message:
+      prefix: "chore"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
@@ -41,6 +45,8 @@ updates:
   - package-ecosystem: "github-actions"
     directory: "/"
     target-branch: "main"
+    commit-message:
+      prefix: "chore"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
