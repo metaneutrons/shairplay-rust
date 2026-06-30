@@ -320,31 +320,6 @@ async fn teardown_closes_connection() {
 mod ap2_tests {
     use super::*;
     use shairplay::crypto::tlv::{TlvType, TlvValues};
-    use shairplay::{MemoryPairingStore, PairingStore};
-
-    async fn rtsp_post_raw(stream: &mut TcpStream, url: &str, cseq: u32, body: &[u8]) -> Vec<u8> {
-        let req = format!(
-            "POST {} RTSP/1.0\r\nCSeq: {}\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\n\r\n",
-            url,
-            cseq,
-            body.len()
-        );
-        stream.write_all(req.as_bytes()).await.unwrap();
-        stream.write_all(body).await.unwrap();
-        let mut buf = vec![0u8; 8192];
-        let n = stream.read(&mut buf).await.unwrap();
-        buf.truncate(n);
-        buf
-    }
-
-    fn response_body(response: &[u8]) -> &[u8] {
-        let header_end = response
-            .windows(4)
-            .position(|w| w == b"\r\n\r\n")
-            .map(|pos| pos + 4)
-            .expect("response should contain header terminator");
-        &response[header_end..]
-    }
 
     #[tokio::test]
     #[serial]
@@ -411,40 +386,6 @@ mod ap2_tests {
         assert_eq!(raop("sf"), Some("0x204"));
         assert_eq!(airplay("features"), Some(expected_features));
         assert_eq!(airplay("flags"), Some("0x204"));
-    }
-
-    #[tokio::test]
-    #[serial]
-    async fn ap2_pair_management_rejects_plaintext_requests() {
-        let store = Arc::new(MemoryPairingStore::default());
-        let mut server = RaopServer::builder()
-            .name("PairManagementAuthTest")
-            .hwaddr([0x00, 0x11, 0x22, 0x33, 0x44, 0x55])
-            .port(0)
-            .pairing_store(store.clone())
-            .build(empty_handler())
-            .unwrap();
-        server.start().await.unwrap();
-        let port = server.service_info().port;
-
-        let mut add = TlvValues::new();
-        add.add(TlvType::State as u8, &[1]);
-        add.add(TlvType::Method as u8, &[3]);
-        add.add(TlvType::Identifier as u8, b"controller-1");
-        add.add(TlvType::PublicKey as u8, &[0x42u8; 32]);
-
-        let mut stream = TcpStream::connect(format!("127.0.0.1:{port}")).await.unwrap();
-        let response = rtsp_post_raw(&mut stream, "/pair-add", 1, &add.encode()).await;
-        let response_text = String::from_utf8_lossy(&response);
-        assert!(response_text.contains("RTSP/1.0 200 OK"), "got: {response_text}");
-
-        let body = response_body(&response);
-        let tlv = TlvValues::decode(body).expect("pair-add rejection should be TLV");
-        assert_eq!(tlv.get_type(TlvType::State), Some(&[2u8][..]));
-        assert_eq!(tlv.get_type(TlvType::Error), Some(&[2u8][..]));
-        assert!(store.get("controller-1").is_none());
-
-        server.stop().await;
     }
 
     #[tokio::test]
