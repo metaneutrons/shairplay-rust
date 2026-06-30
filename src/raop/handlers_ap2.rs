@@ -1,6 +1,6 @@
 //! AP2 RTSP request handlers — pairing, encrypted SETUP, buffered audio, video.
 
-use crate::codec::aac::AudioSsrc;
+use crate::codec::alac::AlacFormat;
 use crate::crypto::pairing_homekit::{PairVerifyServer, SrpServer};
 #[cfg(feature = "video")]
 use crate::error::CryptoError;
@@ -528,7 +528,11 @@ fn setup_stream_realtime(
         .get("audioFormat")
         .and_then(|v| v.as_unsigned_integer())
         .unwrap_or(0) as u32;
-    let ssrc = AudioSsrc::from_u32(audio_format);
+    let alac_format = AlacFormat::from_audio_format(audio_format).unwrap_or(AlacFormat {
+        sample_rate: sr as u32,
+        bit_depth: 16,
+        channels: 2,
+    });
     let shk = stream0.get("shk").and_then(|v| v.as_data()).unwrap_or(&[]);
 
     if shk.len() == 32 {
@@ -538,17 +542,15 @@ fn setup_stream_realtime(
             sample_rate = sr,
             samples_per_frame = spf,
             audio_format,
-            ssrc = ?ssrc,
+            alac_format = ?alac_format,
             "AP2 realtime ALAC (ChaCha20)"
         );
-        if !matches!(ssrc, AudioSsrc::Alac44100S16Stereo) {
-            tracing::warn!(audio_format, ssrc = ?ssrc, "Unsupported AP2 realtime ALAC format");
-            conn.shared
-                .handler
-                .on_error(&ShairplayError::Codec(crate::error::CodecError::UnsupportedFormat(
-                    format!("realtime ALAC audioFormat 0x{audio_format:08x} ({ssrc:?})"),
-                )));
-            return None;
+        if AlacFormat::from_audio_format(audio_format).is_none() {
+            tracing::warn!(
+                audio_format,
+                sample_rate = sr,
+                "Unknown AP2 realtime ALAC audioFormat; falling back to SETUP sr and 16-bit stereo"
+            );
         }
         let mut shk_arr = [0u8; 32];
         shk_arr.copy_from_slice(shk);
@@ -558,10 +560,10 @@ fn setup_stream_realtime(
 
         let handler = conn.shared.handler.clone();
         let output_config = crate::raop::realtime_audio::OutputConfig {
-            source_sample_rate: ssrc.sample_rate(),
+            source_sample_rate: alac_format.sample_rate,
             samples_per_frame: spf as u32,
-            channels: ssrc.channels(),
-            bit_depth: ssrc.bit_depth().unwrap_or(16),
+            channels: alac_format.channels,
+            bit_depth: alac_format.bit_depth,
             sample_rate: conn.shared.output_sample_rate,
             max_channels: conn.shared.output_max_channels,
         };

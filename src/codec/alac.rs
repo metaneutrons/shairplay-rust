@@ -27,6 +27,46 @@ pub struct AlacConfig {
     pub sample_rate: u32,
 }
 
+/// ALAC format selected in an AirPlay 2 `audioFormat` SETUP field.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AlacFormat {
+    pub sample_rate: u32,
+    pub bit_depth: u8,
+    pub channels: u8,
+}
+
+impl AlacFormat {
+    /// Parse AP2 audio format bit values.
+    ///
+    /// These are format-capability bit values, not RTP SSRC values. For example,
+    /// `0x00040000` is ALAC/44100/16/2.
+    pub fn from_audio_format(v: u32) -> Option<Self> {
+        match v {
+            0x0004_0000 => Some(Self {
+                sample_rate: 44_100,
+                bit_depth: 16,
+                channels: 2,
+            }),
+            0x0008_0000 => Some(Self {
+                sample_rate: 44_100,
+                bit_depth: 24,
+                channels: 2,
+            }),
+            0x0010_0000 => Some(Self {
+                sample_rate: 48_000,
+                bit_depth: 16,
+                channels: 2,
+            }),
+            0x0020_0000 => Some(Self {
+                sample_rate: 48_000,
+                bit_depth: 24,
+                channels: 2,
+            }),
+            _ => None,
+        }
+    }
+}
+
 /// Bitstream reader for ALAC decoding.
 struct BitReader<'a> {
     buf: &'a [u8],
@@ -482,7 +522,7 @@ impl AlacDecoder {
         self.uncompressed_bytes_buffer_b = vec![0i32; n];
     }
 
-    /// Decode one ALAC frame. Returns the number of bytes written to output (S16LE).
+    /// Decode one ALAC frame. Returns the number of bytes written to output (little-endian PCM).
     pub fn decode_frame(&mut self, input: &[u8], output: &mut [u8]) -> usize {
         if self.max_samples_per_frame == 0 || self.bytes_per_sample <= 0 {
             return 0;
@@ -503,18 +543,37 @@ impl AlacDecoder {
 
     /// Decode an ALAC frame and return F32LE interleaved samples.
     pub fn decode_frame_f32(&mut self, input: &[u8]) -> Option<Vec<f32>> {
-        let mut s16_buf = vec![0u8; 16384];
-        let len = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.decode_frame(input, &mut s16_buf)))
+        if self.max_samples_per_frame == 0 || self.bytes_per_sample <= 0 {
+            return None;
+        }
+
+        let max_output_size = self.max_samples_per_frame as usize * self.bytes_per_sample as usize;
+        let mut pcm_buf = vec![0u8; max_output_size];
+        let len = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.decode_frame(input, &mut pcm_buf)))
             .unwrap_or(0);
         if len == 0 {
             return None;
         }
-        Some(
-            s16_buf[..len]
-                .chunks_exact(2)
-                .map(|c| i16::from_le_bytes([c[0], c[1]]) as f32 / 32768.0)
-                .collect(),
-        )
+
+        match self.sample_size_config {
+            16 => Some(
+                pcm_buf[..len]
+                    .chunks_exact(2)
+                    .map(|c| i16::from_le_bytes([c[0], c[1]]) as f32 / 32768.0)
+                    .collect(),
+            ),
+            24 => Some(
+                pcm_buf[..len]
+                    .chunks_exact(3)
+                    .map(|c| {
+                        let raw = c[0] as i32 | ((c[1] as i32) << 8) | ((c[2] as i32) << 16);
+                        let sample = (raw << 8) >> 8;
+                        sample as f32 / 8_388_608.0
+                    })
+                    .collect(),
+            ),
+            _ => None,
+        }
     }
 
     /// Rice-decode then FIR-predict one channel into the A (`false`) or B
@@ -748,6 +807,12 @@ mod decode_tests {
         c
     }
 
+    fn config_24(max_frames: u32) -> [u8; 48] {
+        let mut c = config_16(max_frames);
+        c[29] = 24; // sample_size_config
+        c
+    }
+
     // An uncompressed ALAC subframe just sign-extends and packs the raw samples,
     // so the decoded PCM must equal the input samples — a true correctness check
     // of the shared subframe-header parse + dispatch + output paths.
@@ -804,6 +869,30 @@ mod decode_tests {
             expected.extend_from_slice(&(r[i] as i16).to_le_bytes());
         }
         assert_eq!(&out[..16], &expected[..]);
+    }
+
+    #[test]
+    fn decode_uncompressed_stereo_24bit_to_f32() {
+        let mut dec = AlacDecoder::new(24, 2);
+        dec.set_info(&config_24(2));
+
+        let samples: [i32; 4] = [0, 0x7f_ffff, -0x80_0000, -1];
+        let mut w = BitWriter::new();
+        w.put(1, 3); // channels = 1 (stereo)
+        w.put(0, 4);
+        w.put(0, 12);
+        w.put(0, 1); // has_size = 0
+        w.put(0, 2); // uncompressed_bytes = 0
+        w.put(1, 1); // is_not_compressed = 1
+        for &sample in &samples {
+            w.put((sample as u32) & 0x00ff_ffff, 24);
+        }
+
+        let decoded = dec.decode_frame_f32(&w.bytes).expect("24-bit ALAC frame should decode");
+        assert_eq!(decoded.len(), samples.len());
+        for (actual, expected) in decoded.iter().zip(samples) {
+            assert!((*actual - expected as f32 / 8_388_608.0).abs() < f32::EPSILON);
+        }
     }
 
     #[test]

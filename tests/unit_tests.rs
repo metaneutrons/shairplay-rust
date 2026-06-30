@@ -704,6 +704,29 @@ mod ssrc_tests {
     }
 
     #[test]
+    fn alac_audio_format_values_parse_separately_from_ssrc() {
+        use shairplay::codec::alac::AlacFormat;
+
+        assert_eq!(
+            AlacFormat::from_audio_format(0x0004_0000),
+            Some(AlacFormat {
+                sample_rate: 44_100,
+                bit_depth: 16,
+                channels: 2,
+            })
+        );
+        assert_eq!(
+            AlacFormat::from_audio_format(0x0020_0000),
+            Some(AlacFormat {
+                sample_rate: 48_000,
+                bit_depth: 24,
+                channels: 2,
+            })
+        );
+        assert_eq!(AudioSsrc::from_u32(0x0004_0000), AudioSsrc::None);
+    }
+
+    #[test]
     fn unknown_ssrc_returns_none() {
         assert_eq!(AudioSsrc::from_u32(0x12345678), AudioSsrc::None);
         assert_eq!(AudioSsrc::from_u32(0), AudioSsrc::None);
