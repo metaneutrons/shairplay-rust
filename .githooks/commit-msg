@@ -1,0 +1,19 @@
+#!/bin/sh
+# Enforce conventional commits: type(scope): description
+# Types: feat, fix, refactor, docs, test, ci, chore, perf, style, build, revert
+msg=$(head -1 "$1")
+
+# Allow merge commits and revert commits
+echo "$msg" | grep -qE '^(Merge |Revert )' && exit 0
+
+# Conventional commit pattern
+echo "$msg" | grep -qE '^(feat|fix|refactor|docs|test|ci|chore|perf|style|build|revert)(\(.+\))?!?: .+' || {
+    echo "ERROR: Commit message must follow Conventional Commits format:"
+    echo "  <type>(<scope>): <description>"
+    echo ""
+    echo "  Types: feat, fix, refactor, docs, test, ci, chore, perf, style, build, revert"
+    echo "  Example: feat(server): add per-stream encryption"
+    echo ""
+    echo "  Got: $msg"
+    exit 1
+}

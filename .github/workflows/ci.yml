@@ -8,6 +8,41 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  commit-convention:
+    name: Conventional Commits
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Validate PR title and every commit
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          # Same Conventional Commits grammar as .githooks/commit-msg.
+          pattern='^(feat|fix|refactor|docs|test|ci|chore|perf|style|build|revert)(\(.+\))?!?: .+'
+          fail=0
+          if ! printf '%s' "$PR_TITLE" | grep -qE "$pattern"; then
+            echo "::error::PR title is not a Conventional Commit: $PR_TITLE"
+            fail=1
+          fi
+          while IFS= read -r sha; do
+            [ -z "$sha" ] && continue
+            msg=$(git log -1 --format=%s "$sha")
+            printf '%s' "$msg" | grep -qE '^(Merge |Revert )' && continue
+            if ! printf '%s' "$msg" | grep -qE "$pattern"; then
+              echo "::error::Commit ${sha:0:8} is not a Conventional Commit: $msg"
+              fail=1
+            fi
+          done < <(git rev-list "$BASE_SHA..$HEAD_SHA")
+          if [ "$fail" -ne 0 ]; then
+            echo "Format: <type>(<scope>): <description>  — types: feat, fix, refactor, docs, test, ci, chore, perf, style, build, revert (optionally '!' for breaking)."
+            exit 1
+          fi
+
   test:
     name: Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
