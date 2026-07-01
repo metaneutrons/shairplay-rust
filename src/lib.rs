@@ -58,8 +58,7 @@ server.start().await?;
 - `video` — Experimental screen mirroring (implies `ap2`)
 "]
 
-#[doc(hidden)]
-pub mod codec;
+pub(crate) mod codec;
 #[doc(hidden)]
 pub mod crypto;
 #[doc(hidden)]

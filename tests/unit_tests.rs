@@ -1,6 +1,5 @@
 //! Unit tests with test vectors generated from the original C implementation.
 
-use shairplay::codec::alac::AlacDecoder;
 use shairplay::crypto::aes::AesCtr;
 use shairplay::crypto::fairplay::FairPlay;
 use shairplay::crypto::pairing::Pairing;
@@ -289,26 +288,6 @@ fn fairplay_reject_bad_version() {
 }
 
 // ============================================================
-// ALAC decoder — basic init
-// ============================================================
-#[test]
-fn alac_init_and_set_info() {
-    let mut alac = AlacDecoder::new(16, 2);
-    let mut info = [0u8; 48];
-    // frame_length = 352
-    info[24..28].copy_from_slice(&352u32.to_be_bytes());
-    info[29] = 16; // bit depth
-    info[30] = 40; // pb
-    info[31] = 10; // mb
-    info[32] = 14; // kb
-    info[33] = 2; // channels
-    info[34..36].copy_from_slice(&255u16.to_be_bytes());
-    info[44..48].copy_from_slice(&44100u32.to_be_bytes());
-    alac.set_info(&info);
-    // Should not panic — buffers allocated
-}
-
-// ============================================================
 // RTP Buffer — queue/dequeue/flush
 // ============================================================
 #[test]
@@ -501,18 +480,6 @@ mod ap2_tests {
         assert_ne!(vk1.as_bytes(), vk3.as_bytes());
     }
 
-    // --- ADTS header round-trip with decrypt ---
-
-    #[test]
-    fn adts_wrap_produces_valid_sync() {
-        let raw_aac = vec![0xDE, 0xAD, 0xBE, 0xEF];
-        let adts = shairplay::codec::aac::wrap_adts(&raw_aac, 44100, 2);
-        assert_eq!(adts[0], 0xFF); // sync byte 1
-        assert_eq!(adts[1] & 0xF0, 0xF0); // sync byte 2
-        assert_eq!(&adts[7..], &raw_aac[..]); // payload preserved
-        assert_eq!(adts.len(), 7 + 4); // header + payload
-    }
-
     // --- C-verified: server_keypair (libsodium crypto_sign_seed_keypair) ---
 
     #[test]
@@ -596,158 +563,6 @@ mod ap2_tests {
             .step_by(2)
             .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
             .collect()
-    }
-}
-
-// --- Channel mixdown tests ---
-
-#[cfg(all(test, feature = "ap2"))]
-mod mixdown_tests {
-    use shairplay::codec::resample::mixdown;
-
-    #[test]
-    fn stereo_passthrough() {
-        let input = vec![0.5_f32, -0.5, 0.3, -0.3];
-        let out = mixdown(&input, 2, 2);
-        assert_eq!(out, input);
-    }
-
-    #[test]
-    fn surround_51_to_stereo() {
-        // 5.1: FL=1.0 FR=0.0 FC=0.5 LFE=0.0 RL=0.0 RR=0.0
-        let input = vec![1.0, 0.0, 0.5, 0.0, 0.0, 0.0_f32];
-        let out = mixdown(&input, 6, 2);
-        // L = FL + 0.707*FC = 1.0 + 0.3535 = 1.3535 → clamped to 1.0
-        // R = FR + 0.707*FC = 0.0 + 0.3535 = 0.3535
-        assert!((out[0] - 1.0).abs() < 0.01); // clamped
-        assert!((out[1] - 0.3535).abs() < 0.01);
-    }
-
-    #[test]
-    fn surround_71_to_stereo() {
-        // 7.1: FL=0.5 FR=0.5 FC=0.0 LFE=0.0 SL=0.3 SR=0.3 RL=0.2 RR=0.2
-        let input = vec![0.5, 0.5, 0.0, 0.0, 0.3, 0.3, 0.2, 0.2_f32];
-        let out = mixdown(&input, 8, 2);
-        let k: f32 = 0.707;
-        let expected_l = 0.5 + k * 0.3 + k * 0.2;
-        let expected_r = 0.5 + k * 0.3 + k * 0.2;
-        assert!((out[0] - expected_l).abs() < 0.01);
-        assert!((out[1] - expected_r).abs() < 0.01);
-    }
-
-    #[test]
-    fn mixdown_clamps_output() {
-        // All channels at 1.0 — should clamp to [-1.0, 1.0]
-        let input = vec![1.0_f32; 6];
-        let out = mixdown(&input, 6, 2);
-        assert!(out[0] <= 1.0);
-        assert!(out[1] <= 1.0);
-    }
-}
-
-// --- AudioSsrc mapping tests ---
-
-#[cfg(all(test, feature = "ap2"))]
-mod ssrc_tests {
-    use shairplay::codec::aac::AudioSsrc;
-
-    #[test]
-    fn all_ssrc_values_map_correctly() {
-        let cases = vec![
-            (0x0000FACE, 44100, 2, false),
-            (0x15000000, 48000, 2, false),
-            (0x16000000, 44100, 2, true),
-            (0x17000000, 48000, 2, true),
-            (0x27000000, 48000, 6, true),
-            (0x28000000, 48000, 8, true),
-        ];
-        for (val, sr, ch, is_aac) in cases {
-            let ssrc = AudioSsrc::from_u32(val);
-            assert_ne!(ssrc, AudioSsrc::None, "SSRC 0x{val:08X} should be recognized");
-            assert_eq!(ssrc.sample_rate(), sr, "SSRC 0x{val:08X} sample rate");
-            assert_eq!(ssrc.channels(), ch, "SSRC 0x{val:08X} channels");
-            assert_eq!(ssrc.is_aac(), is_aac, "SSRC 0x{val:08X} is_aac");
-        }
-    }
-
-    #[test]
-    fn alac_ssrc_values_report_bit_depth() {
-        assert!(AudioSsrc::Alac44100S16Stereo.is_alac());
-        assert_eq!(AudioSsrc::Alac44100S16Stereo.bit_depth(), Some(16));
-        assert!(AudioSsrc::Alac48000S24Stereo.is_alac());
-        assert_eq!(AudioSsrc::Alac48000S24Stereo.bit_depth(), Some(24));
-        assert!(!AudioSsrc::Aac44100F24Stereo.is_alac());
-        assert_eq!(AudioSsrc::Aac44100F24Stereo.bit_depth(), None);
-    }
-
-    #[test]
-    fn alac_audio_format_values_parse_separately_from_ssrc() {
-        use shairplay::codec::alac::AlacFormat;
-
-        assert_eq!(
-            AlacFormat::from_audio_format(0x0004_0000),
-            Some(AlacFormat {
-                sample_rate: 44_100,
-                bit_depth: 16,
-                channels: 2,
-            })
-        );
-        assert_eq!(
-            AlacFormat::from_audio_format(0x0020_0000),
-            Some(AlacFormat {
-                sample_rate: 48_000,
-                bit_depth: 24,
-                channels: 2,
-            })
-        );
-        assert_eq!(AudioSsrc::from_u32(0x0004_0000), AudioSsrc::None);
-    }
-
-    #[test]
-    fn unknown_ssrc_returns_none() {
-        assert_eq!(AudioSsrc::from_u32(0x12345678), AudioSsrc::None);
-        assert_eq!(AudioSsrc::from_u32(0), AudioSsrc::None);
-    }
-
-    #[test]
-    fn adts_channel_config() {
-        assert_eq!(AudioSsrc::Aac44100F24Stereo.adts_channel_config(), 2);
-        assert_eq!(AudioSsrc::Aac48000F24Surround51.adts_channel_config(), 6);
-        assert_eq!(AudioSsrc::Aac48000F24Surround71.adts_channel_config(), 7);
-    }
-}
-
-// --- ADTS header for all channel/rate configs ---
-
-#[cfg(all(test, feature = "ap2"))]
-mod adts_multi_tests {
-    use shairplay::codec::aac::adts_header;
-
-    #[test]
-    fn adts_44100_stereo() {
-        let h = adts_header(100, 44100, 2);
-        assert_eq!(h[0], 0xFF);
-        assert_eq!((h[2] >> 2) & 0x0F, 4); // freq_idx=4 (44100)
-    }
-
-    #[test]
-    fn adts_48000_stereo() {
-        let h = adts_header(100, 48000, 2);
-        assert_eq!((h[2] >> 2) & 0x0F, 3); // freq_idx=3 (48000)
-    }
-
-    #[test]
-    fn adts_48000_surround51() {
-        let h = adts_header(200, 48000, 6);
-        let chan = ((h[2] & 1) << 2) | ((h[3] >> 6) & 3);
-        assert_eq!(chan, 6);
-    }
-
-    #[test]
-    fn adts_48000_surround71() {
-        let h = adts_header(200, 48000, 7); // 7 = ADTS config for 7.1
-        let chan = ((h[2] & 1) << 2) | ((h[3] >> 6) & 3);
-        assert_eq!(chan, 7);
     }
 }
 

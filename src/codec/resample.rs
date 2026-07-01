@@ -87,7 +87,7 @@ const DOWNMIX_3DB: f32 = 0.707;
 
 /// Mix down multi-channel F32 audio to fewer channels.
 /// Uses ITU-R BS.775 downmix coefficients for 5.1 and 7.1.
-pub fn mixdown(input: &[f32], in_channels: usize, out_channels: usize) -> Vec<f32> {
+pub(crate) fn mixdown(input: &[f32], in_channels: usize, out_channels: usize) -> Vec<f32> {
     if in_channels == out_channels {
         return input.to_vec();
     }
@@ -179,5 +179,51 @@ mod tests {
     #[test]
     fn resample_passthrough_returns_none() {
         assert!(StreamResampler::new(44100, 44100, 2).is_none());
+    }
+}
+
+// --- Channel mixdown tests ---
+
+#[cfg(all(test, feature = "ap2"))]
+mod mixdown_tests {
+    use super::mixdown;
+
+    #[test]
+    fn stereo_passthrough() {
+        let input = vec![0.5_f32, -0.5, 0.3, -0.3];
+        let out = mixdown(&input, 2, 2);
+        assert_eq!(out, input);
+    }
+
+    #[test]
+    fn surround_51_to_stereo() {
+        // 5.1: FL=1.0 FR=0.0 FC=0.5 LFE=0.0 RL=0.0 RR=0.0
+        let input = vec![1.0, 0.0, 0.5, 0.0, 0.0, 0.0_f32];
+        let out = mixdown(&input, 6, 2);
+        // L = FL + 0.707*FC = 1.0 + 0.3535 = 1.3535 → clamped to 1.0
+        // R = FR + 0.707*FC = 0.0 + 0.3535 = 0.3535
+        assert!((out[0] - 1.0).abs() < 0.01); // clamped
+        assert!((out[1] - 0.3535).abs() < 0.01);
+    }
+
+    #[test]
+    fn surround_71_to_stereo() {
+        // 7.1: FL=0.5 FR=0.5 FC=0.0 LFE=0.0 SL=0.3 SR=0.3 RL=0.2 RR=0.2
+        let input = vec![0.5, 0.5, 0.0, 0.0, 0.3, 0.3, 0.2, 0.2_f32];
+        let out = mixdown(&input, 8, 2);
+        let k: f32 = 0.707;
+        let expected_l = 0.5 + k * 0.3 + k * 0.2;
+        let expected_r = 0.5 + k * 0.3 + k * 0.2;
+        assert!((out[0] - expected_l).abs() < 0.01);
+        assert!((out[1] - expected_r).abs() < 0.01);
+    }
+
+    #[test]
+    fn mixdown_clamps_output() {
+        // All channels at 1.0 — should clamp to [-1.0, 1.0]
+        let input = vec![1.0_f32; 6];
+        let out = mixdown(&input, 6, 2);
+        assert!(out[0] <= 1.0);
+        assert!(out[1] <= 1.0);
     }
 }

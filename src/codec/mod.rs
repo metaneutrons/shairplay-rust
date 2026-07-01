@@ -1,8 +1,8 @@
 //! Audio codec implementations (ALAC, AAC, resampling).
 
-pub mod alac;
+pub(crate) mod alac;
 #[cfg(feature = "resample")]
-pub mod resample;
+pub(crate) mod resample;
 
 #[cfg(feature = "ap2")]
-pub mod aac;
+pub(crate) mod aac;

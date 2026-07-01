@@ -28,11 +28,14 @@ pub(crate) struct AlacConfig {
 }
 
 /// ALAC format selected in an AirPlay 2 `audioFormat` SETUP field.
+// Consumed by the AP2 RTSP SETUP handler (and the unit tests). Dead in the
+// default `--lib` build where neither is compiled.
+#[cfg_attr(not(feature = "ap2"), allow(dead_code))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct AlacFormat {
-    pub sample_rate: u32,
-    pub bit_depth: u8,
-    pub channels: u8,
+pub(crate) struct AlacFormat {
+    pub(crate) sample_rate: u32,
+    pub(crate) bit_depth: u8,
+    pub(crate) channels: u8,
 }
 
 impl AlacFormat {
@@ -40,7 +43,8 @@ impl AlacFormat {
     ///
     /// These are format-capability bit values, not RTP SSRC values. For example,
     /// `0x00040000` is ALAC/44100/16/2.
-    pub fn from_audio_format(v: u32) -> Option<Self> {
+    #[cfg_attr(not(feature = "ap2"), allow(dead_code))]
+    pub(crate) fn from_audio_format(v: u32) -> Option<Self> {
         match v {
             0x0004_0000 => Some(Self {
                 sample_rate: 44_100,
@@ -434,7 +438,7 @@ fn deinterlace_24(p: &Deinterlace24Params, out: &mut [u8]) {
 }
 
 /// Apple Lossless Audio Codec decoder. Equivalent to alac_file.
-pub struct AlacDecoder {
+pub(crate) struct AlacDecoder {
     num_channels: i32,
     bytes_per_sample: i32,
 
@@ -458,7 +462,7 @@ pub struct AlacDecoder {
 
 impl AlacDecoder {
     /// Create a new ALAC decoder for the given sample size (bits) and channel count.
-    pub fn new(sample_size: i32, num_channels: i32) -> Self {
+    pub(crate) fn new(sample_size: i32, num_channels: i32) -> Self {
         Self {
             num_channels,
             bytes_per_sample: (sample_size / 8) * num_channels,
@@ -481,7 +485,7 @@ impl AlacDecoder {
     }
 
     /// Initialize the decoder with a 48-byte ALACSpecificConfig block.
-    pub fn set_info(&mut self, config: &[u8]) {
+    pub(crate) fn set_info(&mut self, config: &[u8]) {
         // The ALACSpecificConfig fields live in config[24..48]; ignore anything
         // shorter rather than panic on out-of-bounds indexing (the RTSP caller
         // always passes a fixed 48-byte block, but this keeps the API safe).
@@ -775,6 +779,23 @@ impl AlacDecoder {
 #[cfg(test)]
 mod decode_tests {
     use super::*;
+
+    #[test]
+    fn alac_init_and_set_info() {
+        let mut alac = AlacDecoder::new(16, 2);
+        let mut info = [0u8; 48];
+        // frame_length = 352
+        info[24..28].copy_from_slice(&352u32.to_be_bytes());
+        info[29] = 16; // bit depth
+        info[30] = 40; // pb
+        info[31] = 10; // mb
+        info[32] = 14; // kb
+        info[33] = 2; // channels
+        info[34..36].copy_from_slice(&255u16.to_be_bytes());
+        info[44..48].copy_from_slice(&44100u32.to_be_bytes());
+        alac.set_info(&info);
+        // Should not panic — buffers allocated
+    }
 
     /// Minimal MSB-first bit writer for building ALAC subframes in tests.
     struct BitWriter {
