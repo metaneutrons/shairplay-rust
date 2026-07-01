@@ -370,7 +370,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let name = args
         .iter()
         .position(|a| a == "--name")
-        .map(|i| args[i + 1].as_str())
+        .and_then(|i| args.get(i + 1))
+        .map(|s| s.as_str())
         .unwrap_or("Shairplay Rust");
     let bind_addrs: Vec<IpAddr> = args
         .iter()
@@ -381,7 +382,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let persist_path: Option<PathBuf> = args
         .iter()
         .position(|a| a == "--persist")
-        .map(|i| PathBuf::from(&args[i + 1]));
+        .and_then(|i| args.get(i + 1))
+        .map(PathBuf::from);
     let use_resample = args.iter().any(|a| a == "--resample");
 
     // Detect output device and its native sample rate
