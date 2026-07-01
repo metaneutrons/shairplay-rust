@@ -55,6 +55,12 @@ const ROUTES: &[Route] = &[
         path: "/pair-verify",
         handler: handlers_ap2::handle_pair_verify,
     },
+    #[cfg(feature = "ap2")]
+    Route {
+        method: "POST",
+        path: "/pair-pin-start",
+        handler: handlers_ap2::handle_pair_pin_start,
+    },
     #[cfg(not(feature = "ap2"))]
     Route {
         method: "POST",

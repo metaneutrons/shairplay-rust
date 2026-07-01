@@ -247,6 +247,20 @@ pub(crate) fn handle_info(
 }
 
 #[cfg(feature = "ap2")]
+/// AP2 `/pair-pin-start`: acknowledge that the accessory is ready for PIN entry.
+///
+/// macOS sends this after seeing PIN-required mDNS/status flags and aborts
+/// normal pair-setup if the receiver answers 404.
+pub(crate) fn handle_pair_pin_start(
+    _conn: &mut RaopConnection,
+    _request: &HttpRequest,
+    response: &mut HttpResponse,
+) -> Option<Vec<u8>> {
+    response.add_header("Content-Type", "application/octet-stream");
+    None
+}
+
+#[cfg(feature = "ap2")]
 /// Build the `updateInfo` `POST /command` message queued on a freshly-opened
 /// event channel (status flags, features, model, versions). Identical for the
 /// RC-only and normal event channels.

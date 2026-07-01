@@ -390,6 +390,34 @@ mod ap2_tests {
 
     #[tokio::test]
     #[serial]
+    async fn ap2_pair_pin_start_is_acknowledged() {
+        let handler = empty_handler();
+        let mut server = RaopServer::builder()
+            .name("PinStartTest")
+            .hwaddr([0x00, 0x11, 0x22, 0x33, 0x44, 0x55])
+            .port(0)
+            .pin("1234")
+            .build(handler)
+            .unwrap();
+        server.start().await.unwrap();
+        let port = server.service_info().port;
+
+        let mut stream = TcpStream::connect(format!("127.0.0.1:{port}")).await.unwrap();
+        let resp = send_rtsp(
+            &mut stream,
+            "POST /pair-pin-start RTSP/1.0\r\nCSeq: 1\r\nContent-Length: 0\r\n\r\n",
+        )
+        .await;
+
+        assert!(resp.contains("RTSP/1.0 200 OK"), "got: {resp}");
+        assert!(resp.contains("CSeq: 1"), "got: {resp}");
+        assert!(resp.contains("Content-Type: application/octet-stream"), "got: {resp}");
+
+        server.stop().await;
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn ap2_full_transient_pair_setup_m1_to_m4() {
         use num_bigint::BigUint;
 
