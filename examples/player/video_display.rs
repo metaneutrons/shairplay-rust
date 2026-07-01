@@ -3,7 +3,7 @@
 use minifb::{Window, WindowOptions};
 use openh264::decoder::Decoder;
 use openh264::formats::YUVSource;
-use shairplay::raop::video::{PacketKind, VideoHandler, VideoPacket, VideoSession};
+use shairplay::{PacketKind, VideoHandler, VideoPacket, VideoSession};
 use std::sync::{Arc, Mutex};
 
 /// Shared frame buffer between the video session (producer) and the window loop (consumer).
