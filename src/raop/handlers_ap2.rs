@@ -1,7 +1,7 @@
 //! AP2 RTSP request handlers — pairing, encrypted SETUP, buffered audio, video.
 
 use crate::codec::alac::AlacFormat;
-use crate::crypto::pairing_homekit::{PairVerifyServer, SrpServer};
+use crate::crypto::pairing_homekit::{self, PairVerifyServer, SrpServer};
 #[cfg(feature = "video")]
 use crate::error::CryptoError;
 use crate::error::{ProtocolError, ShairplayError};
@@ -63,8 +63,19 @@ pub(crate) fn handle_pair_setup(
     match state {
         1 => {
             tracing::info!("AP2 pair-setup M1 received");
-            let mut srp = SrpServer::new(conn.shared.pin.as_deref()).ok()?;
-            srp.process_m1(data).ok()?;
+            let mut srp = match SrpServer::new(conn.shared.pin.as_deref()) {
+                Ok(srp) => srp,
+                Err(e) => {
+                    tracing::warn!("pair-setup M1 init failed: {e}");
+                    conn.shared.handler.on_error(&ShairplayError::Crypto(e));
+                    return Some(pairing_homekit::pairing_error_response(2));
+                }
+            };
+            if let Err(e) = srp.process_m1(data) {
+                tracing::warn!("pair-setup M1 failed: {e}");
+                conn.shared.handler.on_error(&ShairplayError::Crypto(e));
+                return Some(pairing_homekit::pairing_error_response(2));
+            }
             let m2 = srp.build_m2();
             conn.srp_server = Some(srp);
             Some(m2)
@@ -87,8 +98,6 @@ pub(crate) fn handle_pair_setup(
                     let m6 = srp.build_m6(&conn.shared.device_id, &conn.shared.identity_seed).ok()?;
                     conn.shared.pairing_store.put(&client_id, client_pk);
                     tracing::info!(client_id, "AP2 normal pair-setup complete, client key stored");
-                    conn.ap2_shared_secret = srp.session_key().map(|s| s.to_vec());
-                    conn.is_ap2 = true;
                     Some(m6)
                 }
                 Err(e) => {
@@ -190,7 +199,9 @@ pub(crate) fn handle_info(
     dict.insert("name".into(), plist::Value::String(conn.shared.airplay_name.clone()));
     dict.insert(
         "features".into(),
-        plist::Value::Integer((crate::net::features::receiver_features() as i64).into()),
+        plist::Value::Integer(
+            (crate::net::features::receiver_features_for_pairing(conn.shared.pin.is_some()) as i64).into(),
+        ),
     );
     dict.insert("model".into(), plist::Value::String(config::GLOBAL_MODEL.into()));
     dict.insert(
@@ -200,7 +211,7 @@ pub(crate) fn handle_info(
     dict.insert("sourceVersion".into(), plist::Value::String(config::AP2_SRCVERS.into()));
     dict.insert(
         "statusFlags".into(),
-        plist::Value::Integer((config::AP2_STATUS_FLAGS as i64).into()),
+        plist::Value::Integer((config::ap2_status_flags(conn.shared.pin.is_some()) as i64).into()),
     );
     dict.insert("pk".into(), plist::Value::String(pk_hex));
 
@@ -236,10 +247,24 @@ pub(crate) fn handle_info(
 }
 
 #[cfg(feature = "ap2")]
+/// AP2 `/pair-pin-start`: acknowledge that the accessory is ready for PIN entry.
+///
+/// macOS sends this after seeing PIN-required mDNS/status flags and aborts
+/// normal pair-setup if the receiver answers 404.
+pub(crate) fn handle_pair_pin_start(
+    _conn: &mut RaopConnection,
+    _request: &HttpRequest,
+    response: &mut HttpResponse,
+) -> Option<Vec<u8>> {
+    response.add_header("Content-Type", "application/octet-stream");
+    None
+}
+
+#[cfg(feature = "ap2")]
 /// Build the `updateInfo` `POST /command` message queued on a freshly-opened
 /// event channel (status flags, features, model, versions). Identical for the
 /// RC-only and normal event channels.
-fn build_update_info_message() -> Option<Vec<u8>> {
+fn build_update_info_message(requires_pin_pairing: bool) -> Option<Vec<u8>> {
     use crate::raop::config;
 
     let mut update_info = plist::Dictionary::new();
@@ -247,11 +272,13 @@ fn build_update_info_message() -> Option<Vec<u8>> {
     let mut value = plist::Dictionary::new();
     value.insert(
         "statusFlags".into(),
-        plist::Value::Integer((config::AP2_STATUS_FLAGS as i64).into()),
+        plist::Value::Integer((config::ap2_status_flags(requires_pin_pairing) as i64).into()),
     );
     value.insert(
         "features".into(),
-        plist::Value::Integer((crate::net::features::receiver_features() as i64).into()),
+        plist::Value::Integer(
+            (crate::net::features::receiver_features_for_pairing(requires_pin_pairing) as i64).into(),
+        ),
     );
     value.insert("model".into(), plist::Value::String(config::GLOBAL_MODEL.into()));
     value.insert("sourceVersion".into(), plist::Value::String(config::AP2_SRCVERS.into()));
@@ -413,7 +440,7 @@ fn setup_initial(conn: &mut RaopConnection, dict: &plist::Dictionary) -> Option<
                 let event_sender = {
                     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
 
-                    if let Some(msg) = build_update_info_message() {
+                    if let Some(msg) = build_update_info_message(conn.shared.pin.is_some()) {
                         let _ = tx.send(msg);
                         tracing::debug!("updateInfo queued for RC event channel");
                     }
@@ -459,7 +486,7 @@ fn setup_initial(conn: &mut RaopConnection, dict: &plist::Dictionary) -> Option<
             let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
 
             // Queue updateInfo so it's sent immediately when client connects
-            if let Some(msg) = build_update_info_message() {
+            if let Some(msg) = build_update_info_message(conn.shared.pin.is_some()) {
                 let _ = tx.send(msg);
                 tracing::debug!("updateInfo queued for event channel");
             }

@@ -14,9 +14,23 @@ pub(crate) const AP2_PROTOVERS: &str = "1.1";
 #[cfg(feature = "ap2")]
 pub(crate) const AP2_SRCVERS: &str = "366.0";
 
-/// AP2 statusFlags indicating standard receiver attributes (transient state).
+/// AP2 status flag: audio output is available.
 #[cfg(feature = "ap2")]
-pub(crate) const AP2_STATUS_FLAGS: u32 = 0x4;
+pub(crate) const AP2_STATUS_AUDIO_ATTACHED: u32 = 1 << 2;
+
+/// AP2 status flag: a one-time PIN is required for normal HomeKit pairing.
+#[cfg(feature = "ap2")]
+pub(crate) const AP2_STATUS_ONE_TIME_PAIRING_REQUIRED: u32 = 1 << 9;
+
+/// Build AP2 statusFlags for the selected pairing mode.
+#[cfg(feature = "ap2")]
+pub(crate) fn ap2_status_flags(requires_pin_pairing: bool) -> u32 {
+    let mut flags = AP2_STATUS_AUDIO_ATTACHED;
+    if requires_pin_pairing {
+        flags |= AP2_STATUS_ONE_TIME_PAIRING_REQUIRED;
+    }
+    flags
+}
 
 // --- Screen Mirroring (Video) Display Specifications ---
 // Only consumed by the `video` screen-mirroring path in handlers_ap2.

@@ -364,6 +364,58 @@ mod ap2_tests {
         server.stop().await;
     }
 
+    #[test]
+    fn ap2_pin_pairing_service_info_advertises_persistent_pairing() {
+        let server = RaopServer::builder()
+            .name("PersistentPairingTest")
+            .hwaddr([0x00, 0x11, 0x22, 0x33, 0x44, 0x55])
+            .port(0)
+            .pin("1234")
+            .build(empty_handler())
+            .unwrap();
+        let info = server.service_info();
+        let raop = |key: &str| info.raop_txt.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str());
+        let airplay = |key: &str| info.airplay_txt.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str());
+
+        let expected_features = if cfg!(feature = "video") {
+            "0x527FFEE6,0x0"
+        } else {
+            "0x405D4A00,0x14340"
+        };
+        assert_eq!(raop("ft"), Some(expected_features));
+        assert_eq!(raop("sf"), Some("0x204"));
+        assert_eq!(airplay("features"), Some(expected_features));
+        assert_eq!(airplay("flags"), Some("0x204"));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn ap2_pair_pin_start_is_acknowledged() {
+        let handler = empty_handler();
+        let mut server = RaopServer::builder()
+            .name("PinStartTest")
+            .hwaddr([0x00, 0x11, 0x22, 0x33, 0x44, 0x55])
+            .port(0)
+            .pin("1234")
+            .build(handler)
+            .unwrap();
+        server.start().await.unwrap();
+        let port = server.service_info().port;
+
+        let mut stream = TcpStream::connect(format!("127.0.0.1:{port}")).await.unwrap();
+        let resp = send_rtsp(
+            &mut stream,
+            "POST /pair-pin-start RTSP/1.0\r\nCSeq: 1\r\nContent-Length: 0\r\n\r\n",
+        )
+        .await;
+
+        assert!(resp.contains("RTSP/1.0 200 OK"), "got: {resp}");
+        assert!(resp.contains("CSeq: 1"), "got: {resp}");
+        assert!(resp.contains("Content-Type: application/octet-stream"), "got: {resp}");
+
+        server.stop().await;
+    }
+
     #[tokio::test]
     #[serial]
     async fn ap2_full_transient_pair_setup_m1_to_m4() {

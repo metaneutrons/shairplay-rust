@@ -51,9 +51,6 @@ pub(crate) const GLOBAL_VERSION: &str = "130.14";
 
 // --- AP2 mDNS TXT record constants ---
 
-/// Status flags (0x4 = audio receiver).
-#[cfg(feature = "ap2")]
-pub(crate) const AP2_STATUS_FLAGS: u32 = crate::raop::config::AP2_STATUS_FLAGS;
 /// Source version string.
 #[cfg(feature = "ap2")]
 pub(crate) const AP2_SRCVERS: &str = crate::raop::config::AP2_SRCVERS;
@@ -125,14 +122,24 @@ impl AirPlayServiceInfo {
     /// Create AP2 service info with full AirPlay 2 feature flags.
     /// `pk_hex` is the hex-encoded Ed25519 public key, `pi` is the pairing identifier (UUID).
     #[cfg(feature = "ap2")]
-    pub fn new_airplay2(name: &str, port: u16, hwaddr: &[u8], password: bool, pk_hex: &str, pi: &str) -> Self {
+    pub fn new_airplay2(
+        name: &str,
+        port: u16,
+        hwaddr: &[u8],
+        password: bool,
+        pk_hex: &str,
+        pi: &str,
+        requires_pin_pairing: bool,
+    ) -> Self {
         let hw_raop = util::hwaddr_raop(hwaddr);
         let hw_airplay = util::hwaddr_airplay(hwaddr);
         let raop_name = format!("{hw_raop}@{name}");
 
-        let features_lo = super::features::receiver_features() & 0xFFFFFFFF;
-        let features_hi = (super::features::receiver_features() >> 32) & 0xFFFFFFFF;
+        let features = super::features::receiver_features_for_pairing(requires_pin_pairing);
+        let features_lo = features & 0xFFFFFFFF;
+        let features_hi = (features >> 32) & 0xFFFFFFFF;
         let ft = format!("0x{features_lo:X},0x{features_hi:X}");
+        let status_flags = crate::raop::config::ap2_status_flags(requires_pin_pairing);
 
         let raop_txt = vec![
             // AP1 compatibility fields (allows classic AirPlay fallback)
@@ -143,7 +150,7 @@ impl AirPlayServiceInfo {
             // AP2 fields
             ("ft".into(), ft.clone()),
             ("fv".into(), AP2_FW_VERSION.into()),
-            ("sf".into(), format!("0x{AP2_STATUS_FLAGS:X}")),
+            ("sf".into(), format!("0x{status_flags:X}")),
             ("md".into(), RAOP_MD.into()),
             ("am".into(), GLOBAL_MODEL.into()),
             ("pk".into(), pk_hex.into()),
@@ -158,7 +165,7 @@ impl AirPlayServiceInfo {
             ("btaddr".into(), "00:00:00:00:00:00".into()),
             ("deviceid".into(), hw_airplay),
             ("features".into(), ft),
-            ("flags".into(), format!("0x{AP2_STATUS_FLAGS:X}")),
+            ("flags".into(), format!("0x{status_flags:X}")),
             ("gid".into(), pi.into()),
             ("igl".into(), "0".into()),
             ("gcgl".into(), "0".into()),
@@ -352,6 +359,7 @@ mod tests {
             false,
             "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
             "12345678-1234-1234-1234-123456789abc",
+            false,
         );
 
         let find = |key: &str| info.raop_txt.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str());
@@ -376,6 +384,7 @@ mod tests {
             false,
             "abcd1234",
             "my-uuid-here",
+            false,
         );
 
         let find = |key: &str| info.airplay_txt.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str());
@@ -402,8 +411,51 @@ mod tests {
             false,
             "pk",
             "pi",
+            false,
         );
         assert_eq!(info.raop_name, "123456789ABC@My Speaker");
         assert_eq!(info.airplay_name, "My Speaker");
+    }
+
+    #[test]
+    #[cfg(not(feature = "video"))]
+    fn ap2_pin_pairing_txt_changes_features_and_flags() {
+        let info = AirPlayServiceInfo::new_airplay2(
+            "Test Speaker",
+            7000,
+            &[0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF],
+            false,
+            "abcd1234",
+            "my-uuid-here",
+            true,
+        );
+        let raop = |key: &str| info.raop_txt.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str());
+        let airplay = |key: &str| info.airplay_txt.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str());
+
+        assert_eq!(raop("ft"), Some("0x405D4A00,0x14340"));
+        assert_eq!(airplay("features"), Some("0x405D4A00,0x14340"));
+        assert_eq!(raop("sf"), Some("0x204"));
+        assert_eq!(airplay("flags"), Some("0x204"));
+    }
+
+    #[test]
+    #[cfg(feature = "video")]
+    fn ap2_pin_pairing_txt_changes_flags_with_video_features() {
+        let info = AirPlayServiceInfo::new_airplay2(
+            "Test Speaker",
+            7000,
+            &[0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF],
+            false,
+            "abcd1234",
+            "my-uuid-here",
+            true,
+        );
+        let raop = |key: &str| info.raop_txt.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str());
+        let airplay = |key: &str| info.airplay_txt.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str());
+
+        assert_eq!(raop("ft"), Some("0x527FFEE6,0x0"));
+        assert_eq!(airplay("features"), Some("0x527FFEE6,0x0"));
+        assert_eq!(raop("sf"), Some("0x204"));
+        assert_eq!(airplay("flags"), Some("0x204"));
     }
 }
