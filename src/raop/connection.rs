@@ -95,6 +95,7 @@ impl HttpdCallbacks for RaopShared {
         Some(Box::new(RaopConnectionHandler {
             conn,
             remote_addr: remote_str,
+            connected_at: std::time::Instant::now(),
             #[cfg(feature = "ap2")]
             cipher: None,
             #[cfg(feature = "ap2")]
@@ -106,6 +107,9 @@ impl HttpdCallbacks for RaopShared {
 struct RaopConnectionHandler {
     conn: handlers::RaopConnection,
     remote_addr: String,
+    /// Connection-start instant, used to log per-request elapsed time for
+    /// connect-latency diagnostics (AP2 PTP-sync wait vs AP1 fast path).
+    connected_at: std::time::Instant,
     #[cfg(feature = "ap2")]
     cipher: Option<crate::crypto::chacha_transport::EncryptedChannel>,
     #[cfg(feature = "ap2")]
@@ -120,6 +124,17 @@ impl Drop for RaopConnectionHandler {
 
 impl ConnectionHandler for RaopConnectionHandler {
     fn conn_request(&mut self, request: &HttpRequest) -> HttpResponse {
+        // Connect-latency timeline: one line per RTSP request, elapsed since the
+        // connection opened. `/feedback` is a ~2s keep-alive heartbeat, so it drops
+        // to `debug` to keep the connect sequence readable; everything else at info.
+        let elapsed_ms = self.connected_at.elapsed().as_millis() as u64;
+        let method = request.method().unwrap_or("");
+        let url = request.url().unwrap_or("");
+        if url == "/feedback" {
+            tracing::debug!(elapsed_ms, method, url, "RTSP request");
+        } else {
+            tracing::info!(elapsed_ms, method, url, "RTSP request");
+        }
         let resp = rtsp::dispatch(&mut self.conn, request);
 
         // Queue encryption activation for AFTER this response is sent
