@@ -45,8 +45,26 @@ pub(crate) struct RaopShared {
     pub(crate) device_id: String,
     #[cfg(feature = "ap2")]
     pub(crate) airplay_name: String,
+    /// Stop-handle for the currently-active audio session. iOS opens parallel
+    /// connections (Happy Eyeballs) and switches between them; registering each
+    /// new session here — and stopping the previous — keeps only the newest
+    /// playout feeding the output (avoids overlapping / post-disconnect audio).
+    #[cfg(feature = "ap2")]
+    pub(crate) active_audio: std::sync::Mutex<Option<Box<dyn FnOnce() + Send>>>,
     #[cfg(feature = "hls")]
     pub(crate) hls_handler: Option<Arc<dyn crate::raop::hls::HlsHandler>>,
+}
+
+#[cfg(feature = "ap2")]
+impl RaopShared {
+    /// Register a newly-started audio session, stopping the previous one so only
+    /// the latest connection's playout feeds the audio output.
+    pub(crate) fn set_active_audio(&self, stop: Box<dyn FnOnce() + Send>) {
+        let prev = self.active_audio.lock().ok().and_then(|mut g| g.replace(stop));
+        if let Some(prev) = prev {
+            prev();
+        }
+    }
 }
 
 impl HttpdCallbacks for RaopShared {

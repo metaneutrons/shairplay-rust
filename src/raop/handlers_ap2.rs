@@ -603,12 +603,13 @@ fn setup_stream_realtime(
             max_channels: conn.shared.output_max_channels,
         };
 
-        tokio::spawn(crate::raop::realtime_audio::run(
+        let handle = tokio::spawn(crate::raop::realtime_audio::run(
             socket,
             shk_arr,
             handler,
             output_config,
         ));
+        conn.shared.set_active_audio(Box::new(move || handle.abort()));
 
         stream_resp.insert("dataPort".into(), plist::Value::Integer(audio_port.into()));
     } else {
@@ -696,7 +697,10 @@ fn setup_stream_buffered(
 
     let proc = crate::raop::buffered_audio::BufferedAudioProcessor { listener };
     let cmd_tx = proc.start(shk_arr, output_config, handler);
-    conn.playout_cmd = Some(cmd_tx);
+    conn.playout_cmd = Some(cmd_tx.clone());
+    conn.shared.set_active_audio(Box::new(move || {
+        let _ = cmd_tx.send(crate::raop::buffered_audio::PlayoutCommand::Stop);
+    }));
 
     stream_resp.insert("dataPort".into(), plist::Value::Integer(audio_port.into()));
     stream_resp.insert("audioBufferSize".into(), plist::Value::Integer(0x10_0000_i64.into())); // 1 MB

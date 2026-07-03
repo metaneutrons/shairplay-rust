@@ -262,6 +262,8 @@ impl RaopServerBuilder {
             device_id,
             #[cfg(feature = "ap2")]
             airplay_name,
+            #[cfg(feature = "ap2")]
+            active_audio: std::sync::Mutex::new(None),
             #[cfg(feature = "hls")]
             hls_handler: self.hls_handler,
         });
