@@ -241,6 +241,9 @@ impl PairingStore for FilePairingStore {
             state.save(&self.path);
         }
     }
+    fn has_any_pairing(&self) -> bool {
+        self.state.lock().map(|s| !s.paired_keys.is_empty()).unwrap_or(false)
+    }
     fn remove(&self, device_id: &str) {
         if let Ok(mut state) = self.state.lock() {
             state.paired_keys.remove(device_id);
@@ -384,6 +387,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .position(|a| a == "--persist")
         .and_then(|i| args.get(i + 1))
         .map(PathBuf::from);
+    // Persistent HomeKit pairing (M1–M6) is the DEFAULT — it gives the fast
+    // trusted-reconnect path (pair once, then pair-verify). `--pin <code>` sets
+    // the setup code (default 3939); `--transient` opts into PIN-less transient
+    // pairing (no prompt, but a slower connect). Pair once and keep it across
+    // restarts by also passing `--persist <file>`.
+    let pin: Option<String> = if args.iter().any(|a| a == "--transient") {
+        None
+    } else {
+        Some(
+            args.iter()
+                .position(|a| a == "--pin")
+                .and_then(|i| args.get(i + 1))
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| "3939".to_string()),
+        )
+    };
+    #[cfg(not(feature = "ap2"))]
+    let _ = &pin;
     let use_resample = args.iter().any(|a| a == "--resample");
 
     // Detect output device and its native sample rate
@@ -492,6 +513,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         builder = builder.pairing_store(store);
     }
 
+    #[cfg(feature = "ap2")]
+    if let Some(ref code) = pin {
+        builder = builder.pin(code.clone());
+    }
+
     if !bind_addrs.is_empty() {
         eprintln!("🔗 Binding to {:?}", bind_addrs);
         builder = builder.bind(BindConfig::new().addrs(bind_addrs));
@@ -531,7 +557,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     eprintln!("   Select it as AirPlay output on your Apple device");
     #[cfg(feature = "ap2")]
-    eprintln!("🔐 PIN: 3939 (enter on iPhone when prompted)");
+    match &pin {
+        Some(code) => {
+            eprintln!("🔐 PIN: {code} (persistent HomeKit pairing — enter once on iPhone; fast reconnects after)")
+        }
+        None => eprintln!("🔐 Transient (PIN-less) pairing — no prompt, but slower to connect (--transient)"),
+    }
     eprintln!("   Press Ctrl+C to stop");
 
     // If video is enabled, run the window loop on the main thread (required on macOS).
