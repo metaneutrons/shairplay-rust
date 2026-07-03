@@ -122,6 +122,7 @@ impl AirPlayServiceInfo {
     /// Create AP2 service info with full AirPlay 2 feature flags.
     /// `pk_hex` is the hex-encoded Ed25519 public key, `pi` is the pairing identifier (UUID).
     #[cfg(feature = "ap2")]
+    #[allow(clippy::too_many_arguments)]
     pub fn new_airplay2(
         name: &str,
         port: u16,
@@ -130,6 +131,7 @@ impl AirPlayServiceInfo {
         pk_hex: &str,
         pi: &str,
         requires_pin_pairing: bool,
+        already_paired: bool,
     ) -> Self {
         let hw_raop = util::hwaddr_raop(hwaddr);
         let hw_airplay = util::hwaddr_airplay(hwaddr);
@@ -139,7 +141,7 @@ impl AirPlayServiceInfo {
         let features_lo = features & 0xFFFFFFFF;
         let features_hi = (features >> 32) & 0xFFFFFFFF;
         let ft = format!("0x{features_lo:X},0x{features_hi:X}");
-        let status_flags = crate::raop::config::ap2_status_flags(requires_pin_pairing);
+        let status_flags = crate::raop::config::ap2_status_flags(requires_pin_pairing, already_paired);
 
         let raop_txt = vec![
             // AP1 compatibility fields (allows classic AirPlay fallback)
@@ -360,6 +362,7 @@ mod tests {
             "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
             "12345678-1234-1234-1234-123456789abc",
             false,
+            false,
         );
 
         let find = |key: &str| info.raop_txt.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str());
@@ -384,6 +387,7 @@ mod tests {
             false,
             "abcd1234",
             "my-uuid-here",
+            false,
             false,
         );
 
@@ -412,6 +416,7 @@ mod tests {
             "pk",
             "pi",
             false,
+            false,
         );
         assert_eq!(info.raop_name, "123456789ABC@My Speaker");
         assert_eq!(info.airplay_name, "My Speaker");
@@ -428,6 +433,7 @@ mod tests {
             "abcd1234",
             "my-uuid-here",
             true,
+            false,
         );
         let raop = |key: &str| info.raop_txt.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str());
         let airplay = |key: &str| info.airplay_txt.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str());
@@ -449,6 +455,7 @@ mod tests {
             "abcd1234",
             "my-uuid-here",
             true,
+            false,
         );
         let raop = |key: &str| info.raop_txt.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str());
         let airplay = |key: &str| info.airplay_txt.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str());

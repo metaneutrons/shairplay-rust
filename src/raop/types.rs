@@ -91,6 +91,18 @@ pub trait PairingStore: Send + Sync + 'static {
     /// Remove a paired device.
     fn remove(&self, device_id: &str);
 
+    /// Returns `true` once at least one controller is paired.
+    ///
+    /// Used to advertise `OneTimePairingRequired` (statusFlags bit 9) only until
+    /// the first successful pairing, so already-paired controllers reconnect via
+    /// pair-verify instead of being nudged back into setup. The default returns
+    /// `false` (always advertise setup-required when a PIN is configured); the
+    /// built-in [`MemoryPairingStore`] overrides it, and persistent stores should
+    /// too.
+    fn has_any_pairing(&self) -> bool {
+        false
+    }
+
     /// Load the accessory's persistent Ed25519 **identity** seed, if one was saved.
     ///
     /// This is the server's *own* long-term secret (distinct from the paired peer
@@ -129,6 +141,9 @@ impl PairingStore for MemoryPairingStore {
         if let Ok(mut keys) = self.keys.lock() {
             keys.insert(device_id.to_string(), public_key);
         }
+    }
+    fn has_any_pairing(&self) -> bool {
+        self.keys.lock().map(|k| !k.is_empty()).unwrap_or(false)
     }
     fn remove(&self, device_id: &str) {
         if let Ok(mut keys) = self.keys.lock() {

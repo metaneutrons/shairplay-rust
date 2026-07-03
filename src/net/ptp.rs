@@ -136,6 +136,90 @@ pub fn parse_announce(buf: &[u8]) -> Option<u64> {
     Some(clock_id)
 }
 
+/// AirPlay 2 PTP sink: bind the PTP event (319) and general (320) ports and
+/// drain the sender's clock stream. We do not discipline a clock — draining is
+/// enough. With nothing bound, every PTP packet the sender emits bounces an
+/// ICMPv6 port-unreachable, which the sender reads as "no PTP peer here" and
+/// stalls the buffered-audio start by several seconds; accepting the packets
+/// removes that stall (measured ~2.6s → ~0.5s before the type-103 SETUP).
+///
+/// Received messages are decoded at `debug`; the first is noted once at `info`.
+/// Binds gracefully — ports <1024 may need root / `CAP_NET_BIND_SERVICE`; on bind
+/// failure it logs one line and returns, leaving normal operation untouched.
+/// IPv6-unspecified bind (AirPlay timing traffic is IPv6). Set `SHAIRPLAY_NO_PTP`
+/// to skip the bind (for A/B measuring the effect).
+pub(crate) async fn spawn_ptp_sink() {
+    if std::env::var("SHAIRPLAY_NO_PTP").is_ok() {
+        tracing::info!("PTP sink disabled via SHAIRPLAY_NO_PTP — expect slow AP2 connect");
+        return;
+    }
+    let seen = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let mut bound = 0u8;
+    for port in [319u16, 320u16] {
+        match tokio::net::UdpSocket::bind((std::net::Ipv6Addr::UNSPECIFIED, port)).await {
+            Ok(sock) => {
+                bound += 1;
+                let seen = seen.clone();
+                tokio::spawn(async move {
+                    let mut buf = [0u8; 1024];
+                    loop {
+                        match sock.recv_from(&mut buf).await {
+                            Ok((n, from)) => log_ptp_packet(port, from, &buf[..n], &seen),
+                            Err(e) => {
+                                tracing::warn!(port, "PTP sink recv error: {e}");
+                                break;
+                            }
+                        }
+                    }
+                });
+            }
+            Err(e) => tracing::warn!(
+                port,
+                error = %e,
+                "PTP sink: cannot bind (ports <1024 may need sudo / setcap CAP_NET_BIND_SERVICE)"
+            ),
+        }
+    }
+    if bound > 0 {
+        tracing::info!(
+            ports = bound,
+            "PTP sink active on 319/320 — accepting sender clock (keeps AP2 connect fast)"
+        );
+    }
+}
+
+/// Decode one inbound PTP datagram at `debug` (message type from the low nibble
+/// of byte 0, domain, source, length, plus Follow_Up/Announce detail). The first
+/// packet seen is noted once at `info` to confirm the sender engaged PTP.
+fn log_ptp_packet(port: u16, from: std::net::SocketAddr, buf: &[u8], seen: &std::sync::atomic::AtomicBool) {
+    if !seen.swap(true, std::sync::atomic::Ordering::Relaxed) {
+        tracing::info!(%from, "PTP: receiving sender clock — AP2 timing path healthy");
+    }
+    let raw_type = buf.first().map(|b| b & 0x0F).unwrap_or(0xFF);
+    let domain = buf.get(4).copied().unwrap_or(0);
+    let name = match raw_type {
+        0 => "Sync",
+        1 => "Delay_Req",
+        8 => "Follow_Up",
+        9 => "Delay_Resp",
+        11 => "Announce",
+        12 => "Signaling",
+        13 => "Management",
+        _ => "?",
+    };
+    tracing::debug!(port, %from, len = buf.len(), msg = name, raw_type, domain, "PTP in");
+    if let Some((clock_id, origin_ns, corr_ns)) = parse_follow_up(buf) {
+        tracing::debug!(
+            clock_id = format!("{clock_id:016x}"),
+            origin_ns,
+            corr_ns,
+            "  ↳ Follow_Up"
+        );
+    } else if let Some(clock_id) = parse_announce(buf) {
+        tracing::debug!(clock_id = format!("{clock_id:016x}"), "  ↳ Announce (grandmaster)");
+    }
+}
+
 /// Offset smoother matching NQPTP behavior.
 pub struct OffsetSmoother {
     previous_offset: u64,

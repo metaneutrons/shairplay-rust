@@ -211,7 +211,10 @@ pub(crate) fn handle_info(
     dict.insert("sourceVersion".into(), plist::Value::String(config::AP2_SRCVERS.into()));
     dict.insert(
         "statusFlags".into(),
-        plist::Value::Integer((config::ap2_status_flags(conn.shared.pin.is_some()) as i64).into()),
+        plist::Value::Integer(
+            (config::ap2_status_flags(conn.shared.pin.is_some(), conn.shared.pairing_store.has_any_pairing()) as i64)
+                .into(),
+        ),
     );
     dict.insert("pk".into(), plist::Value::String(pk_hex));
 
@@ -264,7 +267,7 @@ pub(crate) fn handle_pair_pin_start(
 /// Build the `updateInfo` `POST /command` message queued on a freshly-opened
 /// event channel (status flags, features, model, versions). Identical for the
 /// RC-only and normal event channels.
-fn build_update_info_message(requires_pin_pairing: bool) -> Option<Vec<u8>> {
+fn build_update_info_message(requires_pin_pairing: bool, already_paired: bool) -> Option<Vec<u8>> {
     use crate::raop::config;
 
     let mut update_info = plist::Dictionary::new();
@@ -272,7 +275,7 @@ fn build_update_info_message(requires_pin_pairing: bool) -> Option<Vec<u8>> {
     let mut value = plist::Dictionary::new();
     value.insert(
         "statusFlags".into(),
-        plist::Value::Integer((config::ap2_status_flags(requires_pin_pairing) as i64).into()),
+        plist::Value::Integer((config::ap2_status_flags(requires_pin_pairing, already_paired) as i64).into()),
     );
     value.insert(
         "features".into(),
@@ -440,7 +443,10 @@ fn setup_initial(conn: &mut RaopConnection, dict: &plist::Dictionary) -> Option<
                 let event_sender = {
                     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
 
-                    if let Some(msg) = build_update_info_message(conn.shared.pin.is_some()) {
+                    if let Some(msg) = build_update_info_message(
+                        conn.shared.pin.is_some(),
+                        conn.shared.pairing_store.has_any_pairing(),
+                    ) {
                         let _ = tx.send(msg);
                         tracing::debug!("updateInfo queued for RC event channel");
                     }
@@ -486,7 +492,9 @@ fn setup_initial(conn: &mut RaopConnection, dict: &plist::Dictionary) -> Option<
             let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
 
             // Queue updateInfo so it's sent immediately when client connects
-            if let Some(msg) = build_update_info_message(conn.shared.pin.is_some()) {
+            if let Some(msg) =
+                build_update_info_message(conn.shared.pin.is_some(), conn.shared.pairing_store.has_any_pairing())
+            {
                 let _ = tx.send(msg);
                 tracing::debug!("updateInfo queued for event channel");
             }

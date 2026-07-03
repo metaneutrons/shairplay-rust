@@ -311,6 +311,13 @@ impl RaopServer {
     pub async fn start(&mut self) -> Result<(), ShairplayError> {
         let _actual_port = self.httpd.start(self.bind.port).await?;
 
+        // AirPlay 2 PTP sink: accept the sender's clock on 319/320 so it doesn't
+        // stall the buffered-audio start. No-op if the ports can't be bound.
+        #[cfg(feature = "ap2")]
+        if self.mode == AirPlayMode::AirPlay2 {
+            crate::net::ptp::spawn_ptp_sink().await;
+        }
+
         if std::env::var("CI").is_err() {
             let info = self.service_info();
             let mut mdns = MdnsService::new()?;
@@ -355,6 +362,7 @@ impl RaopServer {
                     &pk_hex,
                     &pi,
                     self.shared.pin.is_some(),
+                    self.shared.pairing_store.has_any_pairing(),
                 );
             }
         }
