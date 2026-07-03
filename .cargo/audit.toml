@@ -3,4 +3,6 @@ ignore = [
     "RUSTSEC-2023-0071", # rsa: Marvin attack — no fix available (rsa 0.10 is RC)
     "RUSTSEC-2024-0384", # instant: unmaintained — transitive dep from minifb (dev-dep)
     "RUSTSEC-2026-0009", # time: DoS via stack exhaustion — plist 1.8.0 caps at time 0.3.45
+    "RUSTSEC-2026-0194", # quick-xml: XML-parse DoS (quadratic dup-attr check) — no fix; plist 1.9.0 (latest) pins quick-xml ^0.39.2. Not memory-unsafe; AP2 clients send binary plists (XML path unused).
+    "RUSTSEC-2026-0195", # quick-xml: XML-parse DoS (unbounded namespace alloc) — no fix; plist 1.9.0 (latest) pins quick-xml ^0.39.2. Not memory-unsafe; AP2 clients send binary plists (XML path unused).
 ]
