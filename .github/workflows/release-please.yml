@@ -15,9 +15,25 @@ jobs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
+      # Author the release PR with a GitHub App token, not the default
+      # GITHUB_TOKEN. GitHub blocks GITHUB_TOKEN-authored PRs/pushes from
+      # triggering other workflows (recursion guard), so ci.yml never ran on the
+      # release PR and its required checks stayed stuck. An App token is a real
+      # actor, so its pushes DO fire ci.yml.
+      # continue-on-error + the `|| secrets.GITHUB_TOKEN` fallback make this a
+      # no-op until the two RELEASE_PLEASE_APP_* secrets exist: without them the
+      # token step fails softly and release-please falls back to GITHUB_TOKEN
+      # (i.e. the old close+reopen workaround still applies).
+      - uses: actions/create-github-app-token@v2
+        id: app-token
+        continue-on-error: true
+        with:
+          app-id: ${{ secrets.RELEASE_PLEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
       - uses: googleapis/release-please-action@v5
         id: release
         with:
+          token: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
