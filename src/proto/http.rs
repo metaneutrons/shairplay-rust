@@ -160,6 +160,15 @@ impl HttpRequest {
     pub fn data(&self) -> Option<&[u8]> {
         self.body.as_deref()
     }
+
+    /// All parsed request headers, formatted one per line (diagnostic only).
+    /// Header names are lower-cased (as stored). Used to inspect exactly what a
+    /// sender (e.g. PipeWire's RAOP module) put on the wire during the handshake.
+    pub fn headers_debug(&self) -> String {
+        let mut lines: Vec<String> = self.headers.iter().map(|(k, v)| format!("{k}: {v}")).collect();
+        lines.sort();
+        lines.join("\n")
+    }
 }
 
 /// RTSP/HTTP response builder. Equivalent to http_response.c.

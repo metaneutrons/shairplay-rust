@@ -257,9 +257,28 @@ where
             let method = request.method().unwrap_or("?").to_string();
             let url = request.url().unwrap_or("?").to_string();
             tracing::debug!(%method, %url, body_len = request.data().map(|d| d.len()).unwrap_or(0), "RTSP request");
+            // Dump the full incoming request headers (Apple-Challenge, CSeq,
+            // User-Agent, Transport, ...) — handy for diagnosing sender interop.
+            tracing::debug!("RTSP >>> {method} {url}\n{headers}", headers = request.headers_debug());
             let response = handler.conn_request(&request);
             let status = response.status_code();
             tracing::debug!(%method, %url, status, "RTSP response");
+            // Dump the response status line + reply headers (Public, Transport,
+            // ...), plaintext before encryption. Stop at the end-of-headers
+            // delimiter so a binary body (e.g. an AP2 bplist) doesn't spew
+            // binary into the logs.
+            if !handler.is_encrypted() {
+                let data = response.get_data();
+                let header_end = data
+                    .windows(4)
+                    .position(|w| w == b"\r\n\r\n")
+                    .map(|pos| pos + 4)
+                    .unwrap_or(data.len());
+                tracing::debug!(
+                    "RTSP <<< {method} {url} [{status}]\n{resp}",
+                    resp = String::from_utf8_lossy(&data[..header_end]).trim_end()
+                );
+            }
             let disconnect = response.get_disconnect();
             let raw_out = response.get_data();
             let wire_out = if handler.is_encrypted() {
