@@ -191,6 +191,10 @@ pub(crate) fn dispatch(conn: &mut RaopConnection, request: &HttpRequest) -> Http
 
     let mut response = HttpResponse::new("RTSP/1.0", 200, "OK");
     response.add_header("CSeq", cseq);
+    // Real receivers (AirPort Express, shairport-sync) send a Server header on
+    // every RTSP reply. PipeWire's module-raop-sink appears to require it after
+    // OPTIONS before it proceeds to ANNOUNCE — without it the sender stalls.
+    response.add_header("Server", "AirTunes/105.1");
     response.add_header("Apple-Jack-Status", "connected; type=analog");
 
     // --- Middleware: authentication ---
@@ -207,6 +211,7 @@ pub(crate) fn dispatch(conn: &mut RaopConnection, request: &HttpRequest) -> Http
             let auth_str = format!("Digest realm=\"{}\", nonce=\"{}\"", DIGEST_REALM, conn.nonce);
             response = HttpResponse::new("RTSP/1.0", 401, "Unauthorized");
             response.add_header("CSeq", cseq);
+            response.add_header("Server", "AirTunes/105.1");
             response.add_header("WWW-Authenticate", &auth_str);
             response.finish(None);
             return response;
@@ -231,6 +236,7 @@ pub(crate) fn dispatch(conn: &mut RaopConnection, request: &HttpRequest) -> Http
             tracing::debug!(method, url, "Unhandled RTSP request");
             response = HttpResponse::new("RTSP/1.0", 404, "Not Found");
             response.add_header("CSeq", cseq);
+            response.add_header("Server", "AirTunes/105.1");
             response.finish(None);
             return response;
         }
