@@ -341,7 +341,14 @@ fn rtp_buffer_rejects_malformed_fmtp() {
 // ============================================================
 #[test]
 fn service_info_txt_records() {
-    let info = AirPlayServiceInfo::new("TestSpeaker", 5000, &[0x48, 0x5d, 0x60, 0x7c, 0xee, 0x22], false);
+    let info = AirPlayServiceInfo::new(
+        "TestSpeaker",
+        5000,
+        &[0x48, 0x5d, 0x60, 0x7c, 0xee, 0x22],
+        false,
+        "1",
+        "0",
+    );
     assert_eq!(info.raop_name, "485D607CEE22@TestSpeaker");
     assert_eq!(
         info.raop_txt.iter().find(|(k, _)| k == "ch").map(|(_, v)| v.as_str()),
@@ -366,7 +373,7 @@ fn service_info_txt_records() {
 
 #[test]
 fn service_info_with_password() {
-    let info = AirPlayServiceInfo::new("Test", 5000, &[0; 6], true);
+    let info = AirPlayServiceInfo::new("Test", 5000, &[0; 6], true, "1", "0");
     assert_eq!(
         info.raop_txt.iter().find(|(k, _)| k == "pw").map(|(_, v)| v.as_str()),
         Some("true")
