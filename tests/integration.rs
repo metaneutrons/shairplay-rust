@@ -149,6 +149,37 @@ fn advertise_codecs_and_encryption_build_txt_records() {
     assert_eq!(et(&custom.service_info()), "0,4,1");
 }
 
+#[tokio::test]
+#[serial]
+async fn auth_setup_returns_200_so_pipewire_proceeds() {
+    // PipeWire's raop-sink (auth_setup) POSTs a fixed 33-byte body and aborts on
+    // any non-200 (shairport-sync's 500 wedges it). Our receiver must answer 200.
+    let (mut server, port, _) = start_server().await;
+    let mut stream = TcpStream::connect(format!("127.0.0.1:{port}")).await.unwrap();
+
+    // The exact body PipeWire 1.6.7 sends (0x01 + 32 fixed bytes), captured on the wire.
+    let body: [u8; 33] = [
+        0x01, 0x59, 0x02, 0xed, 0xe9, 0x0d, 0x4e, 0xf2, 0xbd, 0x4c, 0xb6, 0x8a, 0x63, 0x30, 0x03, 0x82, 0x07, 0xa9,
+        0x4d, 0xbd, 0x50, 0xd8, 0xaa, 0x46, 0x5b, 0x5d, 0x8c, 0x01, 0x2a, 0x0c, 0x7e, 0x1d, 0x4e,
+    ];
+    let mut req = format!(
+        "POST /auth-setup RTSP/1.0\r\nCSeq: 2\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\n\r\n",
+        body.len()
+    )
+    .into_bytes();
+    req.extend_from_slice(&body);
+    stream.write_all(&req).await.unwrap();
+    let mut buf = vec![0u8; 4096];
+    let n = stream.read(&mut buf).await.unwrap();
+    let resp = String::from_utf8_lossy(&buf[..n]);
+    assert!(
+        resp.contains("RTSP/1.0 200 OK"),
+        "auth-setup must return 200, got: {resp}"
+    );
+
+    server.stop().await;
+}
+
 #[test]
 fn builder_rejects_invalid_hwaddr_length() {
     let result = RaopServer::builder()

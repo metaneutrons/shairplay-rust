@@ -173,6 +173,46 @@ pub(crate) fn handle_fp_setup(
     }
 }
 
+/// AP1 MFi auth-setup gate (`POST /auth-setup`).
+///
+/// PipeWire's `module-raop-sink` with `raop.encryption.type=auth_setup` (and
+/// AirPlay hardware that requires it) POSTs a fixed 33-byte body — `0x01`
+/// followed by a 32-byte curve25519 public key — and needs only a `200 OK`
+/// before it proceeds to ANNOUNCE. It never inspects the reply body (verified
+/// against PipeWire 1.6.7's source and an on-wire capture: a non-200, e.g.
+/// shairport-sync's `500`, makes it abort immediately).
+///
+/// We reply `200` with an ephemeral X25519 public key: a plausible auth-setup
+/// shape carrying **no Apple MFi material** (which we neither have nor embed).
+/// The audio that follows in this mode is unencrypted — the sender sends no
+/// `rsaaeskey`/`aesiv` — and is handled by the existing passthrough path.
+///
+/// A sender that *cryptographically validates* the reply (genuine Apple gear)
+/// cannot be satisfied here and should use FairPlay (`/fp-setup`) or RSA/none.
+pub(crate) fn handle_auth_setup(
+    _conn: &mut RaopConnection,
+    request: &HttpRequest,
+    response: &mut HttpResponse,
+) -> Option<Vec<u8>> {
+    // Expected shape: 0x01 || 32-byte curve25519 public key. We don't use the
+    // key (no shared-secret audio encryption in this mode); log if it deviates
+    // but still answer 200 so lenient senders proceed.
+    if let Some(data) = request.data()
+        && (data.len() != 33 || data[0] != 0x01)
+    {
+        tracing::debug!(
+            len = data.len(),
+            first = data.first().copied().unwrap_or(0),
+            "auth-setup: unexpected body shape"
+        );
+    }
+    use rand::rngs::OsRng;
+    let secret = x25519_dalek::StaticSecret::random_from_rng(OsRng);
+    let public = x25519_dalek::PublicKey::from(&secret);
+    response.add_header("Content-Type", "application/octet-stream");
+    Some(public.as_bytes().to_vec())
+}
+
 /// RTSP OPTIONS: return supported methods.
 pub(crate) fn handle_options(
     _conn: &mut RaopConnection,
