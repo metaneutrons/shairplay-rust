@@ -205,7 +205,10 @@ pub(crate) fn handle_announce(
     let remote = sdp.connection()?;
     let rtpmap = sdp.rtpmap()?;
     let fmtp = sdp.fmtp()?;
-    let aesiv_str = sdp.aesiv()?;
+    // aesiv/rsaaeskey are absent when the sender negotiated no encryption
+    // (e.g. PipeWire's et=0 mode). Keep them optional; an all-zero aeskey
+    // signals the RTP buffer to pass audio through without AES decryption.
+    let aesiv_str = sdp.aesiv();
 
     let mut aeskey = [0u8; 16];
     let mut aesiv = [0u8; 16];
@@ -239,15 +242,33 @@ pub(crate) fn handle_announce(
         None
     };
 
-    let key_bytes = key_bytes?;
-    if key_bytes.len() >= 16 {
+    // Did the sender negotiate encryption? If it advertised a key
+    // (`a=rsaaeskey`/`a=fpaeskey`) but we can't recover a usable key+iv, we must
+    // fail the connection rather than silently fall back to the unencrypted
+    // passthrough — feeding still-encrypted bytes to the decoder as PCM plays
+    // loud static. Only a sender that advertised no key at all is unencrypted.
+    let encryption_expected = sdp.rsaaeskey().is_some() || sdp.fpaeskey().is_some();
+    if encryption_expected {
+        let Some(key_bytes) = key_bytes.filter(|k| k.len() >= 16) else {
+            tracing::warn!("ANNOUNCE: encryption negotiated but AES key unavailable/short; aborting");
+            response.set_disconnect(true);
+            return None;
+        };
         aeskey.copy_from_slice(&key_bytes[..16]);
-    }
 
-    let iv_bytes = conn.shared.rsakey.decode(aesiv_str).ok()?;
-    if iv_bytes.len() >= 16 {
+        // An encrypted stream carries `a=aesiv`; require it to decode cleanly.
+        let iv_ok = aesiv_str
+            .and_then(|iv_str| conn.shared.rsakey.decode(iv_str).ok())
+            .filter(|iv| iv.len() >= 16);
+        let Some(iv_bytes) = iv_ok else {
+            tracing::warn!("ANNOUNCE: encryption negotiated but aesiv missing/malformed; aborting");
+            response.set_disconnect(true);
+            return None;
+        };
         aesiv.copy_from_slice(&iv_bytes[..16]);
     }
+    // Otherwise no key was negotiated: aeskey/aesiv stay all-zero and the RTP
+    // buffer passes audio through without AES decryption.
 
     // Destroy existing RTP session if any
     conn.raop_rtp = None;

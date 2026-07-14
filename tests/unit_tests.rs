@@ -337,6 +337,44 @@ fn rtp_buffer_rejects_malformed_fmtp() {
 }
 
 // ============================================================
+// PCM (L16) codec path
+// ============================================================
+
+/// An `L16` rtpmap selects the raw-PCM path and needs no fmtp; unencrypted
+/// big-endian S16 samples decode straight to f32 without an ALAC decoder.
+#[test]
+fn rtp_buffer_pcm_l16_decodes_big_endian_s16() {
+    let key = [0u8; 16]; // all-zero ⇒ unencrypted passthrough
+    let iv = [0u8; 16];
+    let mut buf = RaopBuffer::new("96 L16/44100/2", "", &key, &iv).expect("L16 rtpmap is valid without fmtp");
+
+    // RTP header (12 bytes) + two big-endian S16 samples: 0x4000 (+0.5), 0xC000 (-0.5).
+    let mut pkt = vec![0x80, 0x60, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+    pkt.extend_from_slice(&[0x40, 0x00, 0xC0, 0x00]);
+    assert_eq!(buf.queue(&pkt, true), 1, "L16 packet should decode");
+
+    let samples = buf.dequeue(true).expect("one decoded frame");
+    assert_eq!(samples.len(), 2);
+    assert!((samples[0] - 0.5).abs() < 1e-6, "got {}", samples[0]);
+    assert!((samples[1] + 0.5).abs() < 1e-6, "got {}", samples[1]);
+}
+
+/// `L16` without an explicit channel count defaults to mono (RFC 3551).
+#[test]
+fn rtp_buffer_pcm_l16_mono_default() {
+    let key = [0u8; 16];
+    let iv = [0u8; 16];
+    let mut buf = RaopBuffer::new("96 L16/44100", "", &key, &iv).expect("mono L16 valid");
+    let mut pkt = vec![0x80, 0x60, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+    pkt.extend_from_slice(&[0x00, 0x00, 0x7F, 0xFF]); // 0.0, ~+1.0
+    assert_eq!(buf.queue(&pkt, true), 1);
+    let samples = buf.dequeue(true).expect("frame");
+    assert_eq!(samples.len(), 2);
+    assert!(samples[0].abs() < 1e-6);
+    assert!(samples[1] > 0.99);
+}
+
+// ============================================================
 // mDNS service info
 // ============================================================
 #[test]

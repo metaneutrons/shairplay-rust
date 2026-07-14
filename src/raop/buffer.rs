@@ -1,12 +1,14 @@
-//! AP1 RTP packet buffer with AES-CBC decryption and ALAC decode to f32.
+//! AP1 RTP packet buffer with AES-CBC decryption and codec decode to f32.
 //!
 //! Incoming RTP packets are queued by sequence number into a fixed-size circular
-//! buffer. Each packet is decrypted (AES-128-CBC) and decoded (ALAC) on arrival.
+//! buffer. Each packet is decrypted (AES-128-CBC) and decoded on arrival — either
+//! ALAC (`a=rtpmap:… AppleLossless`) or raw PCM (`a=rtpmap:… L16/<rate>/<ch>`).
 //! The consumer dequeues packets in order, with silence substitution for missing
 //! packets and optional retransmit requests for gaps.
 
 use crate::codec::alac::{AlacConfig, AlacDecoder};
 use aes::cipher::{BlockModeDecrypt, KeyIvInit};
+use std::borrow::Cow;
 
 /// AES-128 key length in bytes.
 pub const RAOP_AESKEY_LEN: usize = 16;
@@ -16,8 +18,40 @@ pub const RAOP_AESIV_LEN: usize = 16;
 pub(crate) const RAOP_PACKET_LEN: usize = 32768;
 /// Number of slots in the circular buffer. Must be a power of two for modulo indexing.
 const RAOP_BUFFER_LENGTH: usize = 32;
+/// Default silence-frame length (samples per channel) for PCM streams before the
+/// first packet establishes the real frame size. 352 matches the classic AirPlay
+/// ALAC frame; it is only used to size silence for a missing *first* packet.
+const PCM_DEFAULT_FRAME_SAMPLES: usize = 352;
 
 type Aes128CbcDec = cbc::Decryptor<aes::Aes128>;
+
+/// Raw-PCM (`L16`) stream configuration, parsed from the SDP `rtpmap` attribute.
+#[derive(Debug, Clone)]
+pub(crate) struct PcmConfig {
+    /// Number of audio channels.
+    pub(crate) num_channels: u8,
+    /// Sample rate in Hz.
+    pub(crate) sample_rate: u32,
+}
+
+/// Output stream format, independent of the wire codec. Consumed by the RTP
+/// layer to build the [`AudioFormat`](crate::raop::AudioFormat) for `audio_init`.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct StreamFormat {
+    /// Number of audio channels.
+    pub(crate) num_channels: u8,
+    /// Source sample rate in Hz.
+    pub(crate) sample_rate: u32,
+}
+
+/// The negotiated wire codec plus its decoder state.
+enum Codec {
+    /// Apple Lossless — the classic AirPlay codec. Also covers PipeWire's
+    /// `raop.audio.codec=PCM`, which is really uncompressed-ALAC on the wire.
+    Alac { config: AlacConfig, decoder: AlacDecoder },
+    /// Raw linear PCM (`L16`): big-endian interleaved S16, no compression.
+    Pcm { config: PcmConfig },
+}
 
 /// A single slot in the circular buffer holding one decoded audio frame.
 struct BufferEntry {
@@ -33,7 +67,7 @@ struct BufferEntry {
     timestamp: u32,
     /// RTP synchronization source identifier.
     ssrc: u32,
-    /// Decoded F32 audio samples. Pre-allocated to max frame size.
+    /// Decoded F32 audio samples. Pre-allocated to the per-entry capacity.
     audio_buffer: Vec<f32>,
     /// Actual number of valid samples in `audio_buffer`.
     audio_buffer_len: usize,
@@ -76,6 +110,34 @@ fn parse_fmtp(fmtp: &str) -> Option<AlacConfig> {
     Some(config)
 }
 
+/// Parse the encoding name from an SDP `rtpmap` value (`"<pt> <encoding>"`).
+/// Returns the second whitespace-separated token, e.g. `AppleLossless` or
+/// `L16/44100/2`.
+fn rtpmap_encoding(rtpmap: &str) -> Option<&str> {
+    rtpmap.split_whitespace().nth(1)
+}
+
+/// Parse an `L16/<rate>[/<channels>]` rtpmap encoding into a [`PcmConfig`].
+/// Per RFC 3551, `L16` defaults to a single channel when the count is omitted.
+fn parse_l16(encoding: &str) -> Option<PcmConfig> {
+    let mut parts = encoding.split('/');
+    if !parts.next()?.eq_ignore_ascii_case("L16") {
+        return None;
+    }
+    let sample_rate: u32 = parts.next()?.parse().ok()?;
+    let num_channels: u8 = match parts.next() {
+        Some(ch) => ch.parse().ok()?,
+        None => 1,
+    };
+    if sample_rate == 0 || num_channels == 0 {
+        return None;
+    }
+    Some(PcmConfig {
+        num_channels,
+        sample_rate,
+    })
+}
+
 /// Build the 48-byte decoder info block expected by `AlacDecoder::set_info`.
 /// Layout matches the ALACSpecificConfig in the Apple ALAC reference decoder.
 fn build_decoder_info(config: &AlacConfig) -> [u8; 48] {
@@ -94,7 +156,7 @@ fn build_decoder_info(config: &AlacConfig) -> [u8; 48] {
     info
 }
 
-/// Circular RTP packet buffer with decrypt-on-queue and ALAC decode.
+/// Circular RTP packet buffer with decrypt-on-queue and codec decode.
 ///
 /// Packets are inserted by [`queue`](Self::queue) and consumed by
 /// [`dequeue`](Self::dequeue). The buffer holds a fixed number of
@@ -103,45 +165,59 @@ fn build_decoder_info(config: &AlacConfig) -> [u8; 48] {
 /// # Audio pipeline
 ///
 /// ```text
-/// RTP packet → AES-128-CBC decrypt → ALAC decode → S16 → f32 → buffer slot
+/// RTP packet → AES-128-CBC decrypt → ALAC or L16 decode → f32 → buffer slot
 /// ```
 pub struct RaopBuffer {
     aeskey: [u8; RAOP_AESKEY_LEN],
     aesiv: [u8; RAOP_AESIV_LEN],
-    alac_config: AlacConfig,
-    alac: AlacDecoder,
+    codec: Codec,
     is_empty: bool,
     /// Sequence number of the next frame to dequeue (oldest buffered).
     first_seqnum: u16,
     /// Sequence number of the newest buffered frame.
     last_seqnum: u16,
     entries: Vec<BufferEntry>,
-    /// Number of f32 samples in one decoded audio frame.
-    audio_buffer_size: usize,
+    /// Number of f32 samples one decoded frame's buffer can hold (allocation size).
+    frame_capacity: usize,
+    /// Number of f32 samples to emit when substituting silence for a lost frame.
+    /// Constant for ALAC (fixed frame size); tracks the last real frame for PCM.
+    silence_samples: usize,
 }
 
 impl RaopBuffer {
     /// Create a new buffer from SDP parameters and AES session keys.
     ///
-    /// `fmtp` is parsed to determine ALAC frame size, channel count, and sample rate.
-    /// The ALAC decoder is initialized immediately.
+    /// `rtpmap` selects the codec (`AppleLossless` → ALAC, `L16/...` → PCM);
+    /// `fmtp` supplies the ALAC config (ignored for PCM). The decoder is
+    /// initialized immediately.
     ///
-    /// Returns `None` if the (peer-supplied) `fmtp` attribute is malformed.
+    /// Returns `None` if the (peer-supplied) `rtpmap`/`fmtp` attributes are
+    /// malformed or name an unsupported codec.
     pub fn new(
-        _rtpmap: &str,
+        rtpmap: &str,
         fmtp: &str,
         aes_key: &[u8; RAOP_AESKEY_LEN],
         aes_iv: &[u8; RAOP_AESIV_LEN],
     ) -> Option<Self> {
-        let config = parse_fmtp(fmtp)?;
-        // ALAC outputs S16LE; we convert to F32 (one f32 per sample).
-        let s16_buffer_size =
-            config.frame_length as usize * config.num_channels as usize * config.bit_depth as usize / 8;
-        let audio_buffer_size = s16_buffer_size / 2; // num samples
+        // Switch to raw PCM only when the rtpmap *explicitly* names `L16`;
+        // everything else (AppleLossless, or a bare payload type) is treated as
+        // ALAC — the historical default and the classic-AirPlay codec.
+        let l16 = rtpmap_encoding(rtpmap).and_then(parse_l16);
 
-        let mut alac = AlacDecoder::new(config.bit_depth as i32, config.num_channels as i32);
-        let decoder_info = build_decoder_info(&config);
-        alac.set_info(&decoder_info);
+        let (codec, frame_capacity, silence_samples) = if let Some(config) = l16 {
+            // PCM frames are variable-length: size each slot to the largest RTP
+            // payload (worst case) so a big packet never overflows the slot.
+            let capacity = (RAOP_PACKET_LEN - 12) / 2;
+            let silence = PCM_DEFAULT_FRAME_SAMPLES * config.num_channels as usize;
+            (Codec::Pcm { config }, capacity, silence)
+        } else {
+            let config = parse_fmtp(fmtp)?;
+            // ALAC outputs one f32 per sample: frame_length × channels.
+            let frame_samples = config.frame_length as usize * config.num_channels as usize;
+            let mut decoder = AlacDecoder::new(config.bit_depth as i32, config.num_channels as i32);
+            decoder.set_info(&build_decoder_info(&config));
+            (Codec::Alac { config, decoder }, frame_samples, frame_samples)
+        };
 
         let entries = (0..RAOP_BUFFER_LENGTH)
             .map(|_| BufferEntry {
@@ -151,7 +227,7 @@ impl RaopBuffer {
                 seqnum: 0,
                 timestamp: 0,
                 ssrc: 0,
-                audio_buffer: vec![0.0f32; audio_buffer_size],
+                audio_buffer: vec![0.0f32; frame_capacity],
                 audio_buffer_len: 0,
             })
             .collect();
@@ -159,22 +235,31 @@ impl RaopBuffer {
         Some(Self {
             aeskey: *aes_key,
             aesiv: *aes_iv,
-            alac_config: config,
-            alac,
+            codec,
             is_empty: true,
             first_seqnum: 0,
             last_seqnum: 0,
             entries,
-            audio_buffer_size,
+            frame_capacity,
+            silence_samples,
         })
     }
 
-    /// Returns the ALAC configuration parsed from the SDP fmtp attribute.
-    pub(crate) fn config(&self) -> &AlacConfig {
-        &self.alac_config
+    /// Returns the output stream format (channels + source sample rate).
+    pub(crate) fn format(&self) -> StreamFormat {
+        match &self.codec {
+            Codec::Alac { config, .. } => StreamFormat {
+                num_channels: config.num_channels,
+                sample_rate: config.sample_rate,
+            },
+            Codec::Pcm { config } => StreamFormat {
+                num_channels: config.num_channels,
+                sample_rate: config.sample_rate,
+            },
+        }
     }
 
-    /// Queue an RTP packet: decrypt, decode ALAC, convert to f32, store in buffer.
+    /// Queue an RTP packet: decrypt, decode (ALAC or L16), store f32 in buffer.
     ///
     /// Returns 1 on success, 0 if duplicate/stale, -1 if packet is malformed.
     /// If the sequence number is far ahead of the current window, the buffer is
@@ -219,32 +304,61 @@ impl RaopBuffer {
         // trailing bytes (< 16) are sent in the clear.
         let payload = &data[12..];
         let encrypted_len = (payload.len() / 16) * 16;
-        let mut packet_buf = vec![0u8; payload.len()];
 
-        if encrypted_len > 0 {
+        // An all-zero session key means the sender negotiated no encryption
+        // (RAOP et=0, or auth_setup which sends no key material); borrow the
+        // payload as-is in that case, allocating only when we actually decrypt.
+        let unencrypted = self.aeskey == [0u8; RAOP_AESKEY_LEN];
+        let packet_buf: Cow<[u8]> = if encrypted_len > 0 && !unencrypted {
             let decryptor = Aes128CbcDec::new((&self.aeskey).into(), (&self.aesiv).into());
-            let mut encrypted = payload[..encrypted_len].to_vec();
+            let mut buf = payload.to_vec();
             decryptor
-                .decrypt_padded::<aes::cipher::block_padding::NoPadding>(&mut encrypted)
+                .decrypt_padded::<aes::cipher::block_padding::NoPadding>(&mut buf[..encrypted_len])
                 .unwrap_or(&[]);
-            packet_buf[..encrypted_len].copy_from_slice(&encrypted);
-        }
-        packet_buf[encrypted_len..].copy_from_slice(&payload[encrypted_len..]);
+            Cow::Owned(buf)
+        } else {
+            Cow::Borrowed(payload)
+        };
 
-        // ALAC decode → S16LE, then convert to f32 samples.
-        let mut s16_buf = vec![0u8; self.audio_buffer_size * 2];
-        let output_size = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            self.alac.decode_frame(&packet_buf, &mut s16_buf)
-        }))
-        .unwrap_or(0);
-        if output_size == 0 {
-            return 0;
-        }
-        let num_samples = output_size / 2;
-        for i in 0..num_samples {
-            let s = i16::from_le_bytes([s16_buf[i * 2], s16_buf[i * 2 + 1]]);
-            self.entries[idx].audio_buffer[i] = s as f32 / 32768.0;
-        }
+        // Decode into the slot's f32 buffer.
+        let capacity = self.frame_capacity;
+        let num_samples = match &mut self.codec {
+            Codec::Alac { decoder, .. } => {
+                // ALAC decode → S16LE, then convert to f32 samples.
+                let mut s16_buf = vec![0u8; capacity * 2];
+                let output_size = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    decoder.decode_frame(&packet_buf, &mut s16_buf)
+                }))
+                .unwrap_or(0);
+                if output_size == 0 {
+                    return 0;
+                }
+                let limit = output_size.min(s16_buf.len());
+                let out = &mut self.entries[idx].audio_buffer;
+                let mut n = 0;
+                for (chunk, out_sample) in s16_buf[..limit].chunks_exact(2).zip(out.iter_mut()) {
+                    *out_sample = i16::from_le_bytes([chunk[0], chunk[1]]) as f32 / 32768.0;
+                    n += 1;
+                }
+                n
+            }
+            Codec::Pcm { .. } => {
+                // Raw L16: big-endian (network order) interleaved S16 → f32.
+                let out = &mut self.entries[idx].audio_buffer;
+                let mut n = 0;
+                for (chunk, out_sample) in packet_buf.chunks_exact(2).zip(out.iter_mut()) {
+                    *out_sample = i16::from_be_bytes([chunk[0], chunk[1]]) as f32 / 32768.0;
+                    n += 1;
+                }
+                if n == 0 {
+                    return 0;
+                }
+                // Remember this frame size so a lost packet substitutes a
+                // similarly-sized block of silence rather than a fixed guess.
+                self.silence_samples = n;
+                n
+            }
+        };
         self.entries[idx].audio_buffer_len = num_samples;
 
         // Update buffer window.
@@ -281,7 +395,7 @@ impl RaopBuffer {
 
         // Substitute silence for missing frames.
         if !self.entries[idx].available {
-            let size = self.audio_buffer_size;
+            let size = self.silence_samples.min(self.frame_capacity);
             self.entries[idx].audio_buffer[..size].fill(0.0);
             self.entries[idx].audio_buffer_len = size;
         }
