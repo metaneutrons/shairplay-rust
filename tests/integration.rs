@@ -103,6 +103,53 @@ fn default_hwaddr_is_locally_administered_unicast() {
 }
 
 #[test]
+fn advertise_codecs_and_encryption_build_txt_records() {
+    use shairplay::{Ap1Codec, Ap1Encryption};
+
+    // `advertise_codecs`/`advertise_encryption` drive the AP1 `_raop` TXT. When
+    // the `ap2` feature is compiled in, the server defaults to AirPlay2 mode
+    // (which advertises its own fixed cn/et), so force AP1 mode to exercise them.
+    #[cfg(feature = "ap2")]
+    fn ap1(b: shairplay::RaopServerBuilder) -> shairplay::RaopServerBuilder {
+        b.mode(shairplay::AirPlayMode::AirPlay1)
+    }
+    #[cfg(not(feature = "ap2"))]
+    fn ap1(b: shairplay::RaopServerBuilder) -> shairplay::RaopServerBuilder {
+        b
+    }
+
+    // Default: PCM+ALAC, none.
+    let default = ap1(RaopServer::builder().name("Adv").port(0))
+        .build(empty_handler())
+        .unwrap();
+    let cn = |info: &shairplay::AirPlayServiceInfo| {
+        info.raop_txt
+            .iter()
+            .find(|(k, _)| k == "cn")
+            .map(|(_, v)| v.clone())
+            .unwrap()
+    };
+    let et = |info: &shairplay::AirPlayServiceInfo| {
+        info.raop_txt
+            .iter()
+            .find(|(k, _)| k == "et")
+            .map(|(_, v)| v.clone())
+            .unwrap()
+    };
+    assert_eq!(cn(&default.service_info()), "0,1");
+    assert_eq!(et(&default.service_info()), "0");
+
+    // Custom ordered sets map to the right TXT digits.
+    let custom = ap1(RaopServer::builder().name("Adv2").port(0))
+        .advertise_codecs(vec![Ap1Codec::Alac])
+        .advertise_encryption(vec![Ap1Encryption::None, Ap1Encryption::AuthSetup, Ap1Encryption::Rsa])
+        .build(empty_handler())
+        .unwrap();
+    assert_eq!(cn(&custom.service_info()), "1");
+    assert_eq!(et(&custom.service_info()), "0,4,1");
+}
+
+#[test]
 fn builder_rejects_invalid_hwaddr_length() {
     let result = RaopServer::builder()
         .name("InvalidHwaddrTest")

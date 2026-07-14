@@ -25,6 +25,70 @@ pub enum AudioCodec {
     Pcm,
 }
 
+/// AirPlay 1 wire codec advertised in the `_raop._tcp` `cn` TXT record.
+///
+/// The receiver auto-detects the actual codec per connection from the SDP
+/// `rtpmap`; this only controls what is *advertised*. When several are
+/// advertised, order matters for some senders (e.g. PipeWire's `raop-discover`
+/// picks the first listed `cn`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Ap1Codec {
+    /// Raw linear PCM / `L16` (`cn=0`).
+    Pcm,
+    /// Apple Lossless (`cn=1`). The classic-AirPlay default.
+    Alac,
+}
+
+impl Ap1Codec {
+    /// The `cn` TXT record digit for this codec.
+    pub(crate) fn cn_value(self) -> &'static str {
+        match self {
+            Ap1Codec::Pcm => "0",
+            Ap1Codec::Alac => "1",
+        }
+    }
+}
+
+/// AirPlay 1 encryption / authentication mode advertised in the `et` TXT record.
+///
+/// The receiver auto-dispatches on what a sender actually negotiates (RSA
+/// `rsaaeskey`, FairPlay `fpaeskey`, the `/auth-setup` gate, or no key at all);
+/// this only controls what is *advertised*. Note that some senders (PipeWire's
+/// `raop-discover`) select the **highest** advertised `et`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Ap1Encryption {
+    /// No encryption (`et=0`). Audio passes through undecrypted.
+    None,
+    /// RSA session-key exchange (`et=1`, `a=rsaaeskey`).
+    Rsa,
+    /// FairPlay DRM (`et=3`, `POST /fp-setup` + `a=fpaeskey`).
+    FairPlay,
+    /// MFi auth-setup gate (`et=4`, `POST /auth-setup`). Audio itself is
+    /// unencrypted; the sender only requires a `200 OK` to the handshake.
+    AuthSetup,
+}
+
+impl Ap1Encryption {
+    /// The `et` TXT record digit for this mode.
+    pub(crate) fn et_value(self) -> &'static str {
+        match self {
+            Ap1Encryption::None => "0",
+            Ap1Encryption::Rsa => "1",
+            Ap1Encryption::FairPlay => "3",
+            Ap1Encryption::AuthSetup => "4",
+        }
+    }
+}
+
+/// Join a set of advertised values into the comma-separated TXT record form,
+/// e.g. `[Alac, Pcm]` → `"1,0"`. Empty input falls back to `default`.
+pub(crate) fn join_txt<T: Copy>(items: &[T], value: impl Fn(T) -> &'static str, default: &str) -> String {
+    if items.is_empty() {
+        return default.to_string();
+    }
+    items.iter().map(|&i| value(i)).collect::<Vec<_>>().join(",")
+}
+
 /// Audio format descriptor passed to [`AudioHandler::audio_init`].
 #[derive(Debug, Clone, Copy)]
 pub struct AudioFormat {
