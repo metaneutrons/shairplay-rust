@@ -7,18 +7,44 @@ Thank you for your interest in contributing!
 ```bash
 git clone https://github.com/metaneutrons/shairplay-rust.git
 cd shairplay-rust
-cargo build --features video
-cargo test --features video
+brew install lefthook gitleaks
+lefthook install
+cargo nextest run --workspace --all-features --locked
 ```
 
-## Guidelines
+Rust is selected from `rust-toolchain.toml`. The crate's tested minimum Rust
+version remains the `rust-version` declared in `Cargo.toml`.
 
-- **Conventional commits** — all commit messages must follow [Conventional Commits](https://www.conventionalcommits.org/)
-- **No unsafe code** — `#![forbid(unsafe_code)]` is enforced
-- **Documentation** — all public items must have `///` doc comments
-- **Tests** — add tests for new functionality
-- **Clippy** — `cargo clippy --features video` must pass with zero warnings
-- **Formatting** — run `cargo fmt` before committing
+## Branches and Commits
+
+Create a short-lived branch from `main`. Use `feat/`, `fix/`, `docs/`,
+`refactor/`, or `chore/` followed by a concise kebab-case description.
+
+All commit messages and pull-request titles follow
+[Conventional Commits](https://www.conventionalcommits.org/). Keep the subject
+at or below 100 characters. A squash merge uses the pull-request title as the
+commit subject and its body as the commit body.
+
+## Engineering Guidelines
+
+- No unsafe code: `unsafe_code = "forbid"` is enforced workspace-wide.
+- Document every public item and every observable compatibility change.
+- Add regression tests for corrected behavior.
+- Preserve the MSRV unless a deliberate, documented breaking change raises it.
+- Avoid platform assumptions outside explicitly gated modules.
+
+Run the same principal checks used by CI before opening a pull request:
+
+```bash
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+cargo nextest run --workspace --all-features --locked
+cargo deny check
+```
+
+`lefthook run pre-push` runs the bounded local subset. Full platform and
+coverage matrices remain CI responsibilities. If a hook is unavailable, run
+its documented command directly; do not bypass a failing check.
 
 ## Feature Flags
 
@@ -33,18 +59,16 @@ cargo test --features video
 
 Releases are fully automated via [release-please](https://github.com/googleapis/release-please):
 
-1. Develop on a feature branch, open a PR to `main`
-2. CI runs on the PR (build, test, clippy, fmt on macOS + Ubuntu)
-3. Merge the PR — commits must follow [conventional commits](https://www.conventionalcommits.org/)
-4. Release-please automatically opens/updates a "Release PR" with:
-   - Version bump in `Cargo.toml`
-   - Generated `CHANGELOG.md` from commit messages
-5. When ready to release: **merge the Release PR**
-6. Release-please creates a `v*` tag, which triggers:
-   - Full CI on macOS + Ubuntu (build, test, clippy, fmt)
-   - CHANGELOG version guard
-   - Publish to [crates.io](https://crates.io/crates/shairplay)
-   - GitHub Release with changelog notes
+1. Develop on a feature branch and open a pull request to `main`.
+2. Wait for the aggregate `CI Success` check and resolve review threads.
+3. Squash-merge the pull request.
+4. Release Please updates its release pull request, including the version,
+   changelog, and lockfile.
+5. Merge the release pull request when the next version is ready.
+6. Release Please creates an immutable `v*` tag and a draft GitHub Release.
+7. The release workflow packages and verifies the crate, publishes through
+   crates.io Trusted Publishing, verifies the registry result, and only then
+   promotes the GitHub Release to latest.
 
 Commit prefixes and their effect on versioning:
 

@@ -1,0 +1,58 @@
+name: Bug report
+description: Report reproducible incorrect behavior in shairplay.
+title: "bug: "
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        Do not report security vulnerabilities here. Use the private reporting
+        channel described in SECURITY.md.
+  - type: input
+    id: version
+    attributes:
+      label: shairplay version
+      placeholder: 0.8.0
+    validations:
+      required: true
+  - type: input
+    id: rust
+    attributes:
+      label: Rust version
+      placeholder: rustc 1.94.0
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Platform
+      placeholder: macOS 15 arm64 or Ubuntu 24.04 x86_64
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Include the expected and actual behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Provide the smallest code sample or sequence of requests that reproduces the issue.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      render: shell
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I removed credentials, pairing material, and personal data from the report.
+          required: true
+        - label: I searched existing issues for the same behavior.
+          required: true
