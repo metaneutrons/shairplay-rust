@@ -1,0 +1,6 @@
+[test-groups]
+mdns-integration = { max-threads = 1 }
+
+[[profile.default.overrides]]
+filter = "binary(integration)"
+test-group = "mdns-integration"

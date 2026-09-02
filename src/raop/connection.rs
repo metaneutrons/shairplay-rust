@@ -60,7 +60,11 @@ impl RaopShared {
     /// Register a newly-started audio session, stopping the previous one so only
     /// the latest connection's playout feeds the audio output.
     pub(crate) fn set_active_audio(&self, stop: Box<dyn FnOnce() + Send>) {
-        let prev = self.active_audio.lock().ok().and_then(|mut g| g.replace(stop));
+        let prev = self
+            .active_audio
+            .lock()
+            .ok()
+            .and_then(|mut g| g.replace(stop));
         if let Some(prev) = prev {
             prev();
         }
@@ -68,7 +72,11 @@ impl RaopShared {
 }
 
 impl HttpdCallbacks for RaopShared {
-    fn conn_init(self: Arc<Self>, local: SocketAddr, remote: SocketAddr) -> Option<Box<dyn ConnectionHandler>> {
+    fn conn_init(
+        self: Arc<Self>,
+        local: SocketAddr,
+        remote: SocketAddr,
+    ) -> Option<Box<dyn ConnectionHandler>> {
         let local_bytes = match local.ip() {
             std::net::IpAddr::V4(ip) => ip.octets().to_vec(),
             std::net::IpAddr::V6(ip) => ip.octets().to_vec(),
@@ -136,7 +144,10 @@ struct RaopConnectionHandler {
 
 impl Drop for RaopConnectionHandler {
     fn drop(&mut self) {
-        self.conn.shared.handler.on_client_disconnected(&self.remote_addr);
+        self.conn
+            .shared
+            .handler
+            .on_client_disconnected(&self.remote_addr);
     }
 }
 
@@ -182,7 +193,10 @@ impl ConnectionHandler for RaopConnectionHandler {
         if self.cipher.is_none()
             && let Some(secret) = self.pending_secret.take()
         {
-            tracing::debug!(secret_len = secret.len(), "Activating cipher from pending_secret");
+            tracing::debug!(
+                secret_len = secret.len(),
+                "Activating cipher from pending_secret"
+            );
             match crate::crypto::chacha_transport::EncryptedChannel::control(&secret) {
                 Ok(ch) => {
                     tracing::info!("Encrypted RTSP transport activated");

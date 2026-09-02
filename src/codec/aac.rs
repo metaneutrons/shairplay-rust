@@ -145,7 +145,9 @@ impl AacDecoder {
     /// Create a new decoder for the given format.
     pub(crate) fn new(sample_rate: u32, channels: u8) -> Result<Self, String> {
         use symphonia::core::audio::{Channels, Position};
-        use symphonia::core::codecs::audio::{AudioCodecParameters, AudioDecoderOptions, well_known::CODEC_ID_AAC};
+        use symphonia::core::codecs::audio::{
+            AudioCodecParameters, AudioDecoderOptions, well_known::CODEC_ID_AAC,
+        };
 
         let mut params = AudioCodecParameters::new();
         params.for_codec(CODEC_ID_AAC).with_sample_rate(sample_rate);
@@ -261,7 +263,11 @@ mod ssrc_tests {
         ];
         for (val, sr, ch, is_aac) in cases {
             let ssrc = AudioSsrc::from_u32(val);
-            assert_ne!(ssrc, AudioSsrc::None, "SSRC 0x{val:08X} should be recognized");
+            assert_ne!(
+                ssrc,
+                AudioSsrc::None,
+                "SSRC 0x{val:08X} should be recognized"
+            );
             assert_eq!(ssrc.sample_rate(), sr, "SSRC 0x{val:08X} sample rate");
             assert_eq!(ssrc.channels(), ch, "SSRC 0x{val:08X} channels");
             assert_eq!(ssrc.is_aac(), is_aac, "SSRC 0x{val:08X} is_aac");

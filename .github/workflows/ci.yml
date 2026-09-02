@@ -1,140 +1,180 @@
 name: CI
 
 on:
-  push:
   pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: "1"
 
 jobs:
-  commit-convention:
-    name: Conventional Commits
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
+  quality:
+    name: Format, Clippy, Licenses
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-      - name: Validate PR title and every commit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - run: rustup show
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+      - name: Install ALSA development headers
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+      - run: cargo fmt --all -- --check
+      - name: Validate hook configuration
         env:
-          PR_TITLE: ${{ github.event.pull_request.title }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          LEFTHOOK_VERSION: "2.1.12"
         run: |
-          # Same Conventional Commits grammar as .githooks/commit-msg.
-          pattern='^(feat|fix|refactor|docs|test|ci|chore|perf|style|build|revert)(\(.+\))?!?: .+'
-          fail=0
-          if ! printf '%s' "$PR_TITLE" | grep -qE "$pattern"; then
-            echo "::error::PR title is not a Conventional Commit: $PR_TITLE"
-            fail=1
-          fi
-          while IFS= read -r sha; do
-            [ -z "$sha" ] && continue
-            msg=$(git log -1 --format=%s "$sha")
-            printf '%s' "$msg" | grep -qE '^(Merge |Revert )' && continue
-            if ! printf '%s' "$msg" | grep -qE "$pattern"; then
-              echo "::error::Commit ${sha:0:8} is not a Conventional Commit: $msg"
-              fail=1
-            fi
-          done < <(git rev-list "$BASE_SHA..$HEAD_SHA")
-          if [ "$fail" -ne 0 ]; then
-            echo "Format: <type>(<scope>): <description>  — types: feat, fix, refactor, docs, test, ci, chore, perf, style, build, revert (optionally '!' for breaking)."
-            exit 1
-          fi
+          set -euo pipefail
+          curl -sSfL \
+            "https://github.com/evilmartians/lefthook/releases/download/v${LEFTHOOK_VERSION}/lefthook_${LEFTHOOK_VERSION}_Linux_x86_64.gz" \
+            | gzip -d > "$RUNNER_TEMP/lefthook"
+          chmod +x "$RUNNER_TEMP/lefthook"
+          "$RUNNER_TEMP/lefthook" validate
+      - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+      - uses: taiki-e/install-action@b6ff580856c41316412a0b9b60540fbc6f8c82cc # v2.86.7
+        with:
+          tool: cargo-deny
+      - run: cargo deny check
 
   test:
-    name: Test (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
+    name: Tests (${{ matrix.name }})
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, ubuntu-latest]
+        include:
+          - { name: linux-x86_64, runner: ubuntu-24.04 }
+          - { name: linux-aarch64, runner: ubuntu-24.04-arm }
+          - { name: macos-x86_64, runner: macos-15-intel }
+          - { name: macos-aarch64, runner: macos-15 }
+    runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - name: Install ALSA (Linux)
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - run: rustup show
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+      - name: Install ALSA development headers
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev
-      - name: Build (default)
-        run: cargo build
-      - name: Build (ap2)
-        run: cargo build --features ap2
-      - name: Build (video)
-        run: cargo build --features video
-      - name: Build (hls)
-        run: cargo build --features hls
-      - name: Test (default)
-        run: cargo test
-      - name: Test (ap2)
-        run: cargo test --features ap2
-      - name: Test (video)
-        run: cargo test --features video
-      - name: Test (hls)
-        run: cargo test --features hls
-
-  clippy:
-    name: Clippy
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@b6ff580856c41316412a0b9b60540fbc6f8c82cc # v2.86.7
         with:
-          components: clippy
-      - uses: Swatinem/rust-cache@v2
-      - name: Install ALSA (Linux)
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
-      - run: cargo clippy --all-features --all-targets -- -D warnings
-
-  fmt:
-    name: Format
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
+          tool: cargo-nextest
+      - run: cargo nextest run --workspace --all-features --locked
+      - name: Install coverage tooling
+        if: matrix.name == 'linux-x86_64'
+        uses: taiki-e/install-action@b6ff580856c41316412a0b9b60540fbc6f8c82cc # v2.86.7
         with:
-          components: rustfmt
-      - run: cargo fmt --all -- --check
+          tool: cargo-llvm-cov
+      - name: Enforce line coverage
+        if: matrix.name == 'linux-x86_64'
+        run: cargo llvm-cov --workspace --all-features --locked --fail-under-lines 70
 
-  docs:
+  documentation:
     name: Documentation
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - run: RUSTDOCFLAGS="-D warnings" cargo doc --all-features --no-deps
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - run: rustup show
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+      - run: RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --locked --no-deps
+      - run: cargo test --workspace --all-features --locked --doc
 
   msrv:
-    name: MSRV
-    runs-on: ubuntu-latest
+    name: MSRV (Rust 1.94)
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@1.94.0
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo check --all-features --lib
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - run: rustup toolchain install 1.94.0 --profile minimal
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+        with:
+          key: msrv-1.94.0
+      - run: rustup run 1.94.0 cargo check --workspace --all-features --locked --lib
 
   cross-check:
     name: Cross Check (${{ matrix.target }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
-        target: [x86_64-unknown-linux-gnu, x86_64-pc-windows-gnu]
+        target:
+          - x86_64-unknown-linux-gnu
+          - x86_64-pc-windows-gnu
     steps:
-      - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo check --target ${{ matrix.target }} --all-features --lib
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - run: rustup target add ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+      - run: cargo check --workspace --target ${{ matrix.target }} --all-features --locked --lib
 
-  audit:
-    name: Security audit
-    runs-on: ubuntu-latest
+  commit-hygiene:
+    name: Commit Hygiene
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
-      - run: cargo install cargo-audit --locked
-      - run: cargo audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+      - name: Validate title, body, and commits
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -euo pipefail
+          status=0
+          cc='^((feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-z0-9._/-]+\))?!?: .+|Revert ".+")'
+          ban='co-authored-by:.*(claude|anthropic|codex|openai)|generated with.*(claude code|codex)'
+
+          if ! printf '%s' "$PR_TITLE" | grep -Eq "$cc"; then
+            echo "::error::PR title does not follow Conventional Commits: $PR_TITLE"
+            status=1
+          fi
+          if [ "${#PR_TITLE}" -gt 100 ]; then
+            echo "::error::PR title exceeds 100 characters"
+            status=1
+          fi
+          if printf '%s' "$PR_BODY" | grep -Eiq "$ban"; then
+            echo "::error::PR body contains automated attribution"
+            status=1
+          fi
+
+          for sha in $(git rev-list "${BASE_SHA}..${HEAD_SHA}"); do
+            if git log -1 --format=%B "$sha" | grep -Eiq "$ban"; then
+              echo "::error::Commit $sha contains automated attribution"
+              status=1
+            fi
+            email=$(git log -1 --format='%ae%n%ce' "$sha")
+            if printf '%s' "$email" | grep -Fq 'noreply@anthropic.com'; then
+              echo "::error::Commit $sha uses an Anthropic author or committer address"
+              status=1
+            fi
+          done
+
+          exit "$status"
+
+  secrets:
+    name: Secret Scan
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+
+  ci-success:
+    name: CI Success
+    if: always()
+    needs: [quality, test, documentation, msrv, cross-check, commit-hygiene, secrets]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require every preceding job to pass or be skipped
+        run: |
+          set -euo pipefail
+          printf '%s\n' '${{ toJSON(needs) }}' |
+            jq -e 'all(.[]; .result == "success" or .result == "skipped")'

@@ -46,7 +46,8 @@ impl VideoCipher {
         let offset = n;
         let remaining = payload.len() - offset;
         let full_len = (remaining / 16) * 16;
-        self.cipher.apply_keystream(&mut payload[offset..offset + full_len]);
+        self.cipher
+            .apply_keystream(&mut payload[offset..offset + full_len]);
 
         // Handle trailing partial block
         let rest_len = remaining % 16;

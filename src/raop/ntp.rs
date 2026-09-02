@@ -8,7 +8,10 @@ const NTP_UNIX_EPOCH_OFFSET_SECS: u64 = 0x83AA_7E80; // 2_208_988_800
 
 /// timing requests and sends periodic keepalives. Required for legacy AirPlay
 /// connections where the iPhone expects NTP sync before streaming audio.
-pub(crate) fn spawn_ntp_responder(tsock: tokio::net::UdpSocket, remote_timing: std::net::SocketAddr) {
+pub(crate) fn spawn_ntp_responder(
+    tsock: tokio::net::UdpSocket,
+    remote_timing: std::net::SocketAddr,
+) {
     tokio::spawn(async move {
         let mut buf = [0u8; 128];
 

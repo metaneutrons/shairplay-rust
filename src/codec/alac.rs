@@ -80,7 +80,11 @@ struct BitReader<'a> {
 
 impl<'a> BitReader<'a> {
     fn new(buf: &'a [u8]) -> Self {
-        Self { buf, pos: 0, bit: 0 }
+        Self {
+            buf,
+            pos: 0,
+            bit: 0,
+        }
     }
 
     fn readbits_16(&mut self, bits: u32) -> u32 {
@@ -131,7 +135,11 @@ impl<'a> BitReader<'a> {
 }
 
 fn count_leading_zeros(input: u32) -> u32 {
-    if input == 0 { 32 } else { input.leading_zeros() }
+    if input == 0 {
+        32
+    } else {
+        input.leading_zeros()
+    }
 }
 
 fn sign_extend_32(val: i32, bits: u32) -> i32 {
@@ -154,7 +162,12 @@ fn sign_only(v: i32) -> i32 {
 
 const RICE_THRESHOLD: u32 = 8;
 
-fn entropy_decode_value(reader: &mut BitReader, read_sample_size: u32, k: u32, rice_kmodifier_mask: u32) -> i32 {
+fn entropy_decode_value(
+    reader: &mut BitReader,
+    read_sample_size: u32,
+    k: u32,
+    rice_kmodifier_mask: u32,
+) -> i32 {
     let mut x: u32 = 0;
     while x <= RICE_THRESHOLD && reader.readbit() != 0 {
         x += 1;
@@ -244,7 +257,9 @@ fn entropy_rice_decode(
 
     while i < output_size {
         let k = {
-            let v = 31i32 - rice.k_modifier as i32 - count_leading_zeros(((history >> 9) + 3) as u32) as i32;
+            let v = 31i32
+                - rice.k_modifier as i32
+                - count_leading_zeros(((history >> 9) + 3) as u32) as i32;
             if v < 0 {
                 (v + rice.k_modifier as i32) as u32
             } else {
@@ -252,7 +267,8 @@ fn entropy_rice_decode(
             }
         };
 
-        let decoded_value = entropy_decode_value(reader, read_sample_size, k, 0xFFFFFFFF) + sign_modifier;
+        let decoded_value =
+            entropy_decode_value(reader, read_sample_size, k, 0xFFFFFFFF) + sign_modifier;
         let final_value = {
             let v = (decoded_value + 1) / 2;
             if decoded_value & 1 != 0 { -v } else { v }
@@ -260,7 +276,8 @@ fn entropy_rice_decode(
         output[i] = final_value;
         sign_modifier = 0;
 
-        history += decoded_value * rice.history_mult as i32 - ((history * rice.history_mult as i32) >> 9);
+        history +=
+            decoded_value * rice.history_mult as i32 - ((history * rice.history_mult as i32) >> 9);
         if decoded_value > 0xFFFF {
             history = 0xFFFF;
         }
@@ -311,20 +328,29 @@ fn predictor_decompress_fir_adapt(
             return;
         }
         for i in 0..output_size - 1 {
-            buffer_out[i + 1] = sign_extend_32(buffer_out[i].wrapping_add(error_buffer[i + 1]), readsamplesize);
+            buffer_out[i + 1] = sign_extend_32(
+                buffer_out[i].wrapping_add(error_buffer[i + 1]),
+                readsamplesize,
+            );
         }
         return;
     }
 
     // Warm-up samples
     for i in 0..predictor_coef_num {
-        let val = sign_extend_32(buffer_out[i].wrapping_add(error_buffer[i + 1]), readsamplesize);
+        let val = sign_extend_32(
+            buffer_out[i].wrapping_add(error_buffer[i + 1]),
+            readsamplesize,
+        );
         buffer_out[i + 1] = val;
     }
 
     // General case — use a sliding window via offset
     if predictor_coef_num > 0 {
-        for (off, &error_val) in error_buffer[predictor_coef_num + 1..output_size].iter().enumerate() {
+        for (off, &error_val) in error_buffer[predictor_coef_num + 1..output_size]
+            .iter()
+            .enumerate()
+        {
             let mut sum = 0i64;
 
             for j in 0..predictor_coef_num {
@@ -332,7 +358,8 @@ fn predictor_decompress_fir_adapt(
                     * predictor_coef_table[j] as i64;
             }
 
-            let mut outval = ((1i64 << (predictor_quantitization - 1)) + sum) >> predictor_quantitization;
+            let mut outval =
+                ((1i64 << (predictor_quantitization - 1)) + sum) >> predictor_quantitization;
             outval += buffer_out[off] as i64 + error_val as i64;
             let outval = sign_extend_32(outval as i32, readsamplesize);
             buffer_out[off + predictor_coef_num + 1] = outval;
@@ -493,7 +520,8 @@ impl AlacDecoder {
             return;
         }
         let mut p = 24; // skip: size(4) + frma(4) + alac(4) + size(4) + alac(4) + 0(4)
-        self.max_samples_per_frame = u32::from_be_bytes([config[p], config[p + 1], config[p + 2], config[p + 3]]);
+        self.max_samples_per_frame =
+            u32::from_be_bytes([config[p], config[p + 1], config[p + 2], config[p + 3]]);
         p += 4;
         p += 1; // 7a
         self.sample_size_config = config[p];
@@ -507,11 +535,14 @@ impl AlacDecoder {
         p += 1; // 7f
         self.max_run = u16::from_be_bytes([config[p], config[p + 1]]);
         p += 2;
-        self.max_frame_bytes = u32::from_be_bytes([config[p], config[p + 1], config[p + 2], config[p + 3]]);
+        self.max_frame_bytes =
+            u32::from_be_bytes([config[p], config[p + 1], config[p + 2], config[p + 3]]);
         p += 4;
-        self.avg_bit_rate = u32::from_be_bytes([config[p], config[p + 1], config[p + 2], config[p + 3]]);
+        self.avg_bit_rate =
+            u32::from_be_bytes([config[p], config[p + 1], config[p + 2], config[p + 3]]);
         p += 4;
-        self.sample_rate = u32::from_be_bytes([config[p], config[p + 1], config[p + 2], config[p + 3]]);
+        self.sample_rate =
+            u32::from_be_bytes([config[p], config[p + 1], config[p + 2], config[p + 3]]);
         self.allocate_buffers();
     }
 
@@ -556,8 +587,10 @@ impl AlacDecoder {
 
         let max_output_size = self.max_samples_per_frame as usize * self.bytes_per_sample as usize;
         let mut pcm_buf = vec![0u8; max_output_size];
-        let len = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.decode_frame(input, &mut pcm_buf)))
-            .unwrap_or(0);
+        let len = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            self.decode_frame(input, &mut pcm_buf)
+        }))
+        .unwrap_or(0);
         if len == 0 {
             return None;
         }
@@ -604,9 +637,15 @@ impl AlacDecoder {
             k_modifier_mask: (1 << self.rice_k_modifier) - 1,
         };
         let (prederr, out) = if channel_b {
-            (&mut self.predicterror_buffer_b, &mut self.outputsamples_buffer_b)
+            (
+                &mut self.predicterror_buffer_b,
+                &mut self.outputsamples_buffer_b,
+            )
         } else {
-            (&mut self.predicterror_buffer_a, &mut self.outputsamples_buffer_a)
+            (
+                &mut self.predicterror_buffer_a,
+                &mut self.outputsamples_buffer_a,
+            )
         };
         entropy_rice_decode(reader, prederr, output_samples, readsamplesize, &rice);
         let mut pred_table = hdr.pred_table;
@@ -628,8 +667,12 @@ impl AlacDecoder {
         output_samples: &mut usize,
         output_size: &mut usize,
     ) {
-        let (uncompressed_bytes, is_not_compressed) =
-            parse_subframe_header(reader, output_samples, output_size, self.bytes_per_sample as usize);
+        let (uncompressed_bytes, is_not_compressed) = parse_subframe_header(
+            reader,
+            output_samples,
+            output_size,
+            self.bytes_per_sample as usize,
+        );
         if *output_samples == 0 {
             *output_size = 0;
             return;
@@ -654,7 +697,8 @@ impl AlacDecoder {
             if self.sample_size_config <= 16 {
                 for i in 0..*output_samples {
                     let v = reader.readbits(self.sample_size_config as u32);
-                    self.outputsamples_buffer_a[i] = sign_extend_32(v as i32, self.sample_size_config as u32);
+                    self.outputsamples_buffer_a[i] =
+                        sign_extend_32(v as i32, self.sample_size_config as u32);
                 }
             } else {
                 for i in 0..*output_samples {
@@ -680,7 +724,8 @@ impl AlacDecoder {
                     let mut sample = self.outputsamples_buffer_a[i];
                     if uncompressed_bytes > 0 && is_not_compressed == 0 {
                         let mask = !(0xFFFFFFFFu32 << (uncompressed_bytes * 8)) as i32;
-                        sample = (sample << (uncompressed_bytes * 8)) | (self.uncompressed_bytes_buffer_a[i] & mask);
+                        sample = (sample << (uncompressed_bytes * 8))
+                            | (self.uncompressed_bytes_buffer_a[i] & mask);
                     }
                     let off = i * self.num_channels as usize * 3;
                     output[off] = sample as u8;
@@ -699,8 +744,12 @@ impl AlacDecoder {
         output_samples: &mut usize,
         output_size: &mut usize,
     ) {
-        let (uncompressed_bytes, is_not_compressed) =
-            parse_subframe_header(reader, output_samples, output_size, self.bytes_per_sample as usize);
+        let (uncompressed_bytes, is_not_compressed) = parse_subframe_header(
+            reader,
+            output_samples,
+            output_size,
+            self.bytes_per_sample as usize,
+        );
         if *output_samples == 0 {
             *output_size = 0;
             return;
@@ -720,8 +769,10 @@ impl AlacDecoder {
 
             if uncompressed_bytes > 0 {
                 for i in 0..*output_samples {
-                    self.uncompressed_bytes_buffer_a[i] = reader.readbits(uncompressed_bytes * 8) as i32;
-                    self.uncompressed_bytes_buffer_b[i] = reader.readbits(uncompressed_bytes * 8) as i32;
+                    self.uncompressed_bytes_buffer_a[i] =
+                        reader.readbits(uncompressed_bytes * 8) as i32;
+                    self.uncompressed_bytes_buffer_b[i] =
+                        reader.readbits(uncompressed_bytes * 8) as i32;
                 }
             }
 
@@ -732,8 +783,10 @@ impl AlacDecoder {
                 for i in 0..*output_samples {
                     let a = reader.readbits(self.sample_size_config as u32);
                     let b = reader.readbits(self.sample_size_config as u32);
-                    self.outputsamples_buffer_a[i] = sign_extend_32(a as i32, self.sample_size_config as u32);
-                    self.outputsamples_buffer_b[i] = sign_extend_32(b as i32, self.sample_size_config as u32);
+                    self.outputsamples_buffer_a[i] =
+                        sign_extend_32(a as i32, self.sample_size_config as u32);
+                    self.outputsamples_buffer_b[i] =
+                        sign_extend_32(b as i32, self.sample_size_config as u32);
                 }
             } else {
                 for i in 0..*output_samples {
@@ -865,7 +918,10 @@ mod decode_tests {
         let mut out = [0u8; 64];
         let n = dec.decode_frame(&w.bytes, &mut out);
         assert_eq!(n, 8);
-        let expected: Vec<u8> = samples.iter().flat_map(|&s| (s as i16).to_le_bytes()).collect();
+        let expected: Vec<u8> = samples
+            .iter()
+            .flat_map(|&s| (s as i16).to_le_bytes())
+            .collect();
         assert_eq!(&out[..8], &expected[..]);
     }
 
@@ -916,7 +972,9 @@ mod decode_tests {
             w.put((sample as u32) & 0x00ff_ffff, 24);
         }
 
-        let decoded = dec.decode_frame_f32(&w.bytes).expect("24-bit ALAC frame should decode");
+        let decoded = dec
+            .decode_frame_f32(&w.bytes)
+            .expect("24-bit ALAC frame should decode");
         assert_eq!(decoded.len(), samples.len());
         for (actual, expected) in decoded.iter().zip(samples) {
             assert!((*actual - expected as f32 / 8_388_608.0).abs() < f32::EPSILON);
@@ -1006,12 +1064,22 @@ mod decode_tests {
 
     fn check_golden(raw: &[u8]) {
         let g = parse_golden(raw);
-        assert_eq!(g.cookie.len(), 48, "cookie must be the 48-byte set_info block");
+        assert_eq!(
+            g.cookie.len(),
+            48,
+            "cookie must be the 48-byte set_info block"
+        );
 
         let mut dec = AlacDecoder::new(16, g.channels as i32);
         dec.set_info(&g.cookie);
-        assert_eq!(dec.sample_rate, g.sample_rate, "set_info parsed sample rate");
-        assert!(dec.max_samples_per_frame > 0, "set_info parsed frame length");
+        assert_eq!(
+            dec.sample_rate, g.sample_rate,
+            "set_info parsed sample rate"
+        );
+        assert!(
+            dec.max_samples_per_frame > 0,
+            "set_info parsed frame length"
+        );
 
         let frame_bytes = dec.max_samples_per_frame as usize * dec.bytes_per_sample as usize;
         let mut out = vec![0u8; frame_bytes];

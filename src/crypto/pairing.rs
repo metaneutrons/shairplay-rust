@@ -110,7 +110,9 @@ impl PairingSession {
     /// Get our ECDH public key. Equivalent to pairing_session_get_public_key.
     pub fn get_public_key(&self) -> Result<[u8; 32], CryptoError> {
         if self.status != Status::Handshake {
-            return Err(CryptoError::PairingHandshake("not in handshake state".into()));
+            return Err(CryptoError::PairingHandshake(
+                "not in handshake state".into(),
+            ));
         }
         Ok(self.ecdh_ours)
     }
@@ -119,7 +121,9 @@ impl PairingSession {
     /// Equivalent to pairing_session_get_signature.
     pub fn get_signature(&self) -> Result<[u8; 64], CryptoError> {
         if self.status != Status::Handshake {
-            return Err(CryptoError::PairingHandshake("not in handshake state".into()));
+            return Err(CryptoError::PairingHandshake(
+                "not in handshake state".into(),
+            ));
         }
 
         // Sign: ecdh_ours || ecdh_theirs
@@ -138,7 +142,9 @@ impl PairingSession {
     /// Verify the remote's signature. Equivalent to pairing_session_finish.
     pub(crate) fn finish(&mut self, signature: &[u8; 64]) -> Result<(), CryptoError> {
         if self.status != Status::Handshake {
-            return Err(CryptoError::PairingHandshake("not in handshake state".into()));
+            return Err(CryptoError::PairingHandshake(
+                "not in handshake state".into(),
+            ));
         }
 
         let (mut aes, _, _) = self.derive_aes()?;
@@ -156,7 +162,8 @@ impl PairingSession {
         sig_msg[..32].copy_from_slice(&self.ecdh_theirs);
         sig_msg[32..].copy_from_slice(&self.ecdh_ours);
 
-        let verifying_key = VerifyingKey::from_bytes(&self.ed_theirs).map_err(|_| CryptoError::PairingVerify)?;
+        let verifying_key =
+            VerifyingKey::from_bytes(&self.ed_theirs).map_err(|_| CryptoError::PairingVerify)?;
         let sig = Signature::from_bytes(&sig_buf);
         verifying_key
             .verify(&sig_msg, &sig)

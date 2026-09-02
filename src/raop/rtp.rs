@@ -37,7 +37,9 @@ const RETRANSMIT_HEADER_LEN: usize = 4;
 /// packets from a different address than the RTSP connection used.
 fn rtp_bind_addr(local: IpAddr) -> IpAddr {
     match local {
-        IpAddr::V6(v6) if (v6.segments()[0] & 0xffc0) == 0xfe80 => IpAddr::V6(std::net::Ipv6Addr::UNSPECIFIED),
+        IpAddr::V6(v6) if (v6.segments()[0] & 0xffc0) == 0xfe80 => {
+            IpAddr::V6(std::net::Ipv6Addr::UNSPECIFIED)
+        }
         other => other,
     }
 }
@@ -171,7 +173,9 @@ impl RaopRtp {
     pub(crate) fn new(callbacks: Arc<dyn AudioHandler>, config: RtpConfig) -> Option<Self> {
         let fmtp = config.fmtp.as_deref().unwrap_or_default();
         let buffer = match config.encryption {
-            Some(encryption) => RaopBuffer::new(&config.rtpmap, fmtp, &encryption.key, &encryption.iv),
+            Some(encryption) => {
+                RaopBuffer::new(&config.rtpmap, fmtp, &encryption.key, &encryption.iv)
+            }
             None => RaopBuffer::new_unencrypted(&config.rtpmap, fmtp),
         }?;
         let format = buffer.format();

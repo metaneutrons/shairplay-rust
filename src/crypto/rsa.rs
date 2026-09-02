@@ -30,7 +30,8 @@ pub(crate) struct RsaKey {
 impl RsaKey {
     /// Load an RSA private key from a PEM string. Equivalent to rsakey_init_pem.
     pub(crate) fn from_pem(pem: &str) -> Result<Self, CryptoError> {
-        let key = RsaPrivateKey::from_pkcs1_pem(pem).map_err(|e| CryptoError::RsaKey(e.to_string()))?;
+        let key =
+            RsaPrivateKey::from_pkcs1_pem(pem).map_err(|e| CryptoError::RsaKey(e.to_string()))?;
         Ok(Self { key })
     }
 
@@ -90,7 +91,9 @@ impl RsaKey {
         padded[offset..offset + ciphertext.len()].copy_from_slice(&ciphertext);
 
         let padding = Oaep::new::<sha1::Sha1>();
-        self.key.decrypt(padding, &padded).map_err(|_| CryptoError::RsaDecrypt)
+        self.key
+            .decrypt(padding, &padded)
+            .map_err(|_| CryptoError::RsaDecrypt)
     }
 
     /// Base64-decode only (no decryption). Equivalent to rsakey_decode.
@@ -129,7 +132,10 @@ mod tests {
 
     #[test]
     fn b64_decode_is_padding_indifferent() {
-        assert_eq!(B64.decode("SGVsbG8sIEFpclBsYXkh").unwrap(), b"Hello, AirPlay!");
+        assert_eq!(
+            B64.decode("SGVsbG8sIEFpclBsYXkh").unwrap(),
+            b"Hello, AirPlay!"
+        );
         // Accepts both unpadded and padded forms of the same input.
         assert_eq!(B64.decode("QUI").unwrap(), b"AB");
         assert_eq!(B64.decode("QUI=").unwrap(), b"AB");

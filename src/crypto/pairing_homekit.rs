@@ -108,13 +108,16 @@ impl SrpServer {
 
     /// Process M1 from client. Returns (salt, B) for M2 response.
     pub(crate) fn process_m1(&mut self, data: &[u8]) -> Result<(), CryptoError> {
-        let tlv = TlvValues::decode(data).map_err(|e| CryptoError::PairingHandshake(e.to_string()))?;
+        let tlv =
+            TlvValues::decode(data).map_err(|e| CryptoError::PairingHandshake(e.to_string()))?;
 
         let method = tlv
             .get_type(TlvType::Method)
             .ok_or_else(|| CryptoError::PairingHandshake("Missing Method".into()))?;
         if method != [PAIRING_METHOD_PAIR_SETUP] {
-            return Err(CryptoError::PairingHandshake("Unexpected pairing method".into()));
+            return Err(CryptoError::PairingHandshake(
+                "Unexpected pairing method".into(),
+            ));
         }
 
         self.is_transient = tlv
@@ -142,7 +145,8 @@ impl SrpServer {
 
     /// Process M3 from client (PublicKey=A, Proof=M1). Returns true if auth succeeded.
     pub(crate) fn process_m3(&mut self, data: &[u8]) -> Result<bool, CryptoError> {
-        let tlv = TlvValues::decode(data).map_err(|e| CryptoError::PairingHandshake(e.to_string()))?;
+        let tlv =
+            TlvValues::decode(data).map_err(|e| CryptoError::PairingHandshake(e.to_string()))?;
 
         let pk_bytes = tlv
             .get_type(TlvType::PublicKey)
@@ -323,7 +327,11 @@ fn hkdf_derive(ikm: &[u8], salt: &str, info: &str, out: &mut [u8]) -> Result<(),
         .map_err(|_| CryptoError::PairingHandshake("HKDF expand failed".into()))
 }
 
-fn encrypt_chacha(key: &[u8; 32], nonce_bytes: &[u8; 12], plaintext: &[u8]) -> Result<Vec<u8>, CryptoError> {
+fn encrypt_chacha(
+    key: &[u8; 32],
+    nonce_bytes: &[u8; 12],
+    plaintext: &[u8],
+) -> Result<Vec<u8>, CryptoError> {
     let cipher = ChaCha20Poly1305::new(key.into());
     let nonce = Nonce::from_slice(nonce_bytes);
     cipher
@@ -331,7 +339,11 @@ fn encrypt_chacha(key: &[u8; 32], nonce_bytes: &[u8; 12], plaintext: &[u8]) -> R
         .map_err(|_| CryptoError::PairingHandshake("ChaCha20 encrypt failed".into()))
 }
 
-fn decrypt_chacha(key: &[u8; 32], nonce_bytes: &[u8; 12], ciphertext_with_tag: &[u8]) -> Result<Vec<u8>, CryptoError> {
+fn decrypt_chacha(
+    key: &[u8; 32],
+    nonce_bytes: &[u8; 12],
+    ciphertext_with_tag: &[u8],
+) -> Result<Vec<u8>, CryptoError> {
     let cipher = ChaCha20Poly1305::new(key.into());
     let nonce = Nonce::from_slice(nonce_bytes);
     cipher
@@ -412,7 +424,11 @@ impl SrpServer {
     /// `device_id` is the public accessory identifier (placed in the TLV); the
     /// signature is produced with the secret long-term identity key built from
     /// `identity_seed`.
-    pub(crate) fn build_m6(&self, device_id: &str, identity_seed: &[u8; 32]) -> Result<Vec<u8>, CryptoError> {
+    pub(crate) fn build_m6(
+        &self,
+        device_id: &str,
+        identity_seed: &[u8; 32],
+    ) -> Result<Vec<u8>, CryptoError> {
         setup_build_accessory_identity(&self.session_key, device_id, identity_seed)
     }
 }
@@ -426,7 +442,10 @@ impl SrpServer {
 
 /// Verify the controller's encrypted M5 identity TLV.
 /// Returns the controller's `(identifier, Ed25519 public key)` for persistent storage.
-fn setup_verify_client_identity(session_key: &[u8], data: &[u8]) -> Result<(String, [u8; 32]), CryptoError> {
+fn setup_verify_client_identity(
+    session_key: &[u8],
+    data: &[u8],
+) -> Result<(String, [u8; 32]), CryptoError> {
     let tlv = TlvValues::decode(data).map_err(|e| CryptoError::PairingHandshake(e.to_string()))?;
 
     let enc = tlv
@@ -434,12 +453,18 @@ fn setup_verify_client_identity(session_key: &[u8], data: &[u8]) -> Result<(Stri
         .ok_or_else(|| CryptoError::PairingHandshake("M5: missing encrypted data".into()))?;
 
     let mut derived_key = [0u8; 32];
-    hkdf_derive(session_key, PS_ENCRYPT_SALT, PS_ENCRYPT_INFO, &mut derived_key)?;
+    hkdf_derive(
+        session_key,
+        PS_ENCRYPT_SALT,
+        PS_ENCRYPT_INFO,
+        &mut derived_key,
+    )?;
 
     let nonce = make_nonce(b"PS-Msg05");
     let decrypted = decrypt_chacha(&derived_key, &nonce, enc)?;
 
-    let inner = TlvValues::decode(&decrypted).map_err(|e| CryptoError::PairingHandshake(e.to_string()))?;
+    let inner =
+        TlvValues::decode(&decrypted).map_err(|e| CryptoError::PairingHandshake(e.to_string()))?;
     let identifier = inner
         .get_type(TlvType::Identifier)
         .ok_or_else(|| CryptoError::PairingHandshake("M5: missing identifier".into()))?;
@@ -473,7 +498,8 @@ fn setup_verify_client_identity(session_key: &[u8], data: &[u8]) -> Result<(Stri
             .try_into()
             .map_err(|_| CryptoError::PairingHandshake("M5: invalid signature length".into()))?,
     );
-    vk.verify(&info, &sig).map_err(|_| CryptoError::PairingVerify)?;
+    vk.verify(&info, &sig)
+        .map_err(|_| CryptoError::PairingVerify)?;
 
     let id_str = String::from_utf8(identifier.to_vec())
         .map_err(|_| CryptoError::PairingHandshake("M5: invalid identifier encoding".into()))?;
@@ -514,7 +540,12 @@ fn setup_build_accessory_identity(
 
     // Encrypt
     let mut derived_key = [0u8; 32];
-    hkdf_derive(session_key, PS_ENCRYPT_SALT, PS_ENCRYPT_INFO, &mut derived_key)?;
+    hkdf_derive(
+        session_key,
+        PS_ENCRYPT_SALT,
+        PS_ENCRYPT_INFO,
+        &mut derived_key,
+    )?;
     let nonce = make_nonce(b"PS-Msg06");
     let encrypted = encrypt_chacha(&derived_key, &nonce, &plaintext)?;
 
@@ -575,12 +606,15 @@ impl PairVerifyServer {
 
     /// Process verify M1 from client (ephemeral public key). Returns M2 response.
     pub(crate) fn process_m1_build_m2(&mut self, data: &[u8]) -> Result<Vec<u8>, CryptoError> {
-        let tlv = TlvValues::decode(data).map_err(|e| CryptoError::PairingHandshake(e.to_string()))?;
+        let tlv =
+            TlvValues::decode(data).map_err(|e| CryptoError::PairingHandshake(e.to_string()))?;
         let client_pk = tlv
             .get_type(TlvType::PublicKey)
             .ok_or_else(|| CryptoError::PairingHandshake("Verify M1: missing public key".into()))?;
         if client_pk.len() != 32 {
-            return Err(CryptoError::PairingHandshake("Verify M1: invalid key length".into()));
+            return Err(CryptoError::PairingHandshake(
+                "Verify M1: invalid key length".into(),
+            ));
         }
         self.client_eph_pk.copy_from_slice(client_pk);
 
@@ -604,7 +638,12 @@ impl PairVerifyServer {
 
         // Encrypt with HKDF-derived key
         let mut derived_key = [0u8; 32];
-        hkdf_derive(&self.shared_secret, PV_ENCRYPT_SALT, PV_ENCRYPT_INFO, &mut derived_key)?;
+        hkdf_derive(
+            &self.shared_secret,
+            PV_ENCRYPT_SALT,
+            PV_ENCRYPT_INFO,
+            &mut derived_key,
+        )?;
         let nonce = make_nonce(b"PV-Msg02");
         let encrypted = encrypt_chacha(&derived_key, &nonce, &plaintext)?;
 
@@ -625,17 +664,24 @@ impl PairVerifyServer {
         data: &[u8],
         lookup: PairingKeyLookup<'_>,
     ) -> Result<Vec<u8>, CryptoError> {
-        let tlv = TlvValues::decode(data).map_err(|e| CryptoError::PairingHandshake(e.to_string()))?;
-        let enc = tlv
-            .get_type(TlvType::EncryptedData)
-            .ok_or_else(|| CryptoError::PairingHandshake("Verify M3: missing encrypted data".into()))?;
+        let tlv =
+            TlvValues::decode(data).map_err(|e| CryptoError::PairingHandshake(e.to_string()))?;
+        let enc = tlv.get_type(TlvType::EncryptedData).ok_or_else(|| {
+            CryptoError::PairingHandshake("Verify M3: missing encrypted data".into())
+        })?;
 
         let mut derived_key = [0u8; 32];
-        hkdf_derive(&self.shared_secret, PV_ENCRYPT_SALT, PV_ENCRYPT_INFO, &mut derived_key)?;
+        hkdf_derive(
+            &self.shared_secret,
+            PV_ENCRYPT_SALT,
+            PV_ENCRYPT_INFO,
+            &mut derived_key,
+        )?;
         let nonce = make_nonce(b"PV-Msg03");
         let decrypted = decrypt_chacha(&derived_key, &nonce, enc)?;
 
-        let inner = TlvValues::decode(&decrypted).map_err(|e| CryptoError::PairingHandshake(e.to_string()))?;
+        let inner = TlvValues::decode(&decrypted)
+            .map_err(|e| CryptoError::PairingHandshake(e.to_string()))?;
         let identifier = inner
             .get_type(TlvType::Identifier)
             .ok_or_else(|| CryptoError::PairingHandshake("Verify M3: missing identifier".into()))?;
@@ -644,28 +690,31 @@ impl PairVerifyServer {
             .ok_or_else(|| CryptoError::PairingHandshake("Verify M3: missing signature".into()))?;
 
         if let Some(lookup) = lookup {
-            let identifier = std::str::from_utf8(identifier)
-                .map_err(|_| CryptoError::PairingHandshake("Verify M3: invalid identifier encoding".into()))?;
+            let identifier = std::str::from_utf8(identifier).map_err(|_| {
+                CryptoError::PairingHandshake("Verify M3: invalid identifier encoding".into())
+            })?;
             let ltpk = lookup(identifier).ok_or(CryptoError::PairingVerify)?;
             let mut info = Vec::new();
             info.extend_from_slice(&self.client_eph_pk);
             info.extend_from_slice(identifier.as_bytes());
             info.extend_from_slice(&self.server_eph_pk);
 
-            let vk = VerifyingKey::from_bytes(&ltpk)
-                .map_err(|_| CryptoError::PairingHandshake("Verify M3: invalid stored key".into()))?;
-            let sig = Signature::from_bytes(
-                signature
-                    .try_into()
-                    .map_err(|_| CryptoError::PairingHandshake("Verify M3: invalid signature length".into()))?,
-            );
-            vk.verify(&info, &sig).map_err(|_| CryptoError::PairingVerify)?;
+            let vk = VerifyingKey::from_bytes(&ltpk).map_err(|_| {
+                CryptoError::PairingHandshake("Verify M3: invalid stored key".into())
+            })?;
+            let sig = Signature::from_bytes(signature.try_into().map_err(|_| {
+                CryptoError::PairingHandshake("Verify M3: invalid signature length".into())
+            })?);
+            vk.verify(&info, &sig)
+                .map_err(|_| CryptoError::PairingVerify)?;
             tracing::info!("Pair-verify: client signature verified");
         } else {
             // No key lookup provided → client signature is NOT verified. This is only
             // safe for transient sessions; the shipped server always passes a real
             // lookup (see handlers_ap2). Warn so an accidental None can't pass silently.
-            tracing::warn!("Pair-verify M3: no key lookup — skipping client signature verification");
+            tracing::warn!(
+                "Pair-verify M3: no key lookup — skipping client signature verification"
+            );
         }
 
         self.completed = true;
@@ -800,7 +849,8 @@ mod tests {
 
         // Control-Salt / Control-Write-Encryption-Key
         let hk = Hkdf::<Sha512>::new(Some(b"Control-Salt"), &ikm);
-        hk.expand(b"Control-Write-Encryption-Key", &mut okm).unwrap();
+        hk.expand(b"Control-Write-Encryption-Key", &mut okm)
+            .unwrap();
         assert_eq!(
             hex_encode(&okm),
             "5a6cb19bcbe7d4df2dd8279f39562f7fae2dbf73eb5a4f98849c245c82b2fe96"
@@ -972,7 +1022,8 @@ mod tests {
         assert_eq!(server_eph_pk_bytes.len(), 32);
 
         // Client computes shared secret
-        let server_pub = x25519_dalek::PublicKey::from(<[u8; 32]>::try_from(server_eph_pk_bytes).unwrap());
+        let server_pub =
+            x25519_dalek::PublicKey::from(<[u8; 32]>::try_from(server_eph_pk_bytes).unwrap());
         let client_shared = client_secret.diffie_hellman(&server_pub);
 
         // Client builds M3 (encrypted identifier + signature)
@@ -1006,7 +1057,9 @@ mod tests {
 
         let client_pk = *client_vk.as_bytes();
         let lookup = |id: &str| (id == client_id).then_some(client_pk);
-        let m4_data = server.process_m3_build_m4(&m3.encode(), Some(&lookup)).unwrap();
+        let m4_data = server
+            .process_m3_build_m4(&m3.encode(), Some(&lookup))
+            .unwrap();
         let m4 = TlvValues::decode(&m4_data).unwrap();
         assert_eq!(m4.get_type(TlvType::State), Some(&[4u8][..]));
 
@@ -1031,7 +1084,8 @@ mod tests {
         let m2_data = server.process_m1_build_m2(&m1.encode()).unwrap();
         let m2 = TlvValues::decode(&m2_data).unwrap();
         let server_eph_pk_bytes = m2.get_type(TlvType::PublicKey).unwrap();
-        let server_pub = x25519_dalek::PublicKey::from(<[u8; 32]>::try_from(server_eph_pk_bytes).unwrap());
+        let server_pub =
+            x25519_dalek::PublicKey::from(<[u8; 32]>::try_from(server_eph_pk_bytes).unwrap());
         let client_shared = client_secret.diffie_hellman(&server_pub);
 
         let mut inner = TlvValues::new();
@@ -1046,7 +1100,8 @@ mod tests {
             &mut derived_key,
         )
         .unwrap();
-        let encrypted = encrypt_chacha(&derived_key, &make_nonce(b"PV-Msg03"), &inner.encode()).unwrap();
+        let encrypted =
+            encrypt_chacha(&derived_key, &make_nonce(b"PV-Msg03"), &inner.encode()).unwrap();
 
         let mut m3 = TlvValues::new();
         m3.add(TlvType::State as u8, &[3]);

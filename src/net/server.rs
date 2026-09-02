@@ -99,7 +99,11 @@ pub(crate) trait HttpdCallbacks: Send + Sync + 'static {
     ///
     /// Takes `Arc<Self>` so the implementation can hand each connection a cheap
     /// shared handle to server-wide state instead of deep-copying it per connection.
-    fn conn_init(self: Arc<Self>, local: SocketAddr, remote: SocketAddr) -> Option<Box<dyn ConnectionHandler>>;
+    fn conn_init(
+        self: Arc<Self>,
+        local: SocketAddr,
+        remote: SocketAddr,
+    ) -> Option<Box<dyn ConnectionHandler>>;
 }
 
 /// Per-connection request handler. Equivalent to conn_request + conn_destroy.
@@ -161,13 +165,20 @@ impl HttpServer {
             return Ok(self.port);
         }
 
-        let bind_port = if port > 0 { port } else { self.bind_config.port };
+        let bind_port = if port > 0 {
+            port
+        } else {
+            self.bind_config.port
+        };
         let auto_port = self.bind_config.auto_port;
 
         // Determine bind addresses
         let addrs: Vec<IpAddr> = if self.bind_config.bind_addrs.is_empty() {
             // Default: all IPv4 + all IPv6
-            vec![IpAddr::V4(Ipv4Addr::UNSPECIFIED), IpAddr::V6(Ipv6Addr::UNSPECIFIED)]
+            vec![
+                IpAddr::V4(Ipv4Addr::UNSPECIFIED),
+                IpAddr::V6(Ipv6Addr::UNSPECIFIED),
+            ]
         } else {
             self.bind_config.bind_addrs.clone()
         };
@@ -197,7 +208,12 @@ impl HttpServer {
             if let Ok(addr) = listener.local_addr() {
                 tracing::debug!(%addr, "Listener bound");
             }
-            spawn_accept_loop(listener, callbacks.clone(), semaphore.clone(), shutdown_rx.clone());
+            spawn_accept_loop(
+                listener,
+                callbacks.clone(),
+                semaphore.clone(),
+                shutdown_rx.clone(),
+            );
         }
 
         Ok(actual_port)
@@ -223,7 +239,11 @@ impl HttpServer {
 }
 
 /// Try to bind a TCP listener, optionally auto-incrementing the port.
-async fn bind_listener(addr: IpAddr, start_port: u16, auto_port: bool) -> Result<TcpListener, NetworkError> {
+async fn bind_listener(
+    addr: IpAddr,
+    start_port: u16,
+    auto_port: bool,
+) -> Result<TcpListener, NetworkError> {
     let mut port = start_port;
     loop {
         match TcpListener::bind(SocketAddr::new(addr, port)).await {
@@ -243,8 +263,11 @@ async fn bind_listener(addr: IpAddr, start_port: u16, auto_port: bool) -> Result
 /// Generic over the byte stream (`AsyncRead + AsyncWrite`) so the framing/crypto
 /// state machine is decoupled from the socket and can be unit-tested against an
 /// in-memory duplex. The accept loop only accepts, permits, and spawns this.
-async fn process_connection<S>(mut stream: S, mut handler: Box<dyn ConnectionHandler>, remote: SocketAddr)
-where
+async fn process_connection<S>(
+    mut stream: S,
+    mut handler: Box<dyn ConnectionHandler>,
+    remote: SocketAddr,
+) where
     S: AsyncRead + AsyncWrite + Unpin,
 {
     let mut buf = [0u8; 4096];
@@ -296,7 +319,12 @@ where
                 tracing::warn!("Encrypted buffer exceeded 1 MB, dropping connection");
                 break;
             }
-            tracing::trace!(encrypted = true, raw_len = raw_buf.len(), new_bytes = n, "Read");
+            tracing::trace!(
+                encrypted = true,
+                raw_len = raw_buf.len(),
+                new_bytes = n,
+                "Read"
+            );
             match handler.decrypt_incoming(&raw_buf) {
                 Some((plain, consumed)) => {
                     tracing::trace!(plain_len = plain.len(), consumed, "Decrypt");
@@ -415,7 +443,10 @@ mod tests {
         let mut tmp = [0u8; 1024];
         let n = client.read(&mut tmp).await.unwrap();
         let resp = String::from_utf8_lossy(&tmp[..n]);
-        assert!(resp.starts_with("RTSP/1.0 200"), "unexpected response: {resp:?}");
+        assert!(
+            resp.starts_with("RTSP/1.0 200"),
+            "unexpected response: {resp:?}"
+        );
 
         drop(client); // peer close → server loop ends cleanly
         task.await.unwrap();
@@ -437,9 +468,16 @@ mod tests {
             .unwrap();
 
         let mut tmp = [0u8; 1024];
-        assert!(client.read(&mut tmp).await.unwrap() > 0, "expected a response");
+        assert!(
+            client.read(&mut tmp).await.unwrap() > 0,
+            "expected a response"
+        );
         // Handler requested disconnect → server shuts the stream → client sees EOF.
-        assert_eq!(client.read(&mut tmp).await.unwrap(), 0, "server should have closed");
+        assert_eq!(
+            client.read(&mut tmp).await.unwrap(),
+            0,
+            "server should have closed"
+        );
         task.await.unwrap();
     }
 }

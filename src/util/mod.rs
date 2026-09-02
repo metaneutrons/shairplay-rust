@@ -43,7 +43,10 @@ mod tests {
 
     #[test]
     fn hwaddr_raop_c_vector() {
-        assert_eq!(hwaddr_raop(&[0x48, 0x5d, 0x60, 0x7c, 0xee, 0x22]), "485D607CEE22");
+        assert_eq!(
+            hwaddr_raop(&[0x48, 0x5d, 0x60, 0x7c, 0xee, 0x22]),
+            "485D607CEE22"
+        );
     }
 
     #[test]

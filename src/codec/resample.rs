@@ -1,7 +1,10 @@
 //! Sample rate conversion and channel mixdown for AirPlay audio.
 
 use rubato::audioadapter_buffers::direct::SequentialSliceOfVecs;
-use rubato::{Async, FixedAsync, Resampler, SincInterpolationParameters, SincInterpolationType, WindowFunction};
+use rubato::{
+    Async, FixedAsync, Resampler, SincInterpolationParameters, SincInterpolationType,
+    WindowFunction,
+};
 
 /// Persistent F32 resampler for streaming audio.
 /// Buffers input internally and processes in fixed chunks.
@@ -30,7 +33,9 @@ impl StreamResampler {
         };
         let ratio = to_rate as f64 / from_rate as f64;
         let chunk_size = 128; // small for low latency
-        let resampler = Async::<f32>::new_sinc(ratio, 1.0, &params, chunk_size, channels, FixedAsync::Input).ok()?;
+        let resampler =
+            Async::<f32>::new_sinc(ratio, 1.0, &params, chunk_size, channels, FixedAsync::Input)
+                .ok()?;
         Some(Self {
             resampler,
             channels,
@@ -154,7 +159,10 @@ mod tests {
         // No mixdown (src == out) and no resampler → samples returned unchanged.
         let samples = vec![0.1, 0.2, 0.3, 0.4];
         let mut none = None;
-        assert_eq!(mixdown_and_resample(samples.clone(), 2, 2, &mut none), samples);
+        assert_eq!(
+            mixdown_and_resample(samples.clone(), 2, 2, &mut none),
+            samples
+        );
     }
 
     #[test]

@@ -147,7 +147,10 @@ impl BufferedAudioProcessor {
                         }
                         cvar.notify_all();
                     }
-                    PlayoutCommand::Flush { from_seq, until_seq } => {
+                    PlayoutCommand::Flush {
+                        from_seq,
+                        until_seq,
+                    } => {
                         let keys: Vec<u32> = s
                             .buffer
                             .keys()
@@ -244,9 +247,13 @@ async fn receive_loop(
             }
 
             let target_sr = output_config.sample_rate.unwrap_or(src_sr);
-            let target_ch = output_config.max_channels.map(|max| src_ch.min(max)).unwrap_or(src_ch);
+            let target_ch = output_config
+                .max_channels
+                .map(|max| src_ch.min(max))
+                .unwrap_or(src_ch);
 
-            stream_resampler = crate::codec::resample::StreamResampler::new(src_sr, target_sr, target_ch as usize);
+            stream_resampler =
+                crate::codec::resample::StreamResampler::new(src_sr, target_sr, target_ch as usize);
             if stream_resampler.is_some() {
                 debug!(from = src_sr, to = target_sr, "Resampler initialized");
             }

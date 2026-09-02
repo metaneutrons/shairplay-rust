@@ -19,7 +19,10 @@ use std::sync::{Arc, Mutex};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use rubato::audioadapter_buffers::direct::SequentialSliceOfVecs;
-use rubato::{Async, FixedAsync, Resampler, SincInterpolationParameters, SincInterpolationType, WindowFunction};
+use rubato::{
+    Async, FixedAsync, Resampler, SincInterpolationParameters, SincInterpolationType,
+    WindowFunction,
+};
 
 /// Simple streaming resampler for the example app (uses rubato directly).
 struct ExampleResampler {
@@ -151,7 +154,8 @@ impl shairplay::HlsSession for MpvHlsSession {
     fn seek(&mut self, _position: f32) { /* mpv subprocess doesn't support seek via API */
     }
     fn set_rate(&mut self, rate: f32) {
-        self.rate.store(rate.to_bits(), std::sync::atomic::Ordering::Relaxed);
+        self.rate
+            .store(rate.to_bits(), std::sync::atomic::Ordering::Relaxed);
         if rate == 0.0 {
             self.kill_child();
         }
@@ -242,7 +246,10 @@ impl PairingStore for FilePairingStore {
         }
     }
     fn has_any_pairing(&self) -> bool {
-        self.state.lock().map(|s| !s.paired_keys.is_empty()).unwrap_or(false)
+        self.state
+            .lock()
+            .map(|s| !s.paired_keys.is_empty())
+            .unwrap_or(false)
     }
     fn remove(&self, device_id: &str) {
         if let Ok(mut state) = self.state.lock() {
@@ -301,7 +308,11 @@ impl AudioHandler for Handler {
                 "🔄 Resampling {}Hz → {}Hz (in example app)",
                 format.sample_rate, self.device_rate
             );
-            ExampleResampler::new(format.sample_rate, self.device_rate, format.channels as usize)
+            ExampleResampler::new(
+                format.sample_rate,
+                self.device_rate,
+                format.channels as usize,
+            )
         } else {
             if format.sample_rate != self.device_rate {
                 eprintln!(
@@ -364,7 +375,8 @@ impl Drop for Session {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt()
         .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "shairplay=info".parse().unwrap()),
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "shairplay=info".parse().unwrap()),
         )
         .with_target(false)
         .init();
@@ -419,7 +431,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some(device) => {
             eprintln!(
                 "🔈 Output device: {} ({}Hz, {}ch)",
-                device.description().map(|d| d.name().to_string()).unwrap_or_default(),
+                device
+                    .description()
+                    .map(|d| d.name().to_string())
+                    .unwrap_or_default(),
                 device_rate,
                 device_channels
             );
@@ -461,7 +476,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     // Load or generate device identity
-    let mut state = persist_path.as_ref().map(PersistState::load).unwrap_or_default();
+    let mut state = persist_path
+        .as_ref()
+        .map(PersistState::load)
+        .unwrap_or_default();
     let mac = match state.mac {
         Some(mac) => {
             eprintln!(
@@ -559,9 +577,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(feature = "ap2")]
     match &pin {
         Some(code) => {
-            eprintln!("🔐 PIN: {code} (persistent HomeKit pairing — enter once on iPhone; fast reconnects after)")
+            eprintln!(
+                "🔐 PIN: {code} (persistent HomeKit pairing — enter once on iPhone; fast reconnects after)"
+            )
         }
-        None => eprintln!("🔐 Transient (PIN-less) pairing — no prompt, but slower to connect (--transient)"),
+        None => eprintln!(
+            "🔐 Transient (PIN-less) pairing — no prompt, but slower to connect (--transient)"
+        ),
     }
     eprintln!("   Press Ctrl+C to stop");
 

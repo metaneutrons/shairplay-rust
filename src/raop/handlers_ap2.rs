@@ -37,7 +37,12 @@ impl RaopConnection {
         tokio::spawn(async move {
             if let Ok((stream, addr)) = event_listener.accept().await {
                 tracing::info!(%addr, "RC event channel client connected");
-                crate::raop::event_channel::EventChannel::handle_stream(stream, event_channel_cipher, rx).await;
+                crate::raop::event_channel::EventChannel::handle_stream(
+                    stream,
+                    event_channel_cipher,
+                    rx,
+                )
+                .await;
             }
         });
     }
@@ -95,9 +100,14 @@ pub(crate) fn handle_pair_setup(
             let srp = conn.srp_server.as_mut()?;
             match srp.process_m5(data) {
                 Ok((client_id, client_pk)) => {
-                    let m6 = srp.build_m6(&conn.shared.device_id, &conn.shared.identity_seed).ok()?;
+                    let m6 = srp
+                        .build_m6(&conn.shared.device_id, &conn.shared.identity_seed)
+                        .ok()?;
                     conn.shared.pairing_store.put(&client_id, client_pk);
-                    tracing::info!(client_id, "AP2 normal pair-setup complete, client key stored");
+                    tracing::info!(
+                        client_id,
+                        "AP2 normal pair-setup complete, client key stored"
+                    );
                     Some(m6)
                 }
                 Err(e) => {
@@ -195,24 +205,40 @@ pub(crate) fn handle_info(
     let mut dict = plist::Dictionary::new();
     dict.insert("deviceID".into(), plist::Value::String(hw.clone()));
     dict.insert("macAddress".into(), plist::Value::String(hw));
-    dict.insert("pi".into(), plist::Value::String(conn.shared.pairing_id.clone()));
-    dict.insert("name".into(), plist::Value::String(conn.shared.airplay_name.clone()));
+    dict.insert(
+        "pi".into(),
+        plist::Value::String(conn.shared.pairing_id.clone()),
+    );
+    dict.insert(
+        "name".into(),
+        plist::Value::String(conn.shared.airplay_name.clone()),
+    );
     dict.insert(
         "features".into(),
         plist::Value::Integer(
-            (crate::net::features::receiver_features_for_pairing(conn.shared.pin.is_some()) as i64).into(),
+            (crate::net::features::receiver_features_for_pairing(conn.shared.pin.is_some()) as i64)
+                .into(),
         ),
     );
-    dict.insert("model".into(), plist::Value::String(config::GLOBAL_MODEL.into()));
+    dict.insert(
+        "model".into(),
+        plist::Value::String(config::GLOBAL_MODEL.into()),
+    );
     dict.insert(
         "protocolVersion".into(),
         plist::Value::String(config::AP2_PROTOVERS.into()),
     );
-    dict.insert("sourceVersion".into(), plist::Value::String(config::AP2_SRCVERS.into()));
+    dict.insert(
+        "sourceVersion".into(),
+        plist::Value::String(config::AP2_SRCVERS.into()),
+    );
     dict.insert(
         "statusFlags".into(),
         plist::Value::Integer(
-            (config::ap2_status_flags(conn.shared.pin.is_some(), conn.shared.pairing_store.has_any_pairing()) as i64)
+            (config::ap2_status_flags(
+                conn.shared.pin.is_some(),
+                conn.shared.pairing_store.has_any_pairing(),
+            ) as i64)
                 .into(),
         ),
     );
@@ -230,7 +256,10 @@ pub(crate) fn handle_info(
                 "heightPixels".to_string(),
                 plist::Value::Integer(config::MIRRORING_HEIGHT.into()),
             ),
-            ("uuid".to_string(), plist::Value::String(config::MIRRORING_UUID.into())),
+            (
+                "uuid".to_string(),
+                plist::Value::String(config::MIRRORING_UUID.into()),
+            ),
             (
                 "maxFPS".to_string(),
                 plist::Value::Integer(config::MIRRORING_FPS.into()),
@@ -275,16 +304,25 @@ fn build_update_info_message(requires_pin_pairing: bool, already_paired: bool) -
     let mut value = plist::Dictionary::new();
     value.insert(
         "statusFlags".into(),
-        plist::Value::Integer((config::ap2_status_flags(requires_pin_pairing, already_paired) as i64).into()),
+        plist::Value::Integer(
+            (config::ap2_status_flags(requires_pin_pairing, already_paired) as i64).into(),
+        ),
     );
     value.insert(
         "features".into(),
         plist::Value::Integer(
-            (crate::net::features::receiver_features_for_pairing(requires_pin_pairing) as i64).into(),
+            (crate::net::features::receiver_features_for_pairing(requires_pin_pairing) as i64)
+                .into(),
         ),
     );
-    value.insert("model".into(), plist::Value::String(config::GLOBAL_MODEL.into()));
-    value.insert("sourceVersion".into(), plist::Value::String(config::AP2_SRCVERS.into()));
+    value.insert(
+        "model".into(),
+        plist::Value::String(config::GLOBAL_MODEL.into()),
+    );
+    value.insert(
+        "sourceVersion".into(),
+        plist::Value::String(config::AP2_SRCVERS.into()),
+    );
     value.insert(
         "protocolVersion".into(),
         plist::Value::String(config::AP2_PROTOVERS.into()),
@@ -319,8 +357,18 @@ pub(crate) fn handle_setup(
         .and_then(|v| v.as_boolean())
         .unwrap_or(false);
     let has_ekey = dict.get("ekey").is_some();
-    let timing = dict.get("timingProtocol").and_then(|v| v.as_string()).unwrap_or("");
-    tracing::info!(?keys, has_streams, is_mirror, has_ekey, timing, "SETUP plist");
+    let timing = dict
+        .get("timingProtocol")
+        .and_then(|v| v.as_string())
+        .unwrap_or("");
+    tracing::info!(
+        ?keys,
+        has_streams,
+        is_mirror,
+        has_ekey,
+        timing,
+        "SETUP plist"
+    );
 
     let resp_dict = if let Some(streams) = dict.get("streams").and_then(|v| v.as_array()) {
         setup_streams(conn, streams)?
@@ -359,7 +407,10 @@ fn setup_streams(conn: &mut RaopConnection, streams: &[plist::Value]) -> Option<
     let ctrl_sock = std::net::UdpSocket::bind(bind_addr_for(conn)).ok()?;
     let ctrl_port = ctrl_sock.local_addr().ok()?.port();
     drop(ctrl_sock);
-    stream_resp.insert("controlPort".into(), plist::Value::Integer(ctrl_port.into()));
+    stream_resp.insert(
+        "controlPort".into(),
+        plist::Value::Integer(ctrl_port.into()),
+    );
 
     let mut resp_dict = plist::Dictionary::new();
     resp_dict.insert(
@@ -374,7 +425,10 @@ fn setup_streams(conn: &mut RaopConnection, streams: &[plist::Value]) -> Option<
 /// channel and timing, and return the response dictionary.
 fn setup_initial(conn: &mut RaopConnection, dict: &plist::Dictionary) -> Option<plist::Dictionary> {
     let mut resp_dict = plist::Dictionary::new();
-    let timing = dict.get("timingProtocol").and_then(|v| v.as_string()).unwrap_or("None");
+    let timing = dict
+        .get("timingProtocol")
+        .and_then(|v| v.as_string())
+        .unwrap_or("None");
 
     // Capture FairPlay encryption keys for video.
     // The audio connection provides ekey (72 bytes, FairPlay-encrypted) + eiv (16 bytes).
@@ -439,7 +493,9 @@ fn setup_initial(conn: &mut RaopConnection, dict: &plist::Dictionary) -> Option<
             let event_listener = bind_tcp(bind_addr_for(conn))?;
             let event_port = event_listener.local_addr().ok()?.port();
 
-            if let Ok(event_channel_cipher) = crate::crypto::chacha_transport::EncryptedChannel::events(shared_secret) {
+            if let Ok(event_channel_cipher) =
+                crate::crypto::chacha_transport::EncryptedChannel::events(shared_secret)
+            {
                 let event_sender = {
                     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
 
@@ -462,7 +518,10 @@ fn setup_initial(conn: &mut RaopConnection, dict: &plist::Dictionary) -> Option<
             0
         };
 
-        resp_dict.insert("eventPort".into(), plist::Value::Integer(event_port_resp.into()));
+        resp_dict.insert(
+            "eventPort".into(),
+            plist::Value::Integer(event_port_resp.into()),
+        );
 
         return Some(resp_dict);
     }
@@ -485,16 +544,18 @@ fn setup_initial(conn: &mut RaopConnection, dict: &plist::Dictionary) -> Option<
     // Derive event channel encryption keys from shared secret (AP2 only).
     // In legacy mode there's no shared secret — skip the encrypted event channel.
     if let Some(shared_secret) = conn.ap2_shared_secret.as_ref()
-        && let Ok(event_channel_cipher) = crate::crypto::chacha_transport::EncryptedChannel::events(shared_secret)
+        && let Ok(event_channel_cipher) =
+            crate::crypto::chacha_transport::EncryptedChannel::events(shared_secret)
     {
         // Spawn bidirectional event channel
         let event_sender = {
             let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
 
             // Queue updateInfo so it's sent immediately when client connects
-            if let Some(msg) =
-                build_update_info_message(conn.shared.pin.is_some(), conn.shared.pairing_store.has_any_pairing())
-            {
+            if let Some(msg) = build_update_info_message(
+                conn.shared.pin.is_some(),
+                conn.shared.pairing_store.has_any_pairing(),
+            ) {
                 let _ = tx.send(msg);
                 tracing::debug!("updateInfo queued for event channel");
             }
@@ -503,7 +564,12 @@ fn setup_initial(conn: &mut RaopConnection, dict: &plist::Dictionary) -> Option<
             tokio::spawn(async move {
                 if let Ok((stream, addr)) = event_listener.accept().await {
                     tracing::info!(%addr, "Event channel client connected");
-                    crate::raop::event_channel::EventChannel::handle_stream(stream, event_channel_cipher, rx).await;
+                    crate::raop::event_channel::EventChannel::handle_stream(
+                        stream,
+                        event_channel_cipher,
+                        rx,
+                    )
+                    .await;
                 }
             });
             sender
@@ -517,7 +583,10 @@ fn setup_initial(conn: &mut RaopConnection, dict: &plist::Dictionary) -> Option<
     } else {
         0
     };
-    resp_dict.insert("eventPort".into(), plist::Value::Integer(event_port_resp.into()));
+    resp_dict.insert(
+        "eventPort".into(),
+        plist::Value::Integer(event_port_resp.into()),
+    );
 
     // Legacy mode: bind a standalone NTP timing socket and return its port.
     // The iPhone needs NTP sync before it sends the stream SETUP.
@@ -545,7 +614,10 @@ fn setup_initial(conn: &mut RaopConnection, dict: &plist::Dictionary) -> Option<
     #[cfg(not(feature = "video"))]
     let timing_port: u16 = 0;
 
-    resp_dict.insert("timingPort".into(), plist::Value::Integer((timing_port as u64).into()));
+    resp_dict.insert(
+        "timingPort".into(),
+        plist::Value::Integer((timing_port as u64).into()),
+    );
 
     Some(resp_dict)
 }
@@ -557,8 +629,14 @@ fn setup_stream_realtime(
     stream0: &plist::Dictionary,
     stream_resp: &mut plist::Dictionary,
 ) -> Option<()> {
-    let sr = stream0.get("sr").and_then(|v| v.as_unsigned_integer()).unwrap_or(44100);
-    let spf = stream0.get("spf").and_then(|v| v.as_unsigned_integer()).unwrap_or(352);
+    let sr = stream0
+        .get("sr")
+        .and_then(|v| v.as_unsigned_integer())
+        .unwrap_or(44100);
+    let spf = stream0
+        .get("spf")
+        .and_then(|v| v.as_unsigned_integer())
+        .unwrap_or(352);
     let audio_format = stream0
         .get("audioFormat")
         .and_then(|v| v.as_unsigned_integer())
@@ -609,14 +687,19 @@ fn setup_stream_realtime(
             handler,
             output_config,
         ));
-        conn.shared.set_active_audio(Box::new(move || handle.abort()));
+        conn.shared
+            .set_active_audio(Box::new(move || handle.abort()));
 
         stream_resp.insert("dataPort".into(), plist::Value::Integer(audio_port.into()));
     } else {
         // Legacy ALAC — only available with video feature (UxPlay-style features).
         #[cfg(feature = "video")]
         {
-            tracing::info!(stream_type = 96, sample_rate = sr, "Legacy ALAC (AES-CBC via ekey)");
+            tracing::info!(
+                stream_type = 96,
+                sample_rate = sr,
+                "Legacy ALAC (AES-CBC via ekey)"
+            );
 
             let aes_key = conn.ekey.unwrap_or([0u8; 16]);
             let aes_iv = conn.eiv.unwrap_or([0u8; 16]);
@@ -671,17 +754,23 @@ fn setup_stream_buffered(
         .get("audioFormat")
         .and_then(|v| v.as_unsigned_integer())
         .unwrap_or(0);
-    tracing::info!(stream_type = 103, audio_format, "AP2 buffered audio stream setup");
+    tracing::info!(
+        stream_type = 103,
+        audio_format,
+        "AP2 buffered audio stream setup"
+    );
 
     let shk = stream0.get("shk").and_then(|v| v.as_data()).unwrap_or(&[]);
     if shk.len() != 32 {
         tracing::warn!(len = shk.len(), "Invalid shk length");
         conn.shared
             .handler
-            .on_error(&ShairplayError::Protocol(ProtocolError::InvalidRtsp(format!(
-                "buffered (type 103) SETUP: invalid shk length {}",
-                shk.len()
-            ))));
+            .on_error(&ShairplayError::Protocol(ProtocolError::InvalidRtsp(
+                format!(
+                    "buffered (type 103) SETUP: invalid shk length {}",
+                    shk.len()
+                ),
+            )));
         return None;
     }
     let mut shk_arr = [0u8; 32];
@@ -705,7 +794,10 @@ fn setup_stream_buffered(
     }));
 
     stream_resp.insert("dataPort".into(), plist::Value::Integer(audio_port.into()));
-    stream_resp.insert("audioBufferSize".into(), plist::Value::Integer(0x10_0000_i64.into())); // 1 MB
+    stream_resp.insert(
+        "audioBufferSize".into(),
+        plist::Value::Integer(0x10_0000_i64.into()),
+    ); // 1 MB
     Some(())
 }
 
@@ -751,7 +843,11 @@ fn setup_stream_video(
         .get("streamConnectionID")
         .and_then(|v| v.as_signed_integer())
         .unwrap_or(0) as u64;
-    tracing::info!(stream_type = 110, stream_connection_id, "AP2 video stream setup");
+    tracing::info!(
+        stream_type = 110,
+        stream_connection_id,
+        "AP2 video stream setup"
+    );
 
     // Seed is either the audio AES key directly (Stage-3) or
     // eaesKey = SHA-512(fairplay_key ‖ ecdh) (full FairPlay + ECDH path).
@@ -765,7 +861,8 @@ fn setup_stream_video(
         let fp_key = conn.shared.video_ekey.read().ok().and_then(|k| *k);
         if let Some(fp_key) = fp_key {
             let eaes_key = crate::crypto::video_key::derive_eaes_key(&fp_key, ecdh);
-            let (key, iv) = crate::crypto::video_key::derive_stream_key_iv(&eaes_key, stream_connection_id);
+            let (key, iv) =
+                crate::crypto::video_key::derive_stream_key_iv(&eaes_key, stream_connection_id);
             tracing::debug!(
                 derived_key = %hex::encode(key),
                 derived_iv = %hex::encode(iv),
@@ -776,7 +873,9 @@ fn setup_stream_video(
             // iOS 18+ with HomeKit pairing does not send ekey; derivation is unsolved
             // (see AP2-STATUS.md). Decline the stream rather than installing a zeroed key
             // and feeding the app undecryptable "garbage" NAL units.
-            tracing::warn!("Video: no ekey available — iOS 18 HomeKit video decryption unsupported; declining stream");
+            tracing::warn!(
+                "Video: no ekey available — iOS 18 HomeKit video decryption unsupported; declining stream"
+            );
             conn.shared
                 .handler
                 .on_error(&ShairplayError::Crypto(CryptoError::FairPlay(
@@ -832,8 +931,14 @@ pub(crate) fn handle_set_rate_anchor_time(
     let plist_val: plist::Value = plist::from_bytes(data).ok()?;
     let dict = plist_val.as_dictionary()?;
 
-    let rate = dict.get("rate").and_then(|v| v.as_unsigned_integer()).unwrap_or(0) as u32;
-    let rtp_time = dict.get("rtpTime").and_then(|v| v.as_unsigned_integer()).unwrap_or(0) as u32;
+    let rate = dict
+        .get("rate")
+        .and_then(|v| v.as_unsigned_integer())
+        .unwrap_or(0) as u32;
+    let rtp_time = dict
+        .get("rtpTime")
+        .and_then(|v| v.as_unsigned_integer())
+        .unwrap_or(0) as u32;
     let net_secs = dict
         .get("networkTimeSecs")
         .and_then(|v| v.as_unsigned_integer())
@@ -845,7 +950,9 @@ pub(crate) fn handle_set_rate_anchor_time(
 
     // Convert network time to nanoseconds (saturating: net_secs is peer-supplied).
     let frac_ns = ((net_frac >> 32) * 1_000_000_000) >> 32;
-    let anchor_time_ns = net_secs.saturating_mul(1_000_000_000).saturating_add(frac_ns);
+    let anchor_time_ns = net_secs
+        .saturating_mul(1_000_000_000)
+        .saturating_add(frac_ns);
 
     if rate & 1 != 0 {
         tracing::info!(rtp_time, anchor_time_ns, "AP2 play start");
@@ -902,7 +1009,10 @@ pub(crate) fn handle_flush_buffered(
             .unwrap_or(0) as u32;
         tracing::debug!(from_seq, until_seq, "FLUSHBUFFERED");
         if let Some(cmd) = &conn.playout_cmd {
-            let _ = cmd.send(crate::raop::buffered_audio::PlayoutCommand::Flush { from_seq, until_seq });
+            let _ = cmd.send(crate::raop::buffered_audio::PlayoutCommand::Flush {
+                from_seq,
+                until_seq,
+            });
         }
     }
     None
@@ -948,7 +1058,10 @@ pub(crate) fn handle_command(
         && let Ok(plist_val) = plist::from_bytes::<plist::Value>(data)
         && let Some(dict) = plist_val.as_dictionary()
     {
-        let cmd_type = dict.get("type").and_then(|v| v.as_string()).unwrap_or("unknown");
+        let cmd_type = dict
+            .get("type")
+            .and_then(|v| v.as_string())
+            .unwrap_or("unknown");
         tracing::debug!(cmd_type, "POST /command");
         if cmd_type == "updateMRSupportedCommands" {}
     }
@@ -966,7 +1079,10 @@ pub(crate) fn handle_audio_mode(
         && let Ok(plist_val) = plist::from_bytes::<plist::Value>(data)
         && let Some(dict) = plist_val.as_dictionary()
     {
-        let mode = dict.get("audioMode").and_then(|v| v.as_string()).unwrap_or("unknown");
+        let mode = dict
+            .get("audioMode")
+            .and_then(|v| v.as_string())
+            .unwrap_or("unknown");
         tracing::debug!(mode, "POST /audioMode");
     }
     None

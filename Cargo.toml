@@ -1,6 +1,12 @@
+[workspace]
+resolver = "3"
+
+[workspace.package]
+version = "0.8.0"
+
 [package]
 name = "shairplay"
-version = "0.8.0"
+version.workspace = true
 edition = "2024"
 license = "LGPL-3.0-or-later"
 description = "Pure Rust AirPlay server library"
@@ -10,6 +16,18 @@ readme = "README.md"
 homepage = "https://github.com/metaneutrons/shairplay-rust"
 repository = "https://github.com/metaneutrons/shairplay-rust"
 rust-version = "1.94"
+include = [
+    "/src/**",
+    "/examples/**",
+    "/tests/**",
+    "/Cargo.toml",
+    "/Cargo.lock",
+    "/README.md",
+    "/CHANGELOG.md",
+    "/LICENSE",
+    "/AP2-STATUS.md",
+    "/airport.key",
+]
 
 [dependencies]
 # Async runtime
@@ -56,7 +74,7 @@ hex = "0.4"
 astro-dnssd = "0.3"
 
 [target.'cfg(not(target_os = "macos"))'.dependencies]
-mdns-sd = "0.20"
+mdns-sd = "0.21"
 gethostname = "1"
 
 [features]
@@ -80,3 +98,84 @@ minifb = "0.28"
 [[example]]
 name = "player"
 required-features = []
+
+[lints]
+workspace = true
+
+[workspace.lints.rust]
+missing_docs = "warn"
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+cargo = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+
+# Binary protocol and codec code intentionally exposes fixed-width arithmetic,
+# table literals, lossy wire conversions, and large stack buffers. Each of these
+# operations is covered by protocol-vector or boundary tests.
+cast_lossless = "allow"
+cast_possible_truncation = "allow"
+cast_possible_wrap = "allow"
+cast_precision_loss = "allow"
+cast_ptr_alignment = "allow"
+cast_sign_loss = "allow"
+decimal_bitwise_operands = "allow"
+float_cmp = "allow"
+large_stack_arrays = "allow"
+ptr_as_ptr = "allow"
+suboptimal_flops = "allow"
+unreadable_literal = "allow"
+
+# Explicit internal visibility and protocol terminology improve auditability;
+# the suggested alternatives would obscure module ownership or wire names.
+doc_markdown = "allow"
+enum_glob_use = "allow"
+items_after_statements = "allow"
+many_single_char_names = "allow"
+redundant_pub_crate = "allow"
+similar_names = "allow"
+too_long_first_doc_paragraph = "allow"
+too_many_lines = "allow"
+used_underscore_binding = "allow"
+use_self = "allow"
+wildcard_imports = "allow"
+
+# These suggestions are deliberately left to maintainers because applying them
+# mechanically can change public APIs, drop timing, allocation, or control flow.
+bool_to_int_with_if = "allow"
+collapsible_else_if = "allow"
+comparison_chain = "allow"
+derive_partial_eq_without_eq = "allow"
+format_collect = "allow"
+format_push_string = "allow"
+if_not_else = "allow"
+ignored_unit_patterns = "allow"
+implicit_clone = "allow"
+manual_assert_eq = "allow"
+manual_let_else = "allow"
+map_unwrap_or = "allow"
+match_same_arms = "allow"
+missing_const_for_fn = "allow"
+must_use_candidate = "allow"
+needless_pass_by_ref_mut = "allow"
+needless_pass_by_value = "allow"
+option_if_let_else = "allow"
+redundant_clone = "allow"
+redundant_closure_for_method_calls = "allow"
+return_self_not_must_use = "allow"
+semicolon_if_nothing_returned = "allow"
+significant_drop_tightening = "allow"
+single_char_pattern = "allow"
+single_match_else = "allow"
+tuple_array_conversions = "allow"
+uninlined_format_args = "allow"
+unnecessary_wraps = "allow"
+unused_async = "allow"
+unused_self = "allow"
+useless_let_if_seq = "allow"
+
+# The dependency graph intentionally carries platform- and feature-specific
+# versions; cargo-deny reports and reviews duplicates without blocking builds.
+multiple_crate_versions = "allow"

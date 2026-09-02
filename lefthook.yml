@@ -1,0 +1,30 @@
+commit-msg:
+  commands:
+    conventional-commits:
+      run: sh scripts/hooks/check-commit-message.sh {1}
+
+pre-commit:
+  parallel: true
+  commands:
+    staged-guards:
+      run: sh scripts/hooks/check-staged.sh
+    secrets:
+      run: gitleaks git --pre-commit --redact --staged --verbose
+    format:
+      glob: "*.rs"
+      run: cargo fmt --all -- --check
+    toml-format:
+      glob: "*.toml"
+      run: taplo fmt --check
+      skip: true
+
+pre-push:
+  parallel: false
+  commands:
+    secrets:
+      run: sh scripts/hooks/check-push-secrets.sh
+    clippy:
+      run: cargo clippy --workspace --all-targets --locked -- -D warnings
+    tests:
+      run: cargo nextest run --workspace --locked
+      skip: true

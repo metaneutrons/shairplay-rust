@@ -54,7 +54,10 @@ pub(crate) struct StreamFormat {
 enum Codec {
     /// Apple Lossless — the classic AirPlay codec. Also covers PipeWire's
     /// `raop.audio.codec=PCM`, which is really uncompressed-ALAC on the wire.
-    Alac { config: AlacConfig, decoder: AlacDecoder },
+    Alac {
+        config: AlacConfig,
+        decoder: AlacDecoder,
+    },
     /// Raw linear PCM (`L16`): big-endian interleaved S16, no compression.
     Pcm { config: PcmConfig },
 }
@@ -116,7 +119,11 @@ fn parse_fmtp(fmtp: &str) -> Option<AlacConfig> {
         sample_rate: p(11)?,
     };
     // Reject configs that would produce degenerate buffers / decoder state.
-    if config.frame_length == 0 || config.num_channels == 0 || config.bit_depth == 0 || config.sample_rate == 0 {
+    if config.frame_length == 0
+        || config.num_channels == 0
+        || config.bit_depth == 0
+        || config.sample_rate == 0
+    {
         return None;
     }
     Some(config)
@@ -248,9 +255,14 @@ impl RaopBuffer {
                 let config = parse_fmtp(fmtp)?;
                 // ALAC outputs one f32 per sample: frame_length × channels.
                 let frame_samples = config.frame_length as usize * config.num_channels as usize;
-                let mut decoder = AlacDecoder::new(config.bit_depth as i32, config.num_channels as i32);
+                let mut decoder =
+                    AlacDecoder::new(config.bit_depth as i32, config.num_channels as i32);
                 decoder.set_info(&build_decoder_info(&config));
-                (Codec::Alac { config, decoder }, frame_samples, frame_samples)
+                (
+                    Codec::Alac { config, decoder },
+                    frame_samples,
+                    frame_samples,
+                )
             }
         };
 
@@ -316,7 +328,11 @@ impl RaopBuffer {
             return 0;
         }
         // If too far ahead, flush the buffer to resync.
-        if seqnum_cmp(seqnum, self.first_seqnum.wrapping_add(RAOP_BUFFER_LENGTH as u16)) >= 0 {
+        if seqnum_cmp(
+            seqnum,
+            self.first_seqnum.wrapping_add(RAOP_BUFFER_LENGTH as u16),
+        ) >= 0
+        {
             self.flush(seqnum as i32);
         }
 
@@ -364,7 +380,12 @@ impl RaopBuffer {
                 let limit = output_size.min(s16_buf.len());
                 let out = &mut self.entries[idx].audio_buffer;
                 let mut n = 0;
-                for (chunk, out_sample) in s16_buf[..limit].as_chunks::<2>().0.iter().zip(out.iter_mut()) {
+                for (chunk, out_sample) in s16_buf[..limit]
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
+                    .zip(out.iter_mut())
+                {
                     *out_sample = i16::from_le_bytes(*chunk) as f32 / 32768.0;
                     n += 1;
                 }
@@ -378,7 +399,8 @@ impl RaopBuffer {
                 }
                 let out = &mut self.entries[idx].audio_buffer;
                 let mut n = 0;
-                for (chunk, out_sample) in packet_buf.as_chunks::<2>().0.iter().zip(out.iter_mut()) {
+                for (chunk, out_sample) in packet_buf.as_chunks::<2>().0.iter().zip(out.iter_mut())
+                {
                     *out_sample = i16::from_be_bytes(*chunk) as f32 / 32768.0;
                     n += 1;
                 }

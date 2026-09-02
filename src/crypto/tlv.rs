@@ -62,7 +62,10 @@ impl TlvValues {
 
     /// Get a TLV value by raw tag number.
     pub fn get(&self, tag: u8) -> Option<&[u8]> {
-        self.entries.iter().find(|(t, _)| *t == tag).map(|(_, v)| v.as_slice())
+        self.entries
+            .iter()
+            .find(|(t, _)| *t == tag)
+            .map(|(_, v)| v.as_slice())
     }
 
     /// Get a TLV value by typed tag.
