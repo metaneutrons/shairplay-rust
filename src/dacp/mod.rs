@@ -51,7 +51,7 @@ fn discover_dacp_port(dacp_id: &str, _remote_ip: std::net::IpAddr) -> Option<u16
                 }
             }
             Err(_) => break,
-            _ => continue,
+            _ => {}
         }
     }
     let _ = daemon.shutdown();
