@@ -1,6 +1,6 @@
 [extend]
 useDefault = true
 
-[[allowlists]]
+[allowlist]
 description = "Published AirPort Express protocol key retained for AirPlay interoperability"
 paths = ['''^airport\.key$''']
