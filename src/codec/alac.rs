@@ -565,13 +565,17 @@ impl AlacDecoder {
         match self.sample_size_config {
             16 => Some(
                 pcm_buf[..len]
-                    .chunks_exact(2)
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
                     .map(|c| i16::from_le_bytes([c[0], c[1]]) as f32 / 32768.0)
                     .collect(),
             ),
             24 => Some(
                 pcm_buf[..len]
-                    .chunks_exact(3)
+                    .as_chunks::<3>()
+                    .0
+                    .iter()
                     .map(|c| {
                         let raw = c[0] as i32 | ((c[1] as i32) << 8) | ((c[2] as i32) << 16);
                         let sample = (raw << 8) >> 8;
