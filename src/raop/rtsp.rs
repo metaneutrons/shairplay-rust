@@ -10,6 +10,8 @@ use crate::raop::handlers_ap1::{self as handlers, RaopConnection};
 
 /// HTTP Digest authentication realm advertised and validated for RTSP auth.
 const DIGEST_REALM: &str = "airplay";
+/// Server identity advertised on every routed RTSP response.
+const RTSP_SERVER_HEADER_VALUE: &str = "AirTunes/105.1";
 #[cfg(feature = "ap2")]
 use crate::raop::handlers_ap2;
 #[cfg(feature = "hls")]
@@ -189,12 +191,7 @@ pub(crate) fn dispatch(conn: &mut RaopConnection, request: &HttpRequest) -> Http
     let url = request.url().unwrap_or("");
     let cseq = request.header("CSeq").unwrap_or("0");
 
-    let mut response = HttpResponse::new("RTSP/1.0", 200, "OK");
-    response.add_header("CSeq", cseq);
-    // Real receivers (AirPort Express, shairport-sync) send a Server header on
-    // every RTSP reply. PipeWire's module-raop-sink appears to require it after
-    // OPTIONS before it proceeds to ANNOUNCE — without it the sender stalls.
-    response.add_header("Server", "AirTunes/105.1");
+    let mut response = new_response(200, "OK", cseq);
     response.add_header("Apple-Jack-Status", "connected; type=analog");
 
     // --- Middleware: authentication ---
@@ -209,9 +206,7 @@ pub(crate) fn dispatch(conn: &mut RaopConnection, request: &HttpRequest) -> Http
             authorization,
         ) {
             let auth_str = format!("Digest realm=\"{}\", nonce=\"{}\"", DIGEST_REALM, conn.nonce);
-            response = HttpResponse::new("RTSP/1.0", 401, "Unauthorized");
-            response.add_header("CSeq", cseq);
-            response.add_header("Server", "AirTunes/105.1");
+            response = new_response(401, "Unauthorized", cseq);
             response.add_header("WWW-Authenticate", &auth_str);
             response.finish(None);
             return response;
@@ -234,14 +229,19 @@ pub(crate) fn dispatch(conn: &mut RaopConnection, request: &HttpRequest) -> Http
         Some(RouteResolution::NoBody) => None,
         None => {
             tracing::debug!(method, url, "Unhandled RTSP request");
-            response = HttpResponse::new("RTSP/1.0", 404, "Not Found");
-            response.add_header("CSeq", cseq);
-            response.add_header("Server", "AirTunes/105.1");
+            response = new_response(404, "Not Found", cseq);
             response.finish(None);
             return response;
         }
     };
     response.finish(response_data.as_deref());
+    response
+}
+
+fn new_response(status: u16, message: &str, cseq: &str) -> HttpResponse {
+    let mut response = HttpResponse::new("RTSP/1.0", status, message);
+    response.add_header("CSeq", cseq);
+    response.add_header("Server", RTSP_SERVER_HEADER_VALUE);
     response
 }
 
