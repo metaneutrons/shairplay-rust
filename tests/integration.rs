@@ -95,6 +95,37 @@ fn empty_handler() -> Arc<TestHandler> {
     })
 }
 
+#[cfg(feature = "ap2")]
+fn ap1_builder(name: &str) -> shairplay::RaopServerBuilder {
+    RaopServer::builder()
+        .name(name)
+        .port(0)
+        .mode(shairplay::AirPlayMode::AirPlay1)
+}
+
+#[cfg(not(feature = "ap2"))]
+fn ap1_builder(name: &str) -> shairplay::RaopServerBuilder {
+    RaopServer::builder().name(name).port(0)
+}
+
+fn raop_txt<'a>(info: &'a shairplay::AirPlayServiceInfo, key: &str) -> &'a str {
+    info.raop_txt
+        .iter()
+        .find(|(candidate, _)| candidate == key)
+        .map(|(_, value)| value.as_str())
+        .expect("expected RAOP TXT record")
+}
+
+fn assert_invalid_configuration(result: Result<RaopServer, shairplay::ShairplayError>, expected: &str) {
+    match result {
+        Err(shairplay::ShairplayError::Server(shairplay::error::ServerError::InvalidConfiguration(reason))) => {
+            assert_eq!(reason, expected)
+        }
+        Err(error) => panic!("expected invalid configuration, got {error:?}"),
+        Ok(_) => panic!("expected invalid configuration, build succeeded"),
+    }
+}
+
 #[test]
 fn default_hwaddr_is_locally_administered_unicast() {
     let server = RaopServer::builder()
@@ -109,6 +140,76 @@ fn default_hwaddr_is_locally_administered_unicast() {
     assert_eq!(hwaddr_hex.len(), 12);
     assert_eq!(first_octet & 0x02, 0x02);
     assert_eq!(first_octet & 0x01, 0);
+}
+
+#[test]
+fn ap1_advertisement_defaults_and_custom_order_are_stable() {
+    use shairplay::{Ap1Codec, Ap1Encryption};
+
+    let default = ap1_builder("DefaultAdvertisement").build(empty_handler()).unwrap();
+    assert_eq!(raop_txt(&default.service_info(), "cn"), "0,1");
+    assert_eq!(raop_txt(&default.service_info(), "et"), "0");
+
+    let custom = ap1_builder("CustomAdvertisement")
+        .advertise_codecs([Ap1Codec::Alac, Ap1Codec::Pcm])
+        .advertise_encryption([Ap1Encryption::FairPlay, Ap1Encryption::None, Ap1Encryption::Rsa])
+        .build(empty_handler())
+        .unwrap();
+    assert_eq!(raop_txt(&custom.service_info(), "cn"), "1,0");
+    assert_eq!(raop_txt(&custom.service_info(), "et"), "3,0,1");
+}
+
+#[test]
+fn ap1_advertisement_rejects_empty_and_duplicate_values() {
+    use shairplay::{Ap1Codec, Ap1Encryption};
+
+    assert_invalid_configuration(
+        ap1_builder("NoCodecs")
+            .advertise_codecs(Vec::<Ap1Codec>::new())
+            .build(empty_handler()),
+        "AP1 codec advertisement cannot be empty",
+    );
+    assert_invalid_configuration(
+        ap1_builder("DuplicateCodecs")
+            .advertise_codecs([Ap1Codec::Pcm, Ap1Codec::Pcm])
+            .build(empty_handler()),
+        "AP1 codec advertisement contains duplicates",
+    );
+    assert_invalid_configuration(
+        ap1_builder("NoEncryption")
+            .advertise_encryption(Vec::<Ap1Encryption>::new())
+            .build(empty_handler()),
+        "AP1 encryption advertisement cannot be empty",
+    );
+    assert_invalid_configuration(
+        ap1_builder("DuplicateEncryption")
+            .advertise_encryption([Ap1Encryption::None, Ap1Encryption::None])
+            .build(empty_handler()),
+        "AP1 encryption advertisement contains duplicates",
+    );
+}
+
+#[cfg(feature = "ap2")]
+#[test]
+fn ap2_rejects_ap1_advertisement_options_and_keeps_its_fixed_profile() {
+    use shairplay::Ap1Codec;
+
+    assert_invalid_configuration(
+        RaopServer::builder()
+            .name("WrongMode")
+            .port(0)
+            .advertise_codecs([Ap1Codec::Pcm])
+            .build(empty_handler()),
+        "AP1 advertisement options require AirPlayMode::AirPlay1",
+    );
+
+    let server = RaopServer::builder()
+        .name("Ap2Advertisement")
+        .port(0)
+        .build(empty_handler())
+        .unwrap();
+    assert_eq!(raop_txt(&server.service_info(), "cn"), "0,1");
+    assert_eq!(raop_txt(&server.service_info(), "et"), "0,3,5");
 }
 
 #[test]

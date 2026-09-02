@@ -25,6 +25,58 @@ pub enum AudioCodec {
     Pcm,
 }
 
+/// AirPlay 1 wire codec advertised in the `_raop._tcp` `cn` TXT record.
+///
+/// The receiver auto-detects the actual codec per connection from the SDP
+/// `rtpmap`; this only controls what is *advertised*. When several are
+/// advertised, their order is preserved because sender selection policies vary.
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Ap1Codec {
+    /// Raw linear PCM / `L16` (`cn=0`).
+    Pcm,
+    /// Apple Lossless (`cn=1`).
+    Alac,
+}
+
+impl Ap1Codec {
+    /// The `cn` TXT record digit for this codec.
+    pub(crate) const fn txt_value(self) -> &'static str {
+        match self {
+            Ap1Codec::Pcm => "0",
+            Ap1Codec::Alac => "1",
+        }
+    }
+}
+
+/// AirPlay 1 encryption / authentication mode advertised in the `et` TXT record.
+///
+/// The receiver auto-dispatches on what a sender actually negotiates (RSA
+/// `rsaaeskey`, FairPlay `fpaeskey`, or no key at all); this only controls what
+/// is *advertised*. Sender preference rules vary, so advertise only modes the
+/// deployment intends to accept.
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Ap1Encryption {
+    /// No encryption (`et=0`). Audio passes through undecrypted.
+    None,
+    /// RSA session-key exchange (`et=1`, `a=rsaaeskey`).
+    Rsa,
+    /// FairPlay DRM (`et=3`, `POST /fp-setup` + `a=fpaeskey`).
+    FairPlay,
+}
+
+impl Ap1Encryption {
+    /// The `et` TXT record digit for this mode.
+    pub(crate) const fn txt_value(self) -> &'static str {
+        match self {
+            Ap1Encryption::None => "0",
+            Ap1Encryption::Rsa => "1",
+            Ap1Encryption::FairPlay => "3",
+        }
+    }
+}
+
 /// Audio format descriptor passed to [`AudioHandler::audio_init`].
 #[derive(Debug, Clone, Copy)]
 pub struct AudioFormat {

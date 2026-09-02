@@ -414,6 +414,14 @@ fn service_info_txt_records() {
         Some("false")
     );
     assert_eq!(
+        info.raop_txt.iter().find(|(k, _)| k == "cn").map(|(_, v)| v.as_str()),
+        Some("0,1")
+    );
+    assert_eq!(
+        info.raop_txt.iter().find(|(k, _)| k == "et").map(|(_, v)| v.as_str()),
+        Some("0")
+    );
+    assert_eq!(
         info.airplay_txt
             .iter()
             .find(|(k, _)| k == "model")

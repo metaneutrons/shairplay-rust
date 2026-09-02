@@ -4,6 +4,7 @@
 //! `mdns-sd` (pure Rust) on Linux and other platforms.
 
 use crate::error::NetworkError;
+use crate::raop::config::Ap1Advertisement;
 use crate::util;
 
 // --- AP1 mDNS TXT record constants ---
@@ -12,10 +13,6 @@ use crate::util;
 pub(crate) const RAOP_TXTVERS: &str = "1";
 /// Audio channels.
 pub(crate) const RAOP_CH: &str = "2";
-/// Codecs: 0=PCM, 1=ALAC.
-pub(crate) const RAOP_CN: &str = "0,1";
-/// Encryption types: 0=none, 1=RSA.
-pub(crate) const RAOP_ET: &str = "0,1";
 /// Server version flag.
 pub(crate) const RAOP_SV: &str = "false";
 /// Digest auth supported.
@@ -34,6 +31,9 @@ pub(crate) const RAOP_MD: &str = "0,1,2";
 pub(crate) const RAOP_SM: &str = "false";
 /// Encryption key type.
 pub(crate) const RAOP_EK: &str = "1";
+/// AP2 codecs advertised in `_raop` TXT (0=PCM, 1=ALAC) — AP2 supports both.
+#[cfg(feature = "ap2")]
+pub(crate) const RAOP_AP2_CN: &str = "0,1";
 /// AP2 encryption types advertised in `_raop` TXT (0=none, 3/5=FairPlay).
 #[cfg(feature = "ap2")]
 pub(crate) const RAOP_AP2_ET: &str = "0,3,5";
@@ -43,7 +43,6 @@ pub(crate) const RAOP_AP2_VN: &str = "65537";
 
 /// Global feature bitmask for AP1 discovery.
 pub(crate) const GLOBAL_FEATURES: u32 = 0x7;
-/// Device model identifier.
 /// Device model identifier.
 pub(crate) const GLOBAL_MODEL: &str = crate::raop::config::GLOBAL_MODEL;
 /// Software version string.
@@ -80,8 +79,19 @@ pub struct AirPlayServiceInfo {
 }
 
 impl AirPlayServiceInfo {
-    /// Create AP1 service info for mDNS registration.
+    /// Create AP1 service info with the default advertised capabilities.
     pub fn new(name: &str, port: u16, hwaddr: &[u8], password: bool) -> Self {
+        Self::new_with_ap1_advertisement(name, port, hwaddr, password, &Ap1Advertisement::default())
+    }
+
+    /// Create AP1 service info with a validated server advertisement.
+    pub(crate) fn new_with_ap1_advertisement(
+        name: &str,
+        port: u16,
+        hwaddr: &[u8],
+        password: bool,
+        advertisement: &Ap1Advertisement,
+    ) -> Self {
         let hw_raop = util::hwaddr_raop(hwaddr);
         let hw_airplay = util::hwaddr_airplay(hwaddr);
         let raop_name = format!("{hw_raop}@{name}");
@@ -89,8 +99,8 @@ impl AirPlayServiceInfo {
         let raop_txt = vec![
             ("txtvers".into(), RAOP_TXTVERS.into()),
             ("ch".into(), RAOP_CH.into()),
-            ("cn".into(), RAOP_CN.into()),
-            ("et".into(), RAOP_ET.into()),
+            ("cn".into(), advertisement.codecs_txt().into()),
+            ("et".into(), advertisement.encryption_txt().into()),
             ("sv".into(), RAOP_SV.into()),
             ("da".into(), RAOP_DA.into()),
             ("sr".into(), RAOP_SR.into()),
@@ -145,7 +155,7 @@ impl AirPlayServiceInfo {
 
         let raop_txt = vec![
             // AP1 compatibility fields (allows classic AirPlay fallback)
-            ("cn".into(), RAOP_CN.into()),
+            ("cn".into(), RAOP_AP2_CN.into()),
             ("da".into(), RAOP_DA.into()),
             ("et".into(), RAOP_AP2_ET.into()),
             ("pw".into(), (if password { "true" } else { "false" }).into()),

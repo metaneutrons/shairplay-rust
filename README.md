@@ -24,7 +24,7 @@ A complete AirPlay audio and video receiver as a Rust library. Supports both cla
 
 |  | Feature | Details |
 |--|---------|---------|
-| 🎵 | **AirPlay 1 (Classic)** | ALAC decode, AES encryption, DACP remote control — rock solid |
+| 🎵 | **AirPlay 1 (Classic)** | ALAC/L16 decode, optional AES encryption, DACP remote control — rock solid |
 | 🎵 | **AirPlay 2** | Buffered AAC, SRP-6a pairing, ChaCha20-Poly1305 encrypted RTSP |
 | 🔊 | **Multichannel** | 5.1 and 7.1 AAC decode with ITU-R BS.775 mixdown to stereo |
 | 🔄 | **Resampling** | Automatic sample rate conversion via rubato |
@@ -102,6 +102,8 @@ let mut server = RaopServer::builder()
 | `.password()` | none | | HTTP Digest auth password |
 | `.max_clients()` | `10` | | Maximum concurrent connections |
 | `.bind()` | all interfaces | | Bind to specific IPs (multi-interface) |
+| `.advertise_codecs()` | PCM + ALAC | AP1 | Set the ordered AP1 `cn` capability list |
+| `.advertise_encryption()` | none | AP1 | Set the ordered AP1 `et` capability list |
 | `.output_sample_rate()` | source rate | `resample` | Resample all audio to this rate |
 | `.output_max_channels()` | source channels | `resample` | Mix down to this channel count |
 | `.pin()` | `"3939"` | `ap2` | PIN for HomeKit pairing |
@@ -109,6 +111,28 @@ let mut server = RaopServer::builder()
 | `.pairing_store()` | `MemoryPairingStore` | `ap2` | Persistent key storage |
 | `.video_handler()` | none | `video` | Video session factory |
 | `.hls_handler()` | none | `hls` | HLS video playback handler |
+
+### AirPlay 1 Discovery Capabilities
+
+AP1 advertises PCM and ALAC by default (`cn=0,1`) and uses unencrypted audio
+transport by default (`et=0`) for broad sender compatibility. HTTP Digest
+authentication configured with `.password()` controls access but does not
+encrypt the audio payload.
+
+Deployments that require encrypted AP1 transport can advertise only the modes
+their senders support:
+
+```rust
+use shairplay::{Ap1Codec, Ap1Encryption, RaopServer};
+
+let builder = RaopServer::builder()
+    .advertise_codecs([Ap1Codec::Alac, Ap1Codec::Pcm])
+    .advertise_encryption([Ap1Encryption::Rsa, Ap1Encryption::FairPlay]);
+```
+
+The order supplied by the application is preserved. Empty and duplicate lists
+are rejected during `build()`. With the `ap2` feature enabled, also select
+`AirPlayMode::AirPlay1`; AP2 uses a separate fixed capability profile.
 
 ## Feature Flags
 
@@ -124,7 +148,7 @@ let mut server = RaopServer::builder()
 
 ### ✅ AirPlay 1 — Production Ready
 
-Rock solid. ALAC decoding, AES encryption, DACP remote control, metadata (artwork, progress, track info). Works with iPhone, iPad, Mac, iTunes.
+Rock solid. ALAC and raw L16 PCM decoding, optional AES encryption, DACP remote control, metadata (artwork, progress, track info). Works with iPhone, iPad, Mac, iTunes, and PipeWire senders.
 
 ### ✅ AirPlay 2 Audio — Production Ready
 
@@ -216,7 +240,7 @@ src/
 
 ## Test Coverage
 
-158 tests including 17 C-verified pairing vectors from [pair_ap](https://github.com/ejurgensen/pair_ap) and 10 C-verified FairPlay vectors generated from the original [shairplay](https://github.com/juhovh/shairplay) C source:
+The test suite includes 17 C-verified pairing vectors from [pair_ap](https://github.com/ejurgensen/pair_ap) and 10 C-verified FairPlay vectors generated from the original [shairplay](https://github.com/juhovh/shairplay) C source:
 
 ```plain
 cargo test                    # AP1 tests

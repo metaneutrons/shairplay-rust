@@ -1,5 +1,6 @@
 //! AirPlay server builder and lifecycle.
 
+use super::config::Ap1Advertisement;
 use super::connection::RaopShared;
 use super::types::*;
 use crate::crypto::pairing::Pairing;
@@ -68,6 +69,8 @@ pub struct RaopServerBuilder {
     mode: AirPlayMode,
     output_sample_rate: Option<u32>,
     output_max_channels: Option<u8>,
+    ap1_codecs: Option<Vec<Ap1Codec>>,
+    ap1_encryption: Option<Vec<Ap1Encryption>>,
     #[cfg(feature = "ap2")]
     pin: Option<String>,
     #[cfg(feature = "video")]
@@ -97,6 +100,8 @@ impl RaopServerBuilder {
             mode: AirPlayMode::default(),
             output_sample_rate: None,
             output_max_channels: None,
+            ap1_codecs: None,
+            ap1_encryption: None,
             #[cfg(feature = "ap2")]
             pin: None,
             #[cfg(feature = "video")]
@@ -170,6 +175,36 @@ impl RaopServerBuilder {
         self
     }
 
+    /// Set the AP1 codecs advertised in the `_raop._tcp` `cn` TXT record.
+    ///
+    /// The receiver auto-detects the actual codec per connection from the SDP,
+    /// so this only affects discovery and negotiation. The supplied order is
+    /// preserved. By default, PCM and ALAC are advertised (`cn=0,1`). Empty or
+    /// duplicate lists are rejected by [`build`](Self::build).
+    ///
+    /// When the `ap2` feature is enabled, also select
+    /// `AirPlayMode::AirPlay1`. AP2 has a separate, fixed capability profile.
+    pub fn advertise_codecs(mut self, codecs: impl Into<Vec<Ap1Codec>>) -> Self {
+        self.ap1_codecs = Some(codecs.into());
+        self
+    }
+
+    /// Set the AP1 encryption/auth modes advertised in the `et` TXT record.
+    ///
+    /// The receiver auto-dispatches on what a sender actually negotiates, so
+    /// this only affects discovery and negotiation. The supplied order is
+    /// preserved. The interoperability-focused default advertises unencrypted
+    /// transport only (`et=0`); pass [`Ap1Encryption::Rsa`] and/or
+    /// [`Ap1Encryption::FairPlay`] to opt into encrypted AP1 transport. Empty or
+    /// duplicate lists are rejected by [`build`](Self::build).
+    ///
+    /// When the `ap2` feature is enabled, also select
+    /// `AirPlayMode::AirPlay1`. AP2 has a separate, fixed capability profile.
+    pub fn advertise_encryption(mut self, encryption: impl Into<Vec<Ap1Encryption>>) -> Self {
+        self.ap1_encryption = Some(encryption.into());
+        self
+    }
+
     #[cfg(feature = "ap2")]
     /// Require normal HomeKit pair-setup with this one-time PIN.
     ///
@@ -205,6 +240,13 @@ impl RaopServerBuilder {
         {
             return Err(ServerError::InvalidPassword(password.len()).into());
         }
+        #[cfg(feature = "ap2")]
+        if self.mode == AirPlayMode::AirPlay2 && (self.ap1_codecs.is_some() || self.ap1_encryption.is_some()) {
+            return Err(
+                ServerError::InvalidConfiguration("AP1 advertisement options require AirPlayMode::AirPlay1").into(),
+            );
+        }
+        let ap1_advertisement = Ap1Advertisement::try_new(self.ap1_codecs, self.ap1_encryption)?;
         let rsakey = airport_rsakey();
         let pairing = Arc::new(Pairing::generate()?);
         let hwaddr = match self.hwaddr {
@@ -278,6 +320,7 @@ impl RaopServerBuilder {
             bind: self.bind,
             name: self.name,
             hwaddr,
+            ap1_advertisement,
             #[cfg(feature = "ap2")]
             mode: self.mode,
         })
@@ -296,6 +339,7 @@ pub struct RaopServer {
     bind: BindConfig,
     name: String,
     hwaddr: Vec<u8>,
+    ap1_advertisement: Ap1Advertisement,
     #[cfg(feature = "ap2")]
     mode: AirPlayMode,
 }
@@ -368,11 +412,12 @@ impl RaopServer {
                 );
             }
         }
-        AirPlayServiceInfo::new(
+        AirPlayServiceInfo::new_with_ap1_advertisement(
             &self.name,
             self.httpd.port(),
             &self.hwaddr,
             !self.shared.password.is_empty(),
+            &self.ap1_advertisement,
         )
     }
 }
