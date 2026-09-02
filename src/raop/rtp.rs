@@ -19,9 +19,8 @@ use tokio::net::{TcpListener, UdpSocket};
 use tokio::sync::{Mutex, watch};
 use tracing::info;
 
-use crate::codec::alac::AlacConfig;
 use crate::error::{NetworkError, ShairplayError};
-use crate::raop::buffer::{RAOP_PACKET_LEN, RaopBuffer};
+use crate::raop::buffer::{RAOP_PACKET_LEN, RaopBuffer, StreamFormat};
 use crate::raop::{AudioCodec, AudioFormat, AudioHandler};
 
 /// Sentinel value for [`RtpState::flush`] indicating no flush is pending.
@@ -95,16 +94,20 @@ pub(crate) struct RtpConfig {
     pub(crate) local_addr: IpAddr,
     /// SDP `a=rtpmap` attribute.
     pub(crate) rtpmap: String,
-    /// SDP `a=fmtp` attribute (ALAC configuration).
-    pub(crate) fmtp: String,
-    /// 128-bit AES session key (decrypted from SDP).
-    pub(crate) aes_key: [u8; 16],
-    /// 128-bit AES initialization vector.
-    pub(crate) aes_iv: [u8; 16],
+    /// Optional SDP `a=fmtp` attribute. Required for ALAC and unused for L16.
+    pub(crate) fmtp: Option<String>,
+    /// AES-CBC parameters when encryption was negotiated; `None` for plaintext RTP.
+    pub(crate) encryption: Option<RtpEncryption>,
     /// If set, resample decoded audio to this rate.
     pub(crate) output_sample_rate: Option<u32>,
     /// Full socket address of the remote peer (preserves scope_id for link-local IPv6).
     pub(crate) remote_socket: std::net::SocketAddr,
+}
+
+/// Validated AES-CBC parameters for an encrypted RTP session.
+pub(crate) struct RtpEncryption {
+    pub(crate) key: [u8; 16],
+    pub(crate) iv: [u8; 16],
 }
 
 /// AP1 RTP streaming session.
@@ -123,8 +126,8 @@ pub(crate) struct RaopRtp {
     local_addr: IpAddr,
     /// If set, resample decoded audio to this rate before delivery.
     output_sample_rate: Option<u32>,
-    /// Parsed ALAC stream configuration.
-    config: AlacConfig,
+    /// Decoded output stream format (channels + source sample rate).
+    format: StreamFormat,
     /// Shared packet buffer (decrypt + decode on queue, dequeue in order).
     buffer: Arc<Mutex<RaopBuffer>>,
     /// Shared mutable state for cross-task event delivery.
@@ -164,17 +167,21 @@ impl RaopRtp {
     /// Create a new RTP session from SDP parameters and AES session keys.
     /// Does not bind sockets or start receiving — call [`start`](Self::start) for that.
     ///
-    /// Returns `None` if the (peer-supplied) `fmtp` attribute is malformed.
+    /// Returns `None` if the peer-supplied codec configuration is unsupported or malformed.
     pub(crate) fn new(callbacks: Arc<dyn AudioHandler>, config: RtpConfig) -> Option<Self> {
-        let buffer = RaopBuffer::new(&config.rtpmap, &config.fmtp, &config.aes_key, &config.aes_iv)?;
-        let alac_config = buffer.config().clone();
+        let fmtp = config.fmtp.as_deref().unwrap_or_default();
+        let buffer = match config.encryption {
+            Some(encryption) => RaopBuffer::new(&config.rtpmap, fmtp, &encryption.key, &encryption.iv),
+            None => RaopBuffer::new_unencrypted(&config.rtpmap, fmtp),
+        }?;
+        let format = buffer.format();
         Some(Self {
             handler: callbacks,
             remote: config.remote,
             local_addr: config.local_addr,
             output_sample_rate: config.output_sample_rate,
             remote_socket: config.remote_socket,
-            config: alac_config,
+            format,
             buffer: Arc::new(Mutex::new(buffer)),
             state: Arc::new(Mutex::new(RtpState { flush: NO_FLUSH })),
             shutdown_tx: None,
@@ -222,19 +229,22 @@ impl RaopRtp {
             timing_addr.set_port(timing_rport);
             super::ntp::spawn_ntp_responder(tsock, timing_addr);
 
-            let config = self.config.clone();
+            let format = self.format;
             let mut session = self.handler.audio_init(AudioFormat {
                 codec: AudioCodec::Pcm,
                 bits: 32,
-                channels: config.num_channels,
-                sample_rate: config.sample_rate,
+                channels: format.num_channels,
+                // When resampling is enabled the audio delivered downstream is at
+                // the output rate, so announce that (matching the non-UDP path);
+                // fall back to the stream's native rate when not resampling.
+                sample_rate: self.output_sample_rate.unwrap_or(format.sample_rate),
             });
 
             #[cfg(feature = "resample")]
             let mut resampler = make_resampler(
                 self.output_sample_rate,
-                config.sample_rate,
-                config.num_channels as usize,
+                format.sample_rate,
+                format.num_channels as usize,
             );
 
             let buffer = self.buffer.clone();
@@ -299,19 +309,19 @@ impl RaopRtp {
             let listener = bind_tcp(SocketAddr::new(rtp_bind_addr(self.local_addr), 0))?;
             self.data_lport = listener.local_addr().map_err(NetworkError::Io)?.port();
 
-            let config = self.config.clone();
+            let format = self.format;
             let mut session = self.handler.audio_init(AudioFormat {
                 codec: AudioCodec::Pcm,
                 bits: 32,
-                channels: config.num_channels,
-                sample_rate: self.output_sample_rate.unwrap_or(config.sample_rate),
+                channels: format.num_channels,
+                sample_rate: self.output_sample_rate.unwrap_or(format.sample_rate),
             });
 
             #[cfg(feature = "resample")]
             let mut resampler = make_resampler(
                 self.output_sample_rate,
-                config.sample_rate,
-                config.num_channels as usize,
+                format.sample_rate,
+                format.num_channels as usize,
             );
 
             let buffer = self.buffer.clone();
