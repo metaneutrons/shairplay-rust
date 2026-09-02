@@ -3,8 +3,102 @@
 
 //! Single Source of Truth (SSOT) for global AirPlay receiver capabilities and profiles.
 
+use super::types::{Ap1Codec, Ap1Encryption};
+use crate::error::ServerError;
+
 /// Global device hardware model advertised to Apple clients.
 pub(crate) const GLOBAL_MODEL: &str = "AppleTV2,1";
+
+/// Default AP1 codec advertisement. PCM is listed for PipeWire compatibility;
+/// ALAC remains available to classic AirPlay senders.
+const AP1_DEFAULT_CODECS: &[Ap1Codec] = &[Ap1Codec::Pcm, Ap1Codec::Alac];
+
+/// Default AP1 encryption advertisement. Unencrypted transport is the most
+/// interoperable baseline; applications can explicitly require RSA or FairPlay.
+const AP1_DEFAULT_ENCRYPTION: &[Ap1Encryption] = &[Ap1Encryption::None];
+
+/// Validated, serialized AP1 mDNS capability advertisement.
+///
+/// Keeping validation and TXT serialization together prevents the builder and
+/// mDNS backends from developing independent interpretations of `cn` and `et`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Ap1Advertisement {
+    codecs_txt: String,
+    encryption_txt: String,
+}
+
+impl Ap1Advertisement {
+    pub(crate) fn try_new(
+        codecs: Option<Vec<Ap1Codec>>,
+        encryption: Option<Vec<Ap1Encryption>>,
+    ) -> Result<Self, ServerError> {
+        let codecs = configured_or_default(
+            codecs,
+            AP1_DEFAULT_CODECS,
+            "AP1 codec advertisement cannot be empty",
+            "AP1 codec advertisement contains duplicates",
+        )?;
+        let encryption = configured_or_default(
+            encryption,
+            AP1_DEFAULT_ENCRYPTION,
+            "AP1 encryption advertisement cannot be empty",
+            "AP1 encryption advertisement contains duplicates",
+        )?;
+
+        Ok(Self {
+            codecs_txt: encode_txt_values(&codecs, Ap1Codec::txt_value),
+            encryption_txt: encode_txt_values(&encryption, Ap1Encryption::txt_value),
+        })
+    }
+
+    pub(crate) fn codecs_txt(&self) -> &str {
+        &self.codecs_txt
+    }
+
+    pub(crate) fn encryption_txt(&self) -> &str {
+        &self.encryption_txt
+    }
+}
+
+impl Default for Ap1Advertisement {
+    fn default() -> Self {
+        Self {
+            codecs_txt: encode_txt_values(AP1_DEFAULT_CODECS, Ap1Codec::txt_value),
+            encryption_txt: encode_txt_values(AP1_DEFAULT_ENCRYPTION, Ap1Encryption::txt_value),
+        }
+    }
+}
+
+fn configured_or_default<T: Copy + Eq>(
+    configured: Option<Vec<T>>,
+    default: &[T],
+    empty_error: &'static str,
+    duplicate_error: &'static str,
+) -> Result<Vec<T>, ServerError> {
+    let values = configured.unwrap_or_else(|| default.to_vec());
+    if values.is_empty() {
+        return Err(ServerError::InvalidConfiguration(empty_error));
+    }
+    if values
+        .iter()
+        .enumerate()
+        .any(|(index, value)| values[..index].contains(value))
+    {
+        return Err(ServerError::InvalidConfiguration(duplicate_error));
+    }
+    Ok(values)
+}
+
+fn encode_txt_values<T: Copy>(values: &[T], encode: fn(T) -> &'static str) -> String {
+    let mut result = String::new();
+    for (index, value) in values.iter().copied().enumerate() {
+        if index != 0 {
+            result.push(',');
+        }
+        result.push_str(encode(value));
+    }
+    result
+}
 
 /// RTSP/mDNS protocol version for AirPlay 2.
 #[cfg(feature = "ap2")]

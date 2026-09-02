@@ -40,6 +40,10 @@ pub enum ServerError {
     /// Password has invalid length.
     #[error("invalid password length: {0}")]
     InvalidPassword(usize),
+
+    /// Builder options describe an unsupported or ambiguous server setup.
+    #[error("invalid server configuration: {0}")]
+    InvalidConfiguration(&'static str),
 }
 
 /// Errors from cryptographic operations (RSA, pairing, FairPlay, AES).

@@ -4,6 +4,7 @@
 //! `mdns-sd` (pure Rust) on Linux and other platforms.
 
 use crate::error::NetworkError;
+use crate::raop::config::Ap1Advertisement;
 use crate::util;
 
 // --- AP1 mDNS TXT record constants ---
@@ -12,19 +13,6 @@ use crate::util;
 pub(crate) const RAOP_TXTVERS: &str = "1";
 /// Audio channels.
 pub(crate) const RAOP_CH: &str = "2";
-/// Default codecs value (`cn`): PCM + ALAC (`0,1`). The receiver decodes both
-/// and auto-detects per connection from the SDP rtpmap. PCM is listed first
-/// because PipeWire's raop-discover picks the first `cn` and PipeWire can only
-/// *encode* PCM (`raop.audio.codec` "Needs to be PCM"), so offering PCM first
-/// matches what it actually sends. Override via
-/// `RaopServerBuilder::advertise_codecs`.
-pub(crate) const RAOP_CN_DEFAULT: &str = "0,1";
-/// Default encryption types value (`et`): "none" only. PipeWire's raop-sink
-/// selects the highest offered (5>4>1>0); its RSA path is broken (it stalls
-/// after OPTIONS without ever sending ANNOUNCE), so offering 1 by default wedges
-/// PipeWire senders. Unencrypted is fine for a trusted LAN audio bridge.
-/// Override via `RaopServerBuilder::advertise_encryption`.
-pub(crate) const RAOP_ET_DEFAULT: &str = "0";
 /// Server version flag.
 pub(crate) const RAOP_SV: &str = "false";
 /// Digest auth supported.
@@ -55,7 +43,6 @@ pub(crate) const RAOP_AP2_VN: &str = "65537";
 
 /// Global feature bitmask for AP1 discovery.
 pub(crate) const GLOBAL_FEATURES: u32 = 0x7;
-/// Device model identifier.
 /// Device model identifier.
 pub(crate) const GLOBAL_MODEL: &str = crate::raop::config::GLOBAL_MODEL;
 /// Software version string.
@@ -92,11 +79,19 @@ pub struct AirPlayServiceInfo {
 }
 
 impl AirPlayServiceInfo {
-    /// Create AP1 service info for mDNS registration.
-    ///
-    /// `cn` / `et` are the pre-joined codec and encryption TXT record values
-    /// (e.g. `"1"`, `"0,4"`), controlled by the server builder.
-    pub fn new(name: &str, port: u16, hwaddr: &[u8], password: bool, cn: &str, et: &str) -> Self {
+    /// Create AP1 service info with the default advertised capabilities.
+    pub fn new(name: &str, port: u16, hwaddr: &[u8], password: bool) -> Self {
+        Self::new_with_ap1_advertisement(name, port, hwaddr, password, &Ap1Advertisement::default())
+    }
+
+    /// Create AP1 service info with a validated server advertisement.
+    pub(crate) fn new_with_ap1_advertisement(
+        name: &str,
+        port: u16,
+        hwaddr: &[u8],
+        password: bool,
+        advertisement: &Ap1Advertisement,
+    ) -> Self {
         let hw_raop = util::hwaddr_raop(hwaddr);
         let hw_airplay = util::hwaddr_airplay(hwaddr);
         let raop_name = format!("{hw_raop}@{name}");
@@ -104,8 +99,8 @@ impl AirPlayServiceInfo {
         let raop_txt = vec![
             ("txtvers".into(), RAOP_TXTVERS.into()),
             ("ch".into(), RAOP_CH.into()),
-            ("cn".into(), cn.into()),
-            ("et".into(), et.into()),
+            ("cn".into(), advertisement.codecs_txt().into()),
+            ("et".into(), advertisement.encryption_txt().into()),
             ("sv".into(), RAOP_SV.into()),
             ("da".into(), RAOP_DA.into()),
             ("sr".into(), RAOP_SR.into()),
