@@ -8,8 +8,8 @@ keywords = ["airplay", "raop", "audio", "streaming", "apple"]
 categories = ["multimedia::audio", "network-programming"]
 readme = "README.md"
 homepage = "https://github.com/metaneutrons/shairplay-rust"
-repository = "https://github.com/fabianlindfors/shairplay"
-rust-version = "1.88"
+repository = "https://github.com/metaneutrons/shairplay-rust"
+rust-version = "1.94"
 
 [dependencies]
 # Async runtime

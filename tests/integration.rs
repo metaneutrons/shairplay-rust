@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
-use shairplay::{AudioFormat, AudioHandler, AudioSession, RaopServer, TrackMetadata};
+use shairplay::{AudioCodec, AudioFormat, AudioHandler, AudioSession, RaopServer, TrackMetadata};
 
 struct TestHandler {
     inits: Arc<Mutex<Vec<AudioFormat>>>,
@@ -38,6 +38,7 @@ impl AudioSession for TestSession {
 }
 
 struct TestState {
+    inits: Arc<Mutex<Vec<AudioFormat>>>,
     volumes: Arc<Mutex<Vec<f32>>>,
     metadata: Arc<Mutex<Vec<TrackMetadata>>>,
     coverart: Arc<Mutex<Vec<Vec<u8>>>>,
@@ -63,6 +64,7 @@ async fn start_server() -> (RaopServer, u16, TestState) {
     server.start().await.unwrap();
     let port = server.service_info().port;
     let state = TestState {
+        inits,
         volumes,
         metadata,
         coverart,
@@ -75,6 +77,13 @@ async fn send_rtsp(stream: &mut TcpStream, request: &str) -> String {
     let mut buf = vec![0u8; 4096];
     let n = stream.read(&mut buf).await.unwrap();
     String::from_utf8_lossy(&buf[..n]).to_string()
+}
+
+fn assert_server_header(response: &str) {
+    assert!(
+        response.lines().any(|line| line == "Server: AirTunes/105.1"),
+        "missing or unexpected Server header in: {response}"
+    );
 }
 
 fn empty_handler() -> Arc<TestHandler> {
@@ -193,6 +202,7 @@ async fn tcp_connect_and_options() {
 
     assert!(resp.contains("RTSP/1.0 200 OK"), "got: {resp}");
     assert!(resp.contains("CSeq: 1"));
+    assert_server_header(&resp);
     assert!(resp.contains("Public:"));
     assert!(resp.contains("ANNOUNCE"));
     assert!(resp.contains("SETUP"));
@@ -210,6 +220,7 @@ async fn unknown_rtsp_method_returns_404() {
 
     assert!(resp.contains("RTSP/1.0 404 Not Found"), "got: {resp}");
     assert!(resp.contains("CSeq: 7"));
+    assert_server_header(&resp);
 
     server.stop().await;
 }
@@ -226,6 +237,82 @@ async fn ap1_record_returns_200() {
     assert!(resp.contains("CSeq: 8"));
     // Parity with the AP2 RECORD response (clients expect this header).
     assert!(resp.contains("Audio-Latency: 0"), "got: {resp}");
+
+    server.stop().await;
+}
+
+#[tokio::test]
+#[serial]
+async fn ap1_unencrypted_l16_without_fmtp_initializes_audio() {
+    let (mut server, port, state) = start_server().await;
+    let mut stream = TcpStream::connect(format!("127.0.0.1:{port}")).await.unwrap();
+
+    let sdp = concat!(
+        "v=0\r\n",
+        "o=PipeWire 0 0 IN IP4 127.0.0.1\r\n",
+        "s=AirTunes\r\n",
+        "c=IN IP4 127.0.0.1\r\n",
+        "t=0 0\r\n",
+        "m=audio 0 RTP/AVP 96\r\n",
+        "a=rtpmap:96 L16/44100/2\r\n",
+    );
+    let announce = format!(
+        "ANNOUNCE rtsp://127.0.0.1/stream RTSP/1.0\r\nCSeq: 1\r\nContent-Type: application/sdp\r\nContent-Length: {}\r\n\r\n{sdp}",
+        sdp.len()
+    );
+    let response = send_rtsp(&mut stream, &announce).await;
+    assert!(response.contains("RTSP/1.0 200 OK"), "got: {response}");
+
+    let response = send_rtsp(
+        &mut stream,
+        "SETUP rtsp://127.0.0.1/stream RTSP/1.0\r\nCSeq: 2\r\nTransport: RTP/AVP/TCP;unicast;interleaved=0-1;mode=record\r\n\r\n",
+    )
+    .await;
+    assert!(response.contains("RTSP/1.0 200 OK"), "got: {response}");
+    assert!(response.contains("Transport: RTP/AVP/TCP"), "got: {response}");
+
+    {
+        let inits = state.inits.lock().unwrap();
+        assert_eq!(inits.len(), 1, "expected one initialized audio session");
+        assert_eq!(inits[0].codec, AudioCodec::Pcm);
+        assert_eq!(inits[0].bits, 32);
+        assert_eq!(inits[0].channels, 2);
+        assert_eq!(inits[0].sample_rate, 44_100);
+    }
+
+    server.stop().await;
+}
+
+#[tokio::test]
+#[serial]
+async fn ap1_l16_rejects_iv_without_encryption_key() {
+    let (mut server, port, state) = start_server().await;
+    let mut stream = TcpStream::connect(format!("127.0.0.1:{port}")).await.unwrap();
+
+    let sdp = concat!(
+        "v=0\r\n",
+        "o=PipeWire 0 0 IN IP4 127.0.0.1\r\n",
+        "s=AirTunes\r\n",
+        "c=IN IP4 127.0.0.1\r\n",
+        "t=0 0\r\n",
+        "m=audio 0 RTP/AVP 96\r\n",
+        "a=rtpmap:96 L16/44100/2\r\n",
+        "a=aesiv:AAAAAAAAAAAAAAAAAAAAAA==\r\n",
+    );
+    let announce = format!(
+        "ANNOUNCE rtsp://127.0.0.1/stream RTSP/1.0\r\nCSeq: 1\r\nContent-Type: application/sdp\r\nContent-Length: {}\r\n\r\n{sdp}",
+        sdp.len()
+    );
+    let response = send_rtsp(&mut stream, &announce).await;
+    assert!(response.contains("RTSP/1.0 200 OK"), "got: {response}");
+
+    let mut byte = [0u8; 1];
+    let read = tokio::time::timeout(std::time::Duration::from_secs(2), stream.read(&mut byte))
+        .await
+        .expect("server did not reject incomplete encryption negotiation")
+        .unwrap();
+    assert_eq!(read, 0, "expected the RTSP connection to close");
+    assert!(state.inits.lock().unwrap().is_empty());
 
     server.stop().await;
 }
@@ -315,6 +402,7 @@ async fn unauthorized_without_password_header() {
     let resp = send_rtsp(&mut stream, "ANNOUNCE /test HTTP/1.0\r\nCSeq: 1\r\n\r\n").await;
 
     assert!(resp.contains("401 Unauthorized"), "got: {resp}");
+    assert_server_header(&resp);
     assert!(resp.contains("WWW-Authenticate: Digest"));
 
     server.stop().await;
