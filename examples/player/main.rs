@@ -549,9 +549,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("📺 Video (screen mirroring) enabled");
         Some(frame)
     };
-    #[cfg(not(feature = "video"))]
-    let _video_frame: Option<()> = None;
-
     #[cfg(feature = "hls")]
     {
         builder = builder.hls_handler(Arc::new(MpvHlsHandler));
