@@ -77,6 +77,13 @@ async fn send_rtsp(stream: &mut TcpStream, request: &str) -> String {
     String::from_utf8_lossy(&buf[..n]).to_string()
 }
 
+fn assert_server_header(response: &str) {
+    assert!(
+        response.lines().any(|line| line == "Server: AirTunes/105.1"),
+        "missing or unexpected Server header in: {response}"
+    );
+}
+
 fn empty_handler() -> Arc<TestHandler> {
     Arc::new(TestHandler {
         inits: Arc::new(Mutex::new(Vec::new())),
@@ -146,6 +153,7 @@ async fn tcp_connect_and_options() {
 
     assert!(resp.contains("RTSP/1.0 200 OK"), "got: {resp}");
     assert!(resp.contains("CSeq: 1"));
+    assert_server_header(&resp);
     assert!(resp.contains("Public:"));
     assert!(resp.contains("ANNOUNCE"));
     assert!(resp.contains("SETUP"));
@@ -163,6 +171,7 @@ async fn unknown_rtsp_method_returns_404() {
 
     assert!(resp.contains("RTSP/1.0 404 Not Found"), "got: {resp}");
     assert!(resp.contains("CSeq: 7"));
+    assert_server_header(&resp);
 
     server.stop().await;
 }
@@ -268,6 +277,7 @@ async fn unauthorized_without_password_header() {
     let resp = send_rtsp(&mut stream, "ANNOUNCE /test HTTP/1.0\r\nCSeq: 1\r\n\r\n").await;
 
     assert!(resp.contains("401 Unauthorized"), "got: {resp}");
+    assert_server_header(&resp);
     assert!(resp.contains("WWW-Authenticate: Digest"));
 
     server.stop().await;

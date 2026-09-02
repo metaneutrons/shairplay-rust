@@ -103,7 +103,9 @@ impl VideoSession for DisplayVideoSession {
 
                         // Convert RGB → u32 pixels for minifb
                         let pixels: Vec<u32> = rgb
-                            .chunks_exact(3)
+                            .as_chunks::<3>()
+                            .0
+                            .iter()
                             .map(|c| ((c[0] as u32) << 16) | ((c[1] as u32) << 8) | c[2] as u32)
                             .collect();
 

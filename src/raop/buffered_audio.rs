@@ -279,7 +279,9 @@ async fn receive_loop(
         if let Some(pcm_data) = pcm {
             // Convert bytes to f32 samples for processing
             let samples: Vec<f32> = pcm_data
-                .chunks_exact(4)
+                .as_chunks::<4>()
+                .0
+                .iter()
                 .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
                 .collect();
 
