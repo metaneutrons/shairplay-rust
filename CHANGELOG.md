@@ -2,6 +2,10 @@
 
 ## [0.8.0](https://github.com/metaneutrons/shairplay-rust/compare/shairplay-v0.7.0...shairplay-v0.8.0) (2026-09-02)
 
+### Minimum Supported Rust Version
+
+* **MSRV:** Rust 1.94 or newer is required ([#47](https://github.com/metaneutrons/shairplay-rust/pull/47)) ([484bf4c](https://github.com/metaneutrons/shairplay-rust/commit/484bf4c13d3bff3f85424e940e5b77c9426d43b9))
+
 
 ### Features
 
