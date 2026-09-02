@@ -5,12 +5,12 @@
 //! - **M2** (164 bytes): key message → server replies with 32-byte header + echo
 //!
 //! After M2, the server can decrypt the 72-byte AES session key using the
-//! playfair algorithm (ported from the C reference implementation).
+//! FairPlay key-decryption algorithm implemented in Rust.
 
 use crate::crypto::fairplay_tables::*;
 use crate::error::CryptoError;
 
-// Reply messages from fairplay_playfair.c (4 modes x 142 bytes)
+// Precomputed reply messages for the four FairPlay modes.
 const REPLY_MESSAGE: [[u8; 142]; 4] = [
     [
         0x46, 0x50, 0x4c, 0x59, 0x03, 0x01, 0x02, 0x00, 0x00, 0x00, 0x00, 0x82, 0x02, 0x00, 0x0f, 0x9f, 0x3f, 0x9e,

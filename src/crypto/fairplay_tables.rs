@@ -1,4 +1,4 @@
-//! Auto-generated from playfair/omg_hax — FairPlay lookup tables
+//! Static lookup data used by the FairPlay key-decryption algorithm.
 #![allow(clippy::all, dead_code)]
 
 pub(crate) const Z_KEY: [u8; 16] = [
