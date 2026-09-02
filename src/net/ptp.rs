@@ -120,7 +120,11 @@ pub fn parse_follow_up(buf: &[u8]) -> Option<(u64, u64, i64)> {
     let seconds = (seconds_hi << 32) | seconds_lo;
     let timestamp_ns = seconds * 1_000_000_000 + nanoseconds;
 
-    Some((clock_id, timestamp_ns.wrapping_add(correction_ns as u64), correction_ns))
+    Some((
+        clock_id,
+        timestamp_ns.wrapping_add(correction_ns as u64),
+        correction_ns,
+    ))
 }
 
 /// Parse a PTP Announce message and extract the clock identity.
@@ -191,7 +195,12 @@ pub(crate) async fn spawn_ptp_sink() {
 /// Decode one inbound PTP datagram at `debug` (message type from the low nibble
 /// of byte 0, domain, source, length, plus Follow_Up/Announce detail). The first
 /// packet seen is noted once at `info` to confirm the sender engaged PTP.
-fn log_ptp_packet(port: u16, from: std::net::SocketAddr, buf: &[u8], seen: &std::sync::atomic::AtomicBool) {
+fn log_ptp_packet(
+    port: u16,
+    from: std::net::SocketAddr,
+    buf: &[u8],
+    seen: &std::sync::atomic::AtomicBool,
+) {
     if !seen.swap(true, std::sync::atomic::Ordering::Relaxed) {
         tracing::info!(%from, "PTP: receiving sender clock — AP2 timing path healthy");
     }
@@ -216,7 +225,10 @@ fn log_ptp_packet(port: u16, from: std::net::SocketAddr, buf: &[u8], seen: &std:
             "  ↳ Follow_Up"
         );
     } else if let Some(clock_id) = parse_announce(buf) {
-        tracing::debug!(clock_id = format!("{clock_id:016x}"), "  ↳ Announce (grandmaster)");
+        tracing::debug!(
+            clock_id = format!("{clock_id:016x}"),
+            "  ↳ Announce (grandmaster)"
+        );
     }
 }
 
@@ -367,7 +379,13 @@ pub struct PtpAnchor {
 
 impl PtpAnchor {
     /// Set anchor from SETRATEANCHORTI parameters.
-    pub fn new(clock_id: u64, rtp_time: u32, network_secs: u64, network_frac: u64, sample_rate: u32) -> Self {
+    pub fn new(
+        clock_id: u64,
+        rtp_time: u32,
+        network_secs: u64,
+        network_frac: u64,
+        sample_rate: u32,
+    ) -> Self {
         // Convert network time to nanoseconds (frac is 64-bit fixed point, MSB = 0.5)
         let frac_ns = ((network_frac >> 32) * 1_000_000_000) >> 32;
         let network_time_ns = network_secs * 1_000_000_000 + frac_ns;

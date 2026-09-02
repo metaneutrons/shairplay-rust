@@ -10,6 +10,8 @@ use tokio::sync::{Semaphore, watch};
 use crate::error::NetworkError;
 use crate::proto::http::{HttpRequest, HttpResponse};
 
+const MAX_ENCRYPTED_BUFFER_LEN: usize = 1024 * 1024;
+
 async fn write_bad_request_and_close<S: AsyncWrite + Unpin>(
     stream: &mut S,
     handler: Option<&mut dyn ConnectionHandler>,
@@ -99,7 +101,11 @@ pub(crate) trait HttpdCallbacks: Send + Sync + 'static {
     ///
     /// Takes `Arc<Self>` so the implementation can hand each connection a cheap
     /// shared handle to server-wide state instead of deep-copying it per connection.
-    fn conn_init(self: Arc<Self>, local: SocketAddr, remote: SocketAddr) -> Option<Box<dyn ConnectionHandler>>;
+    fn conn_init(
+        self: Arc<Self>,
+        local: SocketAddr,
+        remote: SocketAddr,
+    ) -> Option<Box<dyn ConnectionHandler>>;
 }
 
 /// Per-connection request handler. Equivalent to conn_request + conn_destroy.
@@ -161,13 +167,20 @@ impl HttpServer {
             return Ok(self.port);
         }
 
-        let bind_port = if port > 0 { port } else { self.bind_config.port };
+        let bind_port = if port > 0 {
+            port
+        } else {
+            self.bind_config.port
+        };
         let auto_port = self.bind_config.auto_port;
 
         // Determine bind addresses
         let addrs: Vec<IpAddr> = if self.bind_config.bind_addrs.is_empty() {
             // Default: all IPv4 + all IPv6
-            vec![IpAddr::V4(Ipv4Addr::UNSPECIFIED), IpAddr::V6(Ipv6Addr::UNSPECIFIED)]
+            vec![
+                IpAddr::V4(Ipv4Addr::UNSPECIFIED),
+                IpAddr::V6(Ipv6Addr::UNSPECIFIED),
+            ]
         } else {
             self.bind_config.bind_addrs.clone()
         };
@@ -197,7 +210,12 @@ impl HttpServer {
             if let Ok(addr) = listener.local_addr() {
                 tracing::debug!(%addr, "Listener bound");
             }
-            spawn_accept_loop(listener, callbacks.clone(), semaphore.clone(), shutdown_rx.clone());
+            spawn_accept_loop(
+                listener,
+                callbacks.clone(),
+                semaphore.clone(),
+                shutdown_rx.clone(),
+            );
         }
 
         Ok(actual_port)
@@ -223,7 +241,11 @@ impl HttpServer {
 }
 
 /// Try to bind a TCP listener, optionally auto-incrementing the port.
-async fn bind_listener(addr: IpAddr, start_port: u16, auto_port: bool) -> Result<TcpListener, NetworkError> {
+async fn bind_listener(
+    addr: IpAddr,
+    start_port: u16,
+    auto_port: bool,
+) -> Result<TcpListener, NetworkError> {
     let mut port = start_port;
     loop {
         match TcpListener::bind(SocketAddr::new(addr, port)).await {
@@ -235,16 +257,106 @@ async fn bind_listener(addr: IpAddr, start_port: u16, auto_port: bool) -> Result
         }
     }
 }
-/// Spawn a tokio task that accepts connections on the given listener.
-/// Drive a single accepted connection to completion: read → optional decrypt →
-/// HTTP/RTSP framing → dispatch → optional encrypt → write, looping until the peer
-/// closes or a fatal error occurs.
-///
-/// Generic over the byte stream (`AsyncRead + AsyncWrite`) so the framing/crypto
-/// state machine is decoupled from the socket and can be unit-tested against an
-/// in-memory duplex. The accept loop only accepts, permits, and spawns this.
-async fn process_connection<S>(mut stream: S, mut handler: Box<dyn ConnectionHandler>, remote: SocketAddr)
-where
+/// Dispatch every complete request currently buffered and write its response.
+async fn send_completed_responses<S: AsyncWrite + Unpin>(
+    stream: &mut S,
+    handler: &mut dyn ConnectionHandler,
+    request: &mut HttpRequest,
+) -> bool {
+    while request.is_complete() {
+        let method = request.method().unwrap_or("?").to_string();
+        let url = request.url().unwrap_or("?").to_string();
+        tracing::debug!(%method, %url, body_len = request.data().map_or(0, <[u8]>::len), "RTSP request");
+        let response = handler.conn_request(request);
+        let status = response.status_code();
+        tracing::debug!(%method, %url, status, "RTSP response");
+        let disconnect = response.get_disconnect();
+        let wire_out = if handler.is_encrypted() {
+            handler.encrypt_outgoing(response.get_data())
+        } else {
+            response.get_data().to_vec()
+        };
+        if wire_out.is_empty() {
+            tracing::warn!("Response encryption produced no output");
+            return false;
+        }
+        if stream.write_all(&wire_out).await.is_err() {
+            return false;
+        }
+        handler.after_response();
+        if disconnect {
+            let _ = stream.shutdown().await;
+            return false;
+        }
+        let leftover = request.take_leftover();
+        *request = HttpRequest::new();
+        if !leftover.is_empty() && request.add_data(&leftover).is_err() {
+            write_bad_request_and_close(stream, Some(handler)).await;
+            return false;
+        }
+    }
+    true
+}
+
+async fn add_request_data<S: AsyncWrite + Unpin>(
+    stream: &mut S,
+    handler: &mut dyn ConnectionHandler,
+    request: &mut HttpRequest,
+    data: &[u8],
+) -> bool {
+    if request.add_data(data).is_ok() {
+        tracing::trace!(
+            complete = request.is_complete(),
+            headers_complete = request.headers_complete(),
+            "Parsed request data"
+        );
+        return true;
+    }
+    tracing::warn!(data_len = data.len(), "HTTP parse error");
+    write_bad_request_and_close(stream, Some(handler)).await;
+    false
+}
+
+async fn ingest_encrypted_data<S: AsyncWrite + Unpin>(
+    stream: &mut S,
+    handler: &mut dyn ConnectionHandler,
+    request: &mut HttpRequest,
+    raw_buf: &mut Vec<u8>,
+    data: &[u8],
+) -> bool {
+    raw_buf.extend_from_slice(data);
+    if raw_buf.len() > MAX_ENCRYPTED_BUFFER_LEN {
+        tracing::warn!("Encrypted buffer exceeded 1 MB, dropping connection");
+        return false;
+    }
+    tracing::trace!(
+        raw_len = raw_buf.len(),
+        new_bytes = data.len(),
+        "Read encrypted data"
+    );
+    let Some((plain, consumed)) = handler.decrypt_incoming(raw_buf) else {
+        tracing::warn!(raw_len = raw_buf.len(), "Decryption failed");
+        return false;
+    };
+    if consumed > raw_buf.len() {
+        tracing::warn!(
+            consumed,
+            available = raw_buf.len(),
+            "Decryptor reported invalid byte count"
+        );
+        return false;
+    }
+    tracing::trace!(plain_len = plain.len(), consumed, "Decrypted request data");
+    raw_buf.drain(..consumed);
+    plain.is_empty() || add_request_data(stream, handler, request, &plain).await
+}
+
+/// Drive one accepted connection until the peer closes or processing fails.
+async fn process_connection<S>(
+    mut stream: S,
+    mut handler: Box<dyn ConnectionHandler>,
+    remote: SocketAddr,
+) where
     S: AsyncRead + AsyncWrite + Unpin,
 {
     let mut buf = [0u8; 4096];
@@ -252,86 +364,28 @@ where
     let mut raw_buf = Vec::new(); // accumulates encrypted data
 
     loop {
-        // Handle complete requests
-        while request.is_complete() {
-            let method = request.method().unwrap_or("?").to_string();
-            let url = request.url().unwrap_or("?").to_string();
-            tracing::debug!(%method, %url, body_len = request.data().map(|d| d.len()).unwrap_or(0), "RTSP request");
-            let response = handler.conn_request(&request);
-            let status = response.status_code();
-            tracing::debug!(%method, %url, status, "RTSP response");
-            let disconnect = response.get_disconnect();
-            let raw_out = response.get_data();
-            let wire_out = if handler.is_encrypted() {
-                handler.encrypt_outgoing(raw_out)
-            } else {
-                raw_out.to_vec()
-            };
-            if stream.write_all(&wire_out).await.is_err() {
-                return;
-            }
-            handler.after_response();
-            if disconnect {
-                let _ = stream.shutdown().await;
-                return;
-            }
-            let leftover = request.take_leftover();
-            request = HttpRequest::new();
-            if !leftover.is_empty() && request.add_data(&leftover).is_err() {
-                write_bad_request_and_close(&mut stream, Some(handler.as_mut())).await;
-                return;
-            }
+        if !send_completed_responses(&mut stream, handler.as_mut(), &mut request).await {
+            break;
         }
-
-        // Read from network
         let n = match stream.read(&mut buf).await {
             Ok(0) | Err(_) => break,
             Ok(n) => n,
         };
-
-        // Decrypt if encrypted, otherwise feed directly
-        if handler.is_encrypted() {
-            raw_buf.extend_from_slice(&buf[..n]);
-            if raw_buf.len() > 1024 * 1024 {
-                tracing::warn!("Encrypted buffer exceeded 1 MB, dropping connection");
-                break;
-            }
-            tracing::trace!(encrypted = true, raw_len = raw_buf.len(), new_bytes = n, "Read");
-            match handler.decrypt_incoming(&raw_buf) {
-                Some((plain, consumed)) => {
-                    tracing::trace!(plain_len = plain.len(), consumed, "Decrypt");
-                    if consumed > 0 {
-                        raw_buf.drain(..consumed);
-                    }
-                    if !plain.is_empty() {
-                        // (decrypted plaintext is intentionally NOT logged)
-                        if request.add_data(&plain).is_err() {
-                            tracing::warn!("HTTP parse error on decrypted data");
-                            write_bad_request_and_close(&mut stream, Some(handler.as_mut())).await;
-                            break;
-                        }
-                        tracing::trace!(
-                            complete = request.is_complete(),
-                            headers_complete = request.headers_complete(),
-                            "After add_data"
-                        );
-                    }
-                }
-                None => {
-                    tracing::warn!(
-                        "Decryption failed, raw_buf first bytes: {:02x?}",
-                        &raw_buf[..raw_buf.len().min(16)]
-                    );
-                    break;
-                }
-            }
+        let accepted = if handler.is_encrypted() {
+            ingest_encrypted_data(
+                &mut stream,
+                handler.as_mut(),
+                &mut request,
+                &mut raw_buf,
+                &buf[..n],
+            )
+            .await
         } else {
-            tracing::trace!(encrypted = false, n, "Read (plaintext)");
-            if request.add_data(&buf[..n]).is_err() {
-                tracing::warn!("HTTP parse error, first bytes: {:02x?}", &buf[..n.min(32)]);
-                write_bad_request_and_close(&mut stream, Some(handler.as_mut())).await;
-                break;
-            }
+            tracing::trace!(n, "Read plaintext data");
+            add_request_data(&mut stream, handler.as_mut(), &mut request, &buf[..n]).await
+        };
+        if !accepted {
+            break;
         }
     }
     tracing::info!(%remote, "Connection closed");
@@ -395,8 +449,6 @@ mod tests {
         }
     }
 
-    // The extracted `process_connection` seam lets the framing → dispatch → write
-    // loop be driven over an in-memory duplex, with no real socket.
     #[tokio::test]
     async fn round_trips_a_request() {
         let (mut client, server) = tokio::io::duplex(4096);
@@ -415,7 +467,10 @@ mod tests {
         let mut tmp = [0u8; 1024];
         let n = client.read(&mut tmp).await.unwrap();
         let resp = String::from_utf8_lossy(&tmp[..n]);
-        assert!(resp.starts_with("RTSP/1.0 200"), "unexpected response: {resp:?}");
+        assert!(
+            resp.starts_with("RTSP/1.0 200"),
+            "unexpected response: {resp:?}"
+        );
 
         drop(client); // peer close → server loop ends cleanly
         task.await.unwrap();
@@ -437,9 +492,47 @@ mod tests {
             .unwrap();
 
         let mut tmp = [0u8; 1024];
-        assert!(client.read(&mut tmp).await.unwrap() > 0, "expected a response");
+        assert!(
+            client.read(&mut tmp).await.unwrap() > 0,
+            "expected a response"
+        );
         // Handler requested disconnect → server shuts the stream → client sees EOF.
-        assert_eq!(client.read(&mut tmp).await.unwrap(), 0, "server should have closed");
+        assert_eq!(
+            client.read(&mut tmp).await.unwrap(),
+            0,
+            "server should have closed"
+        );
+        task.await.unwrap();
+    }
+
+    struct InvalidConsumptionHandler;
+
+    impl ConnectionHandler for InvalidConsumptionHandler {
+        fn conn_request(&mut self, _req: &HttpRequest) -> HttpResponse {
+            unreachable!("invalid encrypted input must not reach request dispatch")
+        }
+
+        fn decrypt_incoming(&mut self, data: &[u8]) -> Option<(Vec<u8>, usize)> {
+            Some((Vec::new(), data.len() + 1))
+        }
+
+        fn is_encrypted(&self) -> bool {
+            true
+        }
+    }
+
+    #[tokio::test]
+    async fn rejects_invalid_decryptor_consumption_without_panicking() {
+        let (mut client, server) = tokio::io::duplex(4096);
+        let remote: SocketAddr = "127.0.0.1:5000".parse().unwrap();
+        let task = tokio::spawn(process_connection(
+            server,
+            Box::new(InvalidConsumptionHandler),
+            remote,
+        ));
+
+        client.write_all(b"encrypted").await.unwrap();
+        drop(client);
         task.await.unwrap();
     }
 }

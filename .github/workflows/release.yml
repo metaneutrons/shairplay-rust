@@ -1,0 +1,247 @@
+# Manually dispatched by Release Please after it creates a tag and draft release.
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      verify-registry:
+        description: Verify crates.io Trusted Publishing for a prerelease test
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  metadata:
+    name: Verify release identity
+    runs-on: ubuntu-24.04
+    outputs:
+      crate_name: ${{ steps.metadata.outputs.crate_name }}
+      is_prerelease: ${{ steps.metadata.outputs.is_prerelease }}
+      tag: ${{ steps.metadata.outputs.tag }}
+      version: ${{ steps.metadata.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+      - name: Match tag, commit, package, and release manifest
+        id: metadata
+        env:
+          VERIFY_REGISTRY: ${{ inputs.verify-registry }}
+        run: |
+          set -euo pipefail
+          scripts/release/verify-metadata.sh \
+            "$GITHUB_REF_NAME" "$GITHUB_REF_TYPE" "$GITHUB_SHA" \
+            "$VERIFY_REGISTRY" "$GITHUB_OUTPUT"
+
+  candidate:
+    name: Build crate candidate
+    needs: [metadata]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - run: rustup show
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+      - name: Package and checksum the crate
+        env:
+          CRATE_NAME: ${{ needs.metadata.outputs.crate_name }}
+          VERSION: ${{ needs.metadata.outputs.version }}
+        run: |
+          set -euo pipefail
+          scripts/release/build-candidate.sh release "$CRATE_NAME" "$VERSION"
+          scripts/release/verify-candidate.sh release "$CRATE_NAME" "$VERSION"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: crate-candidate
+          path: release/
+          if-no-files-found: error
+          retention-days: 7
+
+  registry-preflight:
+    name: Verify crates.io publishing identity
+    needs: [metadata]
+    if: >-
+      needs.metadata.outputs.is_prerelease == 'false'
+      || inputs.verify-registry == true
+    runs-on: ubuntu-24.04
+    environment: release
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18 # v1.0.5
+        id: crates-auth
+      - name: Require an ephemeral crates.io token
+        env:
+          TOKEN: ${{ steps.crates-auth.outputs.token }}
+        run: |
+          set -euo pipefail
+          test -n "$TOKEN"
+
+  stage:
+    name: Publish verified GitHub prerelease
+    needs: [metadata, candidate, registry-preflight]
+    if: >-
+      !cancelled()
+      && needs.metadata.result == 'success'
+      && needs.candidate.result == 'success'
+      && (
+        (needs.metadata.outputs.is_prerelease == 'true'
+          && inputs.verify-registry != true
+          && needs.registry-preflight.result == 'skipped')
+        || needs.registry-preflight.result == 'success'
+      )
+    runs-on: ubuntu-24.04
+    environment: release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: crate-candidate
+          path: release
+      - name: Verify candidate inventory
+        env:
+          CRATE_NAME: ${{ needs.metadata.outputs.crate_name }}
+          VERSION: ${{ needs.metadata.outputs.version }}
+        run: |
+          set -euo pipefail
+          scripts/release/verify-candidate.sh release "$CRATE_NAME" "$VERSION"
+      - name: Fill the release draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IS_PRERELEASE: ${{ needs.metadata.outputs.is_prerelease }}
+          TAG: ${{ needs.metadata.outputs.tag }}
+        run: |
+          set -euo pipefail
+          state=$(gh release view "$TAG" --json isDraft --jq .isDraft 2>/dev/null || echo absent)
+          case "$state" in
+            absent)
+              if [[ "$IS_PRERELEASE" != true ]]; then
+                echo "::error::Stable releases must start from the Release Please draft."
+                exit 1
+              fi
+              gh release create "$TAG" --draft --verify-tag --title "$TAG" \
+                --notes "Release pipeline validation for $TAG."
+              ;;
+            true) ;;
+            false)
+              echo "::error::Release $TAG is already public and cannot be modified."
+              exit 1
+              ;;
+            *)
+              echo "::error::Unexpected release state: $state"
+              exit 1
+              ;;
+          esac
+          gh release upload "$TAG" release/* --clobber
+      - name: Verify draft assets and publish as prerelease
+        env:
+          CRATE_NAME: ${{ needs.metadata.outputs.crate_name }}
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.metadata.outputs.tag }}
+          VERSION: ${{ needs.metadata.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir downloaded
+          gh release download "$TAG" --dir downloaded
+          scripts/release/verify-candidate.sh downloaded "$CRATE_NAME" "$VERSION"
+          gh release edit "$TAG" --draft=false --prerelease --latest=false
+      - name: Verify public release bytes
+        env:
+          CRATE_NAME: ${{ needs.metadata.outputs.crate_name }}
+          REPOSITORY: ${{ github.repository }}
+          TAG: ${{ needs.metadata.outputs.tag }}
+          VERSION: ${{ needs.metadata.outputs.version }}
+        run: |
+          set -euo pipefail
+          crate="${CRATE_NAME}-${VERSION}.crate"
+          mkdir public
+          curl -fsSL "https://github.com/${REPOSITORY}/releases/download/${TAG}/${crate}" \
+            -o "public/$crate"
+          curl -fsSL "https://github.com/${REPOSITORY}/releases/download/${TAG}/SHA256SUMS" \
+            -o public/SHA256SUMS
+          test "$(wc -l < public/SHA256SUMS | tr -d ' ')" -eq 1
+          (cd public && sha256sum --check SHA256SUMS)
+
+  publish-crate:
+    name: Publish crate to crates.io
+    needs: [metadata, candidate, registry-preflight, stage]
+    if: ${{ needs.metadata.outputs.is_prerelease == 'false' }}
+    runs-on: ubuntu-24.04
+    environment: release
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - run: rustup show
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: crate-candidate
+          path: candidate
+      - uses: rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18 # v1.0.5
+        id: crates-auth
+      - name: Publish the exact verified source state
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.crates-auth.outputs.token }}
+          CRATE_NAME: ${{ needs.metadata.outputs.crate_name }}
+          VERSION: ${{ needs.metadata.outputs.version }}
+        run: |
+          set -euo pipefail
+          (cd candidate && sha256sum --check SHA256SUMS)
+          cargo package --workspace --locked
+          crate="${CRATE_NAME}-${VERSION}.crate"
+          test "$(sha256sum "target/package/$crate" | cut -d ' ' -f 1)" = \
+            "$(cut -d ' ' -f 1 candidate/SHA256SUMS)"
+          cargo publish --workspace --locked
+      - name: Verify the crates.io checksum
+        env:
+          CRATE_NAME: ${{ needs.metadata.outputs.crate_name }}
+          VERSION: ${{ needs.metadata.outputs.version }}
+        run: |
+          set -euo pipefail
+          expected=$(cut -d ' ' -f 1 candidate/SHA256SUMS)
+          actual=''
+          for attempt in {1..12}; do
+            actual=$(curl -fsSL \
+              "https://crates.io/api/v1/crates/${CRATE_NAME}/${VERSION}" \
+              | jq -r '.version.checksum')
+            [[ "$actual" == "$expected" ]] && break
+            [[ "$attempt" -lt 12 ]] && sleep 10
+          done
+          if [[ "$actual" != "$expected" ]]; then
+            echo "::error::crates.io checksum does not match the release candidate."
+            exit 1
+          fi
+
+  promote:
+    name: Promote verified stable release
+    needs: [metadata, publish-crate, stage]
+    if: ${{ needs.metadata.outputs.is_prerelease == 'false' }}
+    runs-on: ubuntu-24.04
+    environment: release
+    permissions:
+      contents: write
+    steps:
+      - name: Promote without changing assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.metadata.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release edit "$TAG" --prerelease=false --latest
+          gh release view "$TAG" --json isDraft,isPrerelease,isLatest \
+            --jq 'select(.isDraft == false and .isPrerelease == false and .isLatest == true)' \
+            >/dev/null

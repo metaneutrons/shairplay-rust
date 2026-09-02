@@ -15,8 +15,10 @@ const AIRPORT_KEY: &str = include_str!("../../airport.key");
 fn airport_rsakey() -> Arc<RsaKey> {
     use std::sync::OnceLock;
     static KEY: OnceLock<Arc<RsaKey>> = OnceLock::new();
-    KEY.get_or_init(|| Arc::new(RsaKey::from_pem(AIRPORT_KEY).expect("built-in airport.key is invalid")))
-        .clone()
+    KEY.get_or_init(|| {
+        Arc::new(RsaKey::from_pem(AIRPORT_KEY).expect("built-in airport.key is invalid"))
+    })
+    .clone()
 }
 
 fn random_hwaddr() -> Vec<u8> {
@@ -241,10 +243,13 @@ impl RaopServerBuilder {
             return Err(ServerError::InvalidPassword(password.len()).into());
         }
         #[cfg(feature = "ap2")]
-        if self.mode == AirPlayMode::AirPlay2 && (self.ap1_codecs.is_some() || self.ap1_encryption.is_some()) {
-            return Err(
-                ServerError::InvalidConfiguration("AP1 advertisement options require AirPlayMode::AirPlay1").into(),
-            );
+        if self.mode == AirPlayMode::AirPlay2
+            && (self.ap1_codecs.is_some() || self.ap1_encryption.is_some())
+        {
+            return Err(ServerError::InvalidConfiguration(
+                "AP1 advertisement options require AirPlayMode::AirPlay1",
+            )
+            .into());
         }
         let ap1_advertisement = Ap1Advertisement::try_new(self.ap1_codecs, self.ap1_encryption)?;
         let rsakey = airport_rsakey();
@@ -397,7 +402,8 @@ impl RaopServer {
         #[cfg(feature = "ap2")]
         {
             if self.mode == AirPlayMode::AirPlay2 {
-                let (_, vk) = crate::crypto::pairing_homekit::identity_keypair(&self.shared.identity_seed);
+                let (_, vk) =
+                    crate::crypto::pairing_homekit::identity_keypair(&self.shared.identity_seed);
                 let pk_hex: String = vk.as_bytes().iter().map(|b| format!("{b:02x}")).collect();
                 let pi = self.shared.pairing_id.clone();
                 return AirPlayServiceInfo::new_airplay2(

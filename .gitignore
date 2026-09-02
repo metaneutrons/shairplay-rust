@@ -1,7 +1,30 @@
-/target
-/fuzz/target
-/fuzz/corpus
-/fuzz/artifacts
-Cargo.lock
-.vscode/
+# Build output and compiler artifacts. Patterns are intentionally unanchored so
+# they also cover nested crates such as fuzz/.
+target/
+**/*.rs.bk
+*.pdb
+
+# Fuzzing output
+corpus/
+artifacts/
+
+# Coverage
+lcov.info
+coverage/
+*.profraw
+
+# Local environment and runtime state
+.env
+.env.*
+!.env.example
+*.log
 persistence.json
+
+# Editors and operating systems
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+*~

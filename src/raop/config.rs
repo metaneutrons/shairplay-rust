@@ -152,8 +152,16 @@ mod status_flag_tests {
 
     #[test]
     fn status_flags_match_apple_tv_structure() {
-        assert_eq!(ap2_status_flags(false, false), 0x004, "transient (PIN-less)");
-        assert_eq!(ap2_status_flags(false, true), 0x004, "transient (paired irrelevant)");
+        assert_eq!(
+            ap2_status_flags(false, false),
+            0x004,
+            "transient (PIN-less)"
+        );
+        assert_eq!(
+            ap2_status_flags(false, true),
+            0x004,
+            "transient (paired irrelevant)"
+        );
         assert_eq!(ap2_status_flags(true, false), 0x204, "PIN, unpaired");
         assert_eq!(
             ap2_status_flags(true, true),

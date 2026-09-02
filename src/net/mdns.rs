@@ -105,7 +105,10 @@ impl AirPlayServiceInfo {
             ("da".into(), RAOP_DA.into()),
             ("sr".into(), RAOP_SR.into()),
             ("ss".into(), RAOP_SS.into()),
-            ("pw".into(), (if password { "true" } else { "false" }).into()),
+            (
+                "pw".into(),
+                (if password { "true" } else { "false" }).into(),
+            ),
             ("vn".into(), RAOP_VN.into()),
             ("tp".into(), RAOP_TP.into()),
             ("md".into(), RAOP_MD.into()),
@@ -151,14 +154,18 @@ impl AirPlayServiceInfo {
         let features_lo = features & 0xFFFFFFFF;
         let features_hi = (features >> 32) & 0xFFFFFFFF;
         let ft = format!("0x{features_lo:X},0x{features_hi:X}");
-        let status_flags = crate::raop::config::ap2_status_flags(requires_pin_pairing, already_paired);
+        let status_flags =
+            crate::raop::config::ap2_status_flags(requires_pin_pairing, already_paired);
 
         let raop_txt = vec![
             // AP1 compatibility fields (allows classic AirPlay fallback)
             ("cn".into(), RAOP_AP2_CN.into()),
             ("da".into(), RAOP_DA.into()),
             ("et".into(), RAOP_AP2_ET.into()),
-            ("pw".into(), (if password { "true" } else { "false" }).into()),
+            (
+                "pw".into(),
+                (if password { "true" } else { "false" }).into(),
+            ),
             // AP2 fields
             ("ft".into(), ft.clone()),
             ("fv".into(), AP2_FW_VERSION.into()),
@@ -242,7 +249,10 @@ impl MdnsService {
 
     /// Register the _airplay._tcp mDNS service.
     #[cfg(feature = "ap2")]
-    pub(crate) fn register_airplay(&mut self, info: &AirPlayServiceInfo) -> Result<(), NetworkError> {
+    pub(crate) fn register_airplay(
+        &mut self,
+        info: &AirPlayServiceInfo,
+    ) -> Result<(), NetworkError> {
         let reg = astro_dnssd::DNSServiceBuilder::new("_airplay._tcp", info.port)
             .with_name(&info.airplay_name)
             .with_txt_record(txt_map(&info.airplay_txt))
@@ -285,7 +295,8 @@ pub(crate) struct MdnsService {
 impl MdnsService {
     /// Create a new mDNS service manager.
     pub(crate) fn new() -> Result<Self, NetworkError> {
-        let daemon = mdns_sd::ServiceDaemon::new().map_err(|e| NetworkError::Mdns(format!("{e}")))?;
+        let daemon =
+            mdns_sd::ServiceDaemon::new().map_err(|e| NetworkError::Mdns(format!("{e}")))?;
         Ok(Self {
             daemon,
             raop_fullname: None,
@@ -315,7 +326,10 @@ impl MdnsService {
 
     /// Register the _airplay._tcp mDNS service.
     #[cfg(feature = "ap2")]
-    pub(crate) fn register_airplay(&mut self, info: &AirPlayServiceInfo) -> Result<(), NetworkError> {
+    pub(crate) fn register_airplay(
+        &mut self,
+        info: &AirPlayServiceInfo,
+    ) -> Result<(), NetworkError> {
         let svc = mdns_sd::ServiceInfo::new(
             "_airplay._tcp.local.",
             &info.airplay_name,
@@ -375,7 +389,12 @@ mod tests {
             false,
         );
 
-        let find = |key: &str| info.raop_txt.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str());
+        let find = |key: &str| {
+            info.raop_txt
+                .iter()
+                .find(|(k, _)| k == key)
+                .map(|(_, v)| v.as_str())
+        };
 
         // AP2 _raop._tcp must have these fields (matching shairport-sync)
         assert_eq!(find("vn"), Some("65537")); // AP2 version, not "3"
@@ -401,7 +420,12 @@ mod tests {
             false,
         );
 
-        let find = |key: &str| info.airplay_txt.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str());
+        let find = |key: &str| {
+            info.airplay_txt
+                .iter()
+                .find(|(k, _)| k == key)
+                .map(|(_, v)| v.as_str())
+        };
 
         // AP2 _airplay._tcp required fields
         assert_eq!(find("acl"), Some("0"));
@@ -445,8 +469,18 @@ mod tests {
             true,
             false,
         );
-        let raop = |key: &str| info.raop_txt.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str());
-        let airplay = |key: &str| info.airplay_txt.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str());
+        let raop = |key: &str| {
+            info.raop_txt
+                .iter()
+                .find(|(k, _)| k == key)
+                .map(|(_, v)| v.as_str())
+        };
+        let airplay = |key: &str| {
+            info.airplay_txt
+                .iter()
+                .find(|(k, _)| k == key)
+                .map(|(_, v)| v.as_str())
+        };
 
         assert_eq!(raop("ft"), Some("0x405D4A00,0x14340"));
         assert_eq!(airplay("features"), Some("0x405D4A00,0x14340"));
@@ -467,8 +501,18 @@ mod tests {
             true,
             false,
         );
-        let raop = |key: &str| info.raop_txt.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str());
-        let airplay = |key: &str| info.airplay_txt.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str());
+        let raop = |key: &str| {
+            info.raop_txt
+                .iter()
+                .find(|(k, _)| k == key)
+                .map(|(_, v)| v.as_str())
+        };
+        let airplay = |key: &str| {
+            info.airplay_txt
+                .iter()
+                .find(|(k, _)| k == key)
+                .map(|(_, v)| v.as_str())
+        };
 
         assert_eq!(raop("ft"), Some("0x527FFEE6,0x0"));
         assert_eq!(airplay("features"), Some("0x527FFEE6,0x0"));

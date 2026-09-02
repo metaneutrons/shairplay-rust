@@ -1,59 +1,67 @@
 version: 2
+
 updates:
-  - package-ecosystem: "cargo"
-    directory: "/"
-    target-branch: "main"
+  - package-ecosystem: cargo
+    directory: /
     commit-message:
-      prefix: "chore"
+      prefix: chore
     schedule:
-      interval: "weekly"
+      interval: weekly
+      day: monday
+      time: "05:00"
     open-pull-requests-limit: 5
     versioning-strategy: increase
+    cooldown:
+      default-days: 3
+      semver-major-days: 7
     groups:
-      production-dependencies:
-        dependency-type: "production"
-        update-types:
-          - "minor"
-          - "patch"
-      development-dependencies:
-        dependency-type: "development"
-        update-types:
-          - "minor"
-          - "patch"
+      rust-minor-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]
 
-  - package-ecosystem: "cargo"
-    directory: "/fuzz"
-    target-branch: "main"
+  - package-ecosystem: cargo
+    directory: /fuzz
     commit-message:
-      prefix: "chore"
+      prefix: chore
     schedule:
-      interval: "weekly"
+      interval: weekly
+      day: monday
+      time: "05:05"
     open-pull-requests-limit: 5
     versioning-strategy: increase
+    cooldown:
+      default-days: 3
+      semver-major-days: 7
     groups:
-      production-dependencies:
-        dependency-type: "production"
-        update-types:
-          - "minor"
-          - "patch"
-      development-dependencies:
-        dependency-type: "development"
-        update-types:
-          - "minor"
-          - "patch"
+      fuzz-minor-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]
 
-  - package-ecosystem: "github-actions"
-    directory: "/"
-    target-branch: "main"
+  - package-ecosystem: rust-toolchain
+    directory: /
     commit-message:
-      prefix: "chore"
+      prefix: chore
     schedule:
-      interval: "weekly"
+      interval: weekly
+      day: monday
+      time: "05:10"
+    open-pull-requests-limit: 1
+    cooldown:
+      default-days: 14
+
+  - package-ecosystem: github-actions
+    directory: /
+    commit-message:
+      prefix: chore
+    schedule:
+      interval: weekly
+      day: monday
+      time: "05:15"
     open-pull-requests-limit: 5
+    cooldown:
+      default-days: 3
+      semver-major-days: 7
     groups:
-      actions:
-        patterns:
-          - "*"
-        update-types:
-          - "minor"
-          - "patch"
+      github-actions-minor-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]

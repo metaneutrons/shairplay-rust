@@ -1,12 +1,22 @@
 # Security Policy
 
+## Supported Versions
+
+Security fixes are provided for the latest release. Reports affecting an older
+release should state whether the issue also reproduces on the current version.
+
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability, please report it responsibly:
+Report vulnerabilities privately through
+[GitHub Security Advisories](https://github.com/metaneutrons/shairplay-rust/security/advisories/new).
 
-1. **Do not** open a public GitHub issue
-2. Email the maintainer or use [GitHub Security Advisories](https://github.com/metaneutrons/shairplay-rust/security/advisories/new)
-3. Include steps to reproduce and potential impact
+Please include the affected versions and features, reproduction steps, impact,
+and any known mitigations. Remove credentials, pairing material, and personal
+data before submitting the report.
+
+You should receive an acknowledgement within three business days. Status
+updates will follow at least every seven days until the report is resolved or
+closed. Please do not disclose the issue publicly before a coordinated release.
 
 ## Scope
 

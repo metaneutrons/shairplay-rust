@@ -227,12 +227,18 @@ mod tests {
     fn feature_bits_correct() {
         assert_eq!(1u64 << (AirPlayFeature::SupportsAirPlayAudio as u8), 1 << 9);
         assert_eq!(1u64 << (AirPlayFeature::SupportsPtp as u8), 1 << 41);
-        assert_eq!(1u64 << (AirPlayFeature::SupportsHangdogRemoteControl as u8), 1 << 58);
+        assert_eq!(
+            1u64 << (AirPlayFeature::SupportsHangdogRemoteControl as u8),
+            1 << 58
+        );
     }
 
     #[test]
     fn features_from_builds_bitmask() {
-        let f = features_from(&[AirPlayFeature::SupportsAirPlayAudio, AirPlayFeature::SupportsPtp]);
+        let f = features_from(&[
+            AirPlayFeature::SupportsAirPlayAudio,
+            AirPlayFeature::SupportsPtp,
+        ]);
         assert!(f & (1 << 9) != 0);
         assert!(f & (1 << 41) != 0);
         assert!(f & (1 << 0) == 0);

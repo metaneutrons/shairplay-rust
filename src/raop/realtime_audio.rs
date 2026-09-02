@@ -46,7 +46,12 @@ fn alac_decoder_info(config: &OutputConfig) -> [u8; 48] {
 }
 
 /// Run the realtime audio receiver loop.
-pub(crate) async fn run(socket: UdpSocket, shk: [u8; 32], handler: Arc<dyn AudioHandler>, output_config: OutputConfig) {
+pub(crate) async fn run(
+    socket: UdpSocket,
+    shk: [u8; 32],
+    handler: Arc<dyn AudioHandler>,
+    output_config: OutputConfig,
+) {
     let cipher = ChaCha20Poly1305::new((&shk).into());
     let mut buf = vec![0u8; 4096];
     let mut decoder: Option<crate::codec::alac::AlacDecoder> = None;
@@ -81,9 +86,13 @@ pub(crate) async fn run(socket: UdpSocket, shk: [u8; 32], handler: Arc<dyn Audio
             src_sr = output_config.source_sample_rate;
             src_ch = output_config.channels;
             let target_sr = output_config.sample_rate.unwrap_or(src_sr);
-            out_ch = output_config.max_channels.map(|m| src_ch.min(m)).unwrap_or(src_ch);
+            out_ch = output_config
+                .max_channels
+                .map(|m| src_ch.min(m))
+                .unwrap_or(src_ch);
 
-            let mut alac = crate::codec::alac::AlacDecoder::new(output_config.bit_depth as i32, src_ch as i32);
+            let mut alac =
+                crate::codec::alac::AlacDecoder::new(output_config.bit_depth as i32, src_ch as i32);
             let decoder_info = alac_decoder_info(&output_config);
             alac.set_info(&decoder_info);
             decoder = Some(alac);
@@ -109,14 +118,22 @@ pub(crate) async fn run(socket: UdpSocket, shk: [u8; 32], handler: Arc<dyn Audio
         };
 
         // Decode ALAC → f32 PCM
-        let Some(mut samples) = decoder.as_mut().and_then(|d| d.decode_frame_f32(&alac_data)) else {
+        let Some(mut samples) = decoder
+            .as_mut()
+            .and_then(|d| d.decode_frame_f32(&alac_data))
+        else {
             continue;
         };
 
         // Mix down + resample to the output format.
         #[cfg(feature = "resample")]
         {
-            samples = crate::codec::resample::mixdown_and_resample(samples, src_ch, out_ch, &mut resampler);
+            samples = crate::codec::resample::mixdown_and_resample(
+                samples,
+                src_ch,
+                out_ch,
+                &mut resampler,
+            );
         }
 
         // Deliver immediately (realtime = no playout buffer)

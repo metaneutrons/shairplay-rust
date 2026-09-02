@@ -51,7 +51,7 @@ fn discover_dacp_port(dacp_id: &str, _remote_ip: std::net::IpAddr) -> Option<u16
                 }
             }
             Err(_) => break,
-            _ => continue,
+            _ => {}
         }
     }
     let _ = daemon.shutdown();
@@ -117,9 +117,9 @@ impl DacpClient {
 
     /// Send a raw DACP command from synchronous callbacks.
     pub(crate) fn command_blocking(&self, path: &str) -> Result<(), NetworkError> {
-        let addr = self
-            .addr
-            .ok_or_else(|| NetworkError::Mdns("DACP not discovered yet — call discover() first".into()))?;
+        let addr = self.addr.ok_or_else(|| {
+            NetworkError::Mdns("DACP not discovered yet — call discover() first".into())
+        })?;
 
         let mut stream = std::net::TcpStream::connect_timeout(&addr, Duration::from_secs(2))?;
         stream.set_write_timeout(Some(Duration::from_secs(2)))?;

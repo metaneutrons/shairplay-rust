@@ -60,58 +60,71 @@ impl RaopShared {
     /// Register a newly-started audio session, stopping the previous one so only
     /// the latest connection's playout feeds the audio output.
     pub(crate) fn set_active_audio(&self, stop: Box<dyn FnOnce() + Send>) {
-        let prev = self.active_audio.lock().ok().and_then(|mut g| g.replace(stop));
+        let prev = self
+            .active_audio
+            .lock()
+            .ok()
+            .and_then(|mut g| g.replace(stop));
         if let Some(prev) = prev {
             prev();
         }
     }
 }
 
-impl HttpdCallbacks for RaopShared {
-    fn conn_init(self: Arc<Self>, local: SocketAddr, remote: SocketAddr) -> Option<Box<dyn ConnectionHandler>> {
-        let local_bytes = match local.ip() {
-            std::net::IpAddr::V4(ip) => ip.octets().to_vec(),
-            std::net::IpAddr::V6(ip) => ip.octets().to_vec(),
-        };
-        let remote_bytes = match remote.ip() {
-            std::net::IpAddr::V4(ip) => ip.octets().to_vec(),
-            std::net::IpAddr::V6(ip) => ip.octets().to_vec(),
-        };
+fn socket_ip_bytes(address: SocketAddr) -> Vec<u8> {
+    match address.ip() {
+        std::net::IpAddr::V4(ip) => ip.octets().to_vec(),
+        std::net::IpAddr::V6(ip) => ip.octets().to_vec(),
+    }
+}
 
-        let conn = handlers::RaopConnection {
-            raop_rtp: None,
-            fairplay: FairPlay::new(),
-            pairing: self.pairing.create_session(),
-            local_addr: local_bytes,
-            remote_addr: remote_bytes,
-            remote_socket: remote,
-            nonce: digest::generate_nonce(MAX_NONCE_LEN),
-            #[cfg(feature = "ap2")]
-            srp_server: None,
-            #[cfg(feature = "ap2")]
-            pair_verify: None,
-            #[cfg(feature = "ap2")]
-            ap2_shared_secret: None,
-            #[cfg(feature = "ap2")]
-            pair_verify_secret: None,
-            #[cfg(feature = "ap2")]
-            is_ap2: false,
-            #[cfg(feature = "ap2")]
-            playout_cmd: None,
-            #[cfg(feature = "ap2")]
-            event_sender: None,
-            #[cfg(feature = "video")]
-            ekey: None,
-            #[cfg(feature = "video")]
-            eiv: None,
-            #[cfg(feature = "hls")]
-            hls_state: crate::raop::hls::HlsState::new(),
-            shared: self.clone(),
-        };
+fn new_raop_connection(
+    shared: Arc<RaopShared>,
+    local: SocketAddr,
+    remote: SocketAddr,
+) -> handlers::RaopConnection {
+    handlers::RaopConnection {
+        raop_rtp: None,
+        fairplay: FairPlay::new(),
+        pairing: shared.pairing.create_session(),
+        local_addr: socket_ip_bytes(local),
+        remote_addr: socket_ip_bytes(remote),
+        remote_socket: remote,
+        nonce: digest::generate_nonce(MAX_NONCE_LEN),
+        #[cfg(feature = "ap2")]
+        srp_server: None,
+        #[cfg(feature = "ap2")]
+        pair_verify: None,
+        #[cfg(feature = "ap2")]
+        ap2_shared_secret: None,
+        #[cfg(feature = "ap2")]
+        pair_verify_secret: None,
+        #[cfg(feature = "ap2")]
+        is_ap2: false,
+        #[cfg(feature = "ap2")]
+        playout_cmd: None,
+        #[cfg(feature = "ap2")]
+        event_sender: None,
+        #[cfg(feature = "video")]
+        ekey: None,
+        #[cfg(feature = "video")]
+        eiv: None,
+        #[cfg(feature = "hls")]
+        hls_state: crate::raop::hls::HlsState::new(),
+        shared,
+    }
+}
+
+impl HttpdCallbacks for RaopShared {
+    fn conn_init(
+        self: Arc<Self>,
+        local: SocketAddr,
+        remote: SocketAddr,
+    ) -> Option<Box<dyn ConnectionHandler>> {
         let remote_str = remote.ip().to_string();
-        conn.shared.handler.on_client_connected(&remote_str);
+        self.handler.on_client_connected(&remote_str);
         Some(Box::new(RaopConnectionHandler {
-            conn,
+            conn: new_raop_connection(self, local, remote),
             remote_addr: remote_str,
             connected_at: std::time::Instant::now(),
             #[cfg(feature = "ap2")]
@@ -136,7 +149,10 @@ struct RaopConnectionHandler {
 
 impl Drop for RaopConnectionHandler {
     fn drop(&mut self) {
-        self.conn.shared.handler.on_client_disconnected(&self.remote_addr);
+        self.conn
+            .shared
+            .handler
+            .on_client_disconnected(&self.remote_addr);
     }
 }
 
@@ -182,7 +198,10 @@ impl ConnectionHandler for RaopConnectionHandler {
         if self.cipher.is_none()
             && let Some(secret) = self.pending_secret.take()
         {
-            tracing::debug!(secret_len = secret.len(), "Activating cipher from pending_secret");
+            tracing::debug!(
+                secret_len = secret.len(),
+                "Activating cipher from pending_secret"
+            );
             match crate::crypto::chacha_transport::EncryptedChannel::control(&secret) {
                 Ok(ch) => {
                     tracing::info!("Encrypted RTSP transport activated");

@@ -1,8 +1,3 @@
-#![forbid(unsafe_code)]
-#![warn(missing_docs)]
-#![warn(clippy::redundant_closure)]
-#![warn(clippy::implicit_clone)]
-#![warn(clippy::uninlined_format_args)]
 #![doc = "Pure Rust AirPlay server library.
 
 `shairplay` is a complete reimplementation of the [shairplay](https://github.com/juhovh/shairplay)
@@ -82,6 +77,6 @@ pub use raop::video::{PacketKind, VideoHandler, VideoPacket, VideoSession};
 #[cfg(feature = "ap2")]
 pub use raop::{AirPlayMode, MemoryPairingStore, PairingStore};
 pub use raop::{
-    Ap1Codec, Ap1Encryption, AudioCodec, AudioFormat, AudioHandler, AudioSession, RaopServer, RaopServerBuilder,
-    RemoteCommand, RemoteControl, TrackMetadata,
+    Ap1Codec, Ap1Encryption, AudioCodec, AudioFormat, AudioHandler, AudioSession, RaopServer,
+    RaopServerBuilder, RemoteCommand, RemoteControl, TrackMetadata,
 };

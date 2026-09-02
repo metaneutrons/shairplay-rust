@@ -25,7 +25,10 @@ pub(crate) fn handle_server_info(
         "model".into(),
         plist::Value::String(crate::raop::config::GLOBAL_MODEL.into()),
     );
-    dict.insert("osBuildVersion".into(), plist::Value::String("12B435".into()));
+    dict.insert(
+        "osBuildVersion".into(),
+        plist::Value::String("12B435".into()),
+    );
     dict.insert("protovers".into(), plist::Value::String("1.0".into()));
     dict.insert(
         "srcvers".into(),
@@ -51,7 +54,10 @@ pub(crate) fn handle_play(
     let dict = plist_val.as_dictionary()?;
 
     let url = dict.get("Content-Location").and_then(|v| v.as_string())?;
-    let start_pos = dict.get("Start-Position").and_then(|v| v.as_real()).unwrap_or(0.0) as f32;
+    let start_pos = dict
+        .get("Start-Position")
+        .and_then(|v| v.as_real())
+        .unwrap_or(0.0) as f32;
 
     let session_id = request.header("X-Apple-Session-ID").map(|s| s.to_string());
 
@@ -85,10 +91,22 @@ pub(crate) fn handle_playback_info(
     dict.insert("duration".into(), plist::Value::Real(duration));
     dict.insert("position".into(), plist::Value::Real(position));
     dict.insert("rate".into(), plist::Value::Real(rate));
-    dict.insert("readyToPlay".into(), plist::Value::Integer((ready as i64).into()));
-    dict.insert("playbackBufferEmpty".into(), plist::Value::Integer(0_i64.into()));
-    dict.insert("playbackBufferFull".into(), plist::Value::Integer(1_i64.into()));
-    dict.insert("playbackLikelyToKeepUp".into(), plist::Value::Integer(1_i64.into()));
+    dict.insert(
+        "readyToPlay".into(),
+        plist::Value::Integer((ready as i64).into()),
+    );
+    dict.insert(
+        "playbackBufferEmpty".into(),
+        plist::Value::Integer(0_i64.into()),
+    );
+    dict.insert(
+        "playbackBufferFull".into(),
+        plist::Value::Integer(1_i64.into()),
+    );
+    dict.insert(
+        "playbackLikelyToKeepUp".into(),
+        plist::Value::Integer(1_i64.into()),
+    );
 
     // loadedTimeRanges
     let mut loaded = plist::Dictionary::new();
@@ -182,7 +200,10 @@ mod tests {
 
     #[test]
     fn parse_query_float_basic() {
-        assert_eq!(parse_query_float("/scrub?position=12.5", "position"), Some(12.5));
+        assert_eq!(
+            parse_query_float("/scrub?position=12.5", "position"),
+            Some(12.5)
+        );
         assert_eq!(parse_query_float("/rate?value=1.0", "value"), Some(1.0));
         assert_eq!(parse_query_float("/rate?value=0.0", "value"), Some(0.0));
     }
@@ -195,7 +216,10 @@ mod tests {
 
     #[test]
     fn parse_query_float_multiple_params() {
-        assert_eq!(parse_query_float("/x?a=1&position=2.75&b=2", "position"), Some(2.75));
+        assert_eq!(
+            parse_query_float("/x?a=1&position=2.75&b=2", "position"),
+            Some(2.75)
+        );
     }
 
     #[test]

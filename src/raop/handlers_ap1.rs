@@ -38,7 +38,8 @@ pub(crate) struct RaopConnection {
     #[cfg(feature = "ap2")]
     pub(crate) is_ap2: bool,
     #[cfg(feature = "ap2")]
-    pub(crate) playout_cmd: Option<tokio::sync::mpsc::UnboundedSender<crate::raop::buffered_audio::PlayoutCommand>>,
+    pub(crate) playout_cmd:
+        Option<tokio::sync::mpsc::UnboundedSender<crate::raop::buffered_audio::PlayoutCommand>>,
     #[cfg(feature = "ap2")]
     pub(crate) event_sender: Option<crate::raop::event_channel::EventSender>,
     #[cfg(feature = "video")]
@@ -271,7 +272,9 @@ pub(crate) fn handle_announce(
     // loud static. Only a sender that advertised no key at all is unencrypted.
     if encryption_expected {
         let Some(key_bytes) = key_bytes.filter(|k| k.len() >= 16) else {
-            tracing::warn!("ANNOUNCE: encryption negotiated but AES key unavailable/short; aborting");
+            tracing::warn!(
+                "ANNOUNCE: encryption negotiated but AES key unavailable/short; aborting"
+            );
             response.set_disconnect(true);
             return None;
         };
@@ -288,7 +291,10 @@ pub(crate) fn handle_announce(
         };
         aesiv.copy_from_slice(&iv_bytes[..16]);
     }
-    let encryption = encryption_expected.then_some(RtpEncryption { key: aeskey, iv: aesiv });
+    let encryption = encryption_expected.then_some(RtpEncryption {
+        key: aeskey,
+        iv: aesiv,
+    });
 
     // Destroy existing RTP session if any
     conn.raop_rtp = None;
@@ -308,12 +314,16 @@ pub(crate) fn handle_announce(
 
     if conn.raop_rtp.is_none() {
         let fmtp = fmtp.unwrap_or("<missing>");
-        tracing::warn!(rtpmap, fmtp, "ANNOUNCE: unsupported or malformed audio format");
+        tracing::warn!(
+            rtpmap,
+            fmtp,
+            "ANNOUNCE: unsupported or malformed audio format"
+        );
         conn.shared
             .handler
-            .on_error(&ShairplayError::Codec(CodecError::UnsupportedFormat(format!(
-                "ANNOUNCE rtpmap={rtpmap} fmtp={fmtp}"
-            ))));
+            .on_error(&ShairplayError::Codec(CodecError::UnsupportedFormat(
+                format!("ANNOUNCE rtpmap={rtpmap} fmtp={fmtp}"),
+            )));
         response.set_disconnect(true);
     }
     None
@@ -329,9 +339,15 @@ pub(crate) fn handle_setup(
     tracing::debug!(transport, "AP1 SETUP");
 
     // Check for DACP remote control headers
-    if let (Some(dacp_id), Some(active_remote)) = (request.header("DACP-ID"), request.header("Active-Remote")) {
+    if let (Some(dacp_id), Some(active_remote)) =
+        (request.header("DACP-ID"), request.header("Active-Remote"))
+    {
         let addr_bytes = crate::raop::rtp::remote_addr_bytes(&conn.remote_socket.ip().to_string());
-        let remote = std::sync::Arc::new(crate::raop::DacpRemoteControl::new(dacp_id, active_remote, &addr_bytes));
+        let remote = std::sync::Arc::new(crate::raop::DacpRemoteControl::new(
+            dacp_id,
+            active_remote,
+            &addr_bytes,
+        ));
         conn.shared.handler.on_remote_control(remote);
     }
 
@@ -510,7 +526,11 @@ mod tests {
         msg.extend_from_slice(body);
         let mut req = HttpRequest::new();
         req.add_data(&msg).unwrap();
-        assert_eq!(req.data().map(|d| d.len()), Some(body.len()), "body should parse");
+        assert_eq!(
+            req.data().map(|d| d.len()),
+            Some(body.len()),
+            "body should parse"
+        );
         req
     }
 
@@ -529,7 +549,11 @@ mod tests {
 
         assert!(out.is_none(), "malformed fp-setup should decline");
         let errors = handler.errors.lock().unwrap();
-        assert_eq!(errors.len(), 1, "on_error should fire exactly once: {errors:?}");
+        assert_eq!(
+            errors.len(),
+            1,
+            "on_error should fire exactly once: {errors:?}"
+        );
         assert!(
             errors[0].contains("unsupported version"),
             "on_error should carry the FairPlay error, got: {:?}",

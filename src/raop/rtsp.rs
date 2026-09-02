@@ -205,7 +205,10 @@ pub(crate) fn dispatch(conn: &mut RaopConnection, request: &HttpRequest) -> Http
             url,
             authorization,
         ) {
-            let auth_str = format!("Digest realm=\"{}\", nonce=\"{}\"", DIGEST_REALM, conn.nonce);
+            let auth_str = format!(
+                "Digest realm=\"{}\", nonce=\"{}\"",
+                DIGEST_REALM, conn.nonce
+            );
             response = new_response(401, "Unauthorized", cseq);
             response.add_header("WWW-Authenticate", &auth_str);
             response.finish(None);
@@ -215,10 +218,10 @@ pub(crate) fn dispatch(conn: &mut RaopConnection, request: &HttpRequest) -> Http
 
     // --- Middleware: Apple-Challenge ---
     if let Some(challenge) = request.header("Apple-Challenge")
-        && let Ok(sig) = conn
-            .shared
-            .rsakey
-            .sign_challenge(challenge, &conn.local_addr, &conn.shared.hwaddr)
+        && let Ok(sig) =
+            conn.shared
+                .rsakey
+                .sign_challenge(challenge, &conn.local_addr, &conn.shared.hwaddr)
     {
         response.add_header("Apple-Response", &sig);
     }
@@ -281,7 +284,10 @@ fn resolve_handler(
 fn resolve_setup(conn: &RaopConnection, request: &HttpRequest) -> Option<Handler> {
     #[cfg(feature = "ap2")]
     {
-        let is_plist = request.data().map(|d| d.starts_with(b"bplist")).unwrap_or(false);
+        let is_plist = request
+            .data()
+            .map(|d| d.starts_with(b"bplist"))
+            .unwrap_or(false);
         if conn.is_ap2 || is_plist {
             return Some(handlers_ap2::handle_setup);
         }
@@ -312,7 +318,11 @@ fn handle_flush_inline(conn: &mut RaopConnection, request: &HttpRequest) {
 }
 
 /// TEARDOWN: stop RTP, stop buffered audio, close connection.
-fn handle_teardown(conn: &mut RaopConnection, _request: &HttpRequest, response: &mut HttpResponse) -> Option<Vec<u8>> {
+fn handle_teardown(
+    conn: &mut RaopConnection,
+    _request: &HttpRequest,
+    response: &mut HttpResponse,
+) -> Option<Vec<u8>> {
     response.add_header("Connection", "close");
     response.set_disconnect(true);
     if let Some(mut rtp) = conn.raop_rtp.take() {

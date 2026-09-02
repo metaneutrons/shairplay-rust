@@ -20,6 +20,21 @@ A complete AirPlay audio and video receiver as a Rust library. Supports both cla
 
 > ⚠️ **Pre-1.0 notice:** This crate is under active development. Minor version bumps (e.g. 0.1 → 0.2) may include breaking API changes. Pin your dependency to a specific minor version (`shairplay = "0.2"`) and review the [CHANGELOG](CHANGELOG.md) before upgrading.
 
+## Installation
+
+Add the current release from crates.io:
+
+```bash
+cargo add shairplay
+```
+
+Enable only the protocol capabilities required by the application:
+
+```bash
+cargo add shairplay --features ap2
+cargo add shairplay --features video
+```
+
 ## Features
 
 |  | Feature | Details |
@@ -251,10 +266,14 @@ cargo test --features video   # All tests
 ## Development
 
 ```sh
-git config core.hooksPath .githooks
+brew install lefthook gitleaks
+lefthook install
+lefthook run pre-push
 ```
 
-This enables pre-commit (auto-format) and pre-push (fmt check + clippy + audit) hooks.
+The hooks enforce commit format, staged-file hygiene, secret scanning,
+formatting, and the bounded pre-push checks. CI runs the complete feature,
+platform, dependency-policy, and coverage matrix.
 
 ## Acknowledgments
 

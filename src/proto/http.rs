@@ -46,7 +46,9 @@ impl HttpRequest {
         }
         self.buffer.extend_from_slice(data);
         if !self.headers_complete && self.buffer.len() > MAX_HEADER_BYTES {
-            return Err(ProtocolError::InvalidRtsp("request headers exceed 64 KiB".into()));
+            return Err(ProtocolError::InvalidRtsp(
+                "request headers exceed 64 KiB".into(),
+            ));
         }
 
         if !self.headers_complete {
@@ -86,9 +88,14 @@ impl HttpRequest {
                 }
 
                 // Extract Content-Length
-                self.content_length = self.headers.get("content-length").and_then(|v| v.parse::<usize>().ok());
+                self.content_length = self
+                    .headers
+                    .get("content-length")
+                    .and_then(|v| v.parse::<usize>().ok());
                 if self.content_length.unwrap_or(0) > MAX_BODY_BYTES {
-                    return Err(ProtocolError::InvalidRtsp("request body exceeds 32 MiB".into()));
+                    return Err(ProtocolError::InvalidRtsp(
+                        "request body exceeds 32 MiB".into(),
+                    ));
                 }
 
                 self.headers_complete = true;
@@ -153,7 +160,9 @@ impl HttpRequest {
 
     /// Get a header value by name. Header lookup is ASCII case-insensitive.
     pub fn header(&self, name: &str) -> Option<&str> {
-        self.headers.get(&name.to_ascii_lowercase()).map(|s| s.as_str())
+        self.headers
+            .get(&name.to_ascii_lowercase())
+            .map(|s| s.as_str())
     }
 
     /// The request body, if present.

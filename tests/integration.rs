@@ -81,7 +81,9 @@ async fn send_rtsp(stream: &mut TcpStream, request: &str) -> String {
 
 fn assert_server_header(response: &str) {
     assert!(
-        response.lines().any(|line| line == "Server: AirTunes/105.1"),
+        response
+            .lines()
+            .any(|line| line == "Server: AirTunes/105.1"),
         "missing or unexpected Server header in: {response}"
     );
 }
@@ -116,9 +118,14 @@ fn raop_txt<'a>(info: &'a shairplay::AirPlayServiceInfo, key: &str) -> &'a str {
         .expect("expected RAOP TXT record")
 }
 
-fn assert_invalid_configuration(result: Result<RaopServer, shairplay::ShairplayError>, expected: &str) {
+fn assert_invalid_configuration(
+    result: Result<RaopServer, shairplay::ShairplayError>,
+    expected: &str,
+) {
     match result {
-        Err(shairplay::ShairplayError::Server(shairplay::error::ServerError::InvalidConfiguration(reason))) => {
+        Err(shairplay::ShairplayError::Server(
+            shairplay::error::ServerError::InvalidConfiguration(reason),
+        )) => {
             assert_eq!(reason, expected)
         }
         Err(error) => panic!("expected invalid configuration, got {error:?}"),
@@ -146,13 +153,19 @@ fn default_hwaddr_is_locally_administered_unicast() {
 fn ap1_advertisement_defaults_and_custom_order_are_stable() {
     use shairplay::{Ap1Codec, Ap1Encryption};
 
-    let default = ap1_builder("DefaultAdvertisement").build(empty_handler()).unwrap();
+    let default = ap1_builder("DefaultAdvertisement")
+        .build(empty_handler())
+        .unwrap();
     assert_eq!(raop_txt(&default.service_info(), "cn"), "0,1");
     assert_eq!(raop_txt(&default.service_info(), "et"), "0");
 
     let custom = ap1_builder("CustomAdvertisement")
         .advertise_codecs([Ap1Codec::Alac, Ap1Codec::Pcm])
-        .advertise_encryption([Ap1Encryption::FairPlay, Ap1Encryption::None, Ap1Encryption::Rsa])
+        .advertise_encryption([
+            Ap1Encryption::FairPlay,
+            Ap1Encryption::None,
+            Ap1Encryption::Rsa,
+        ])
         .build(empty_handler())
         .unwrap();
     assert_eq!(raop_txt(&custom.service_info(), "cn"), "1,0");
@@ -238,7 +251,10 @@ async fn server_start_stop() {
     assert_eq!(info.port, port);
     assert_eq!(info.airplay_name, "IntegrationTest");
     assert_eq!(
-        info.raop_txt.iter().find(|(k, _)| k == "cn").map(|(_, v)| v.as_str()),
+        info.raop_txt
+            .iter()
+            .find(|(k, _)| k == "cn")
+            .map(|(_, v)| v.as_str()),
         Some("0,1")
     );
 
@@ -251,7 +267,9 @@ async fn server_start_stop() {
 async fn tcp_connect_and_options() {
     let (mut server, port, _) = start_server().await;
 
-    let mut stream = TcpStream::connect(format!("127.0.0.1:{port}")).await.unwrap();
+    let mut stream = TcpStream::connect(format!("127.0.0.1:{port}"))
+        .await
+        .unwrap();
     let resp = send_rtsp(&mut stream, "OPTIONS * HTTP/1.0\r\nCSeq: 1\r\n\r\n").await;
 
     assert!(resp.contains("RTSP/1.0 200 OK"), "got: {resp}");
@@ -269,7 +287,9 @@ async fn tcp_connect_and_options() {
 async fn unknown_rtsp_method_returns_404() {
     let (mut server, port, _) = start_server().await;
 
-    let mut stream = TcpStream::connect(format!("127.0.0.1:{port}")).await.unwrap();
+    let mut stream = TcpStream::connect(format!("127.0.0.1:{port}"))
+        .await
+        .unwrap();
     let resp = send_rtsp(&mut stream, "BOGUS * RTSP/1.0\r\nCSeq: 7\r\n\r\n").await;
 
     assert!(resp.contains("RTSP/1.0 404 Not Found"), "got: {resp}");
@@ -284,7 +304,9 @@ async fn unknown_rtsp_method_returns_404() {
 async fn ap1_record_returns_200() {
     let (mut server, port, _) = start_server().await;
 
-    let mut stream = TcpStream::connect(format!("127.0.0.1:{port}")).await.unwrap();
+    let mut stream = TcpStream::connect(format!("127.0.0.1:{port}"))
+        .await
+        .unwrap();
     let resp = send_rtsp(&mut stream, "RECORD /test RTSP/1.0\r\nCSeq: 8\r\n\r\n").await;
 
     assert!(resp.contains("RTSP/1.0 200 OK"), "got: {resp}");
@@ -299,7 +321,9 @@ async fn ap1_record_returns_200() {
 #[serial]
 async fn ap1_unencrypted_l16_without_fmtp_initializes_audio() {
     let (mut server, port, state) = start_server().await;
-    let mut stream = TcpStream::connect(format!("127.0.0.1:{port}")).await.unwrap();
+    let mut stream = TcpStream::connect(format!("127.0.0.1:{port}"))
+        .await
+        .unwrap();
 
     let sdp = concat!(
         "v=0\r\n",
@@ -323,7 +347,10 @@ async fn ap1_unencrypted_l16_without_fmtp_initializes_audio() {
     )
     .await;
     assert!(response.contains("RTSP/1.0 200 OK"), "got: {response}");
-    assert!(response.contains("Transport: RTP/AVP/TCP"), "got: {response}");
+    assert!(
+        response.contains("Transport: RTP/AVP/TCP"),
+        "got: {response}"
+    );
 
     {
         let inits = state.inits.lock().unwrap();
@@ -341,7 +368,9 @@ async fn ap1_unencrypted_l16_without_fmtp_initializes_audio() {
 #[serial]
 async fn ap1_l16_rejects_iv_without_encryption_key() {
     let (mut server, port, state) = start_server().await;
-    let mut stream = TcpStream::connect(format!("127.0.0.1:{port}")).await.unwrap();
+    let mut stream = TcpStream::connect(format!("127.0.0.1:{port}"))
+        .await
+        .unwrap();
 
     let sdp = concat!(
         "v=0\r\n",
@@ -376,7 +405,9 @@ async fn ap1_l16_rejects_iv_without_encryption_key() {
 async fn oversized_header_returns_400_and_closes_connection() {
     let (mut server, port, _) = start_server().await;
 
-    let mut stream = TcpStream::connect(format!("127.0.0.1:{port}")).await.unwrap();
+    let mut stream = TcpStream::connect(format!("127.0.0.1:{port}"))
+        .await
+        .unwrap();
     let request = format!(
         "OPTIONS * RTSP/1.0\r\nCSeq: 1\r\nX-Oversized: {}\r\n\r\n",
         "A".repeat(65 * 1024)
@@ -394,12 +425,13 @@ async fn oversized_header_returns_400_and_closes_connection() {
 async fn pair_setup_returns_public_key() {
     let (mut server, port, _) = start_server().await;
 
-    let mut stream = TcpStream::connect(format!("127.0.0.1:{port}")).await.unwrap();
+    let mut stream = TcpStream::connect(format!("127.0.0.1:{port}"))
+        .await
+        .unwrap();
 
     // Send 32 bytes of dummy pair-setup data
     let body = [0x42u8; 32];
-    let req =
-        "POST /pair-setup HTTP/1.0\r\nCSeq: 1\r\nContent-Length: 32\r\nContent-Type: application/octet-stream\r\n\r\n";
+    let req = "POST /pair-setup HTTP/1.0\r\nCSeq: 1\r\nContent-Length: 32\r\nContent-Type: application/octet-stream\r\n\r\n";
     stream.write_all(req.as_bytes()).await.unwrap();
     stream.write_all(&body).await.unwrap();
 
@@ -418,7 +450,9 @@ async fn pair_setup_returns_public_key() {
 async fn fp_setup_returns_142_bytes() {
     let (mut server, port, _) = start_server().await;
 
-    let mut stream = TcpStream::connect(format!("127.0.0.1:{port}")).await.unwrap();
+    let mut stream = TcpStream::connect(format!("127.0.0.1:{port}"))
+        .await
+        .unwrap();
 
     // FairPlay setup: 16 bytes with version=3, mode=0
     let mut body = [0u8; 16];
@@ -451,7 +485,9 @@ async fn unauthorized_without_password_header() {
     server.start().await.unwrap();
     let port = server.service_info().port;
 
-    let mut stream = TcpStream::connect(format!("127.0.0.1:{port}")).await.unwrap();
+    let mut stream = TcpStream::connect(format!("127.0.0.1:{port}"))
+        .await
+        .unwrap();
     // ANNOUNCE without Authorization header should get 401
     let resp = send_rtsp(&mut stream, "ANNOUNCE /test HTTP/1.0\r\nCSeq: 1\r\n\r\n").await;
 
@@ -470,7 +506,11 @@ async fn multiple_connections() {
     // Open 3 concurrent connections
     let mut streams = Vec::new();
     for _ in 0..3 {
-        streams.push(TcpStream::connect(format!("127.0.0.1:{port}")).await.unwrap());
+        streams.push(
+            TcpStream::connect(format!("127.0.0.1:{port}"))
+                .await
+                .unwrap(),
+        );
     }
 
     // All should respond to OPTIONS
@@ -487,7 +527,9 @@ async fn multiple_connections() {
 async fn teardown_closes_connection() {
     let (mut server, port, _) = start_server().await;
 
-    let mut stream = TcpStream::connect(format!("127.0.0.1:{port}")).await.unwrap();
+    let mut stream = TcpStream::connect(format!("127.0.0.1:{port}"))
+        .await
+        .unwrap();
     let resp = send_rtsp(&mut stream, "TEARDOWN /test HTTP/1.0\r\nCSeq: 1\r\n\r\n").await;
     assert!(resp.contains("200 OK"));
     assert!(resp.contains("Connection: close"));
@@ -515,7 +557,9 @@ mod ap2_tests {
     async fn ap2_transient_pair_setup() {
         let (mut server, port, _) = start_server().await;
 
-        let mut stream = TcpStream::connect(format!("127.0.0.1:{port}")).await.unwrap();
+        let mut stream = TcpStream::connect(format!("127.0.0.1:{port}"))
+            .await
+            .unwrap();
 
         // M1: State=1, Method=0, Flags=0x10 (transient)
         let mut m1_tlv = TlvValues::new();
@@ -563,8 +607,18 @@ mod ap2_tests {
             .build(empty_handler())
             .unwrap();
         let info = server.service_info();
-        let raop = |key: &str| info.raop_txt.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str());
-        let airplay = |key: &str| info.airplay_txt.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str());
+        let raop = |key: &str| {
+            info.raop_txt
+                .iter()
+                .find(|(k, _)| k == key)
+                .map(|(_, v)| v.as_str())
+        };
+        let airplay = |key: &str| {
+            info.airplay_txt
+                .iter()
+                .find(|(k, _)| k == key)
+                .map(|(_, v)| v.as_str())
+        };
 
         let expected_features = if cfg!(feature = "video") {
             "0x527FFEE6,0x0"
@@ -591,7 +645,9 @@ mod ap2_tests {
         server.start().await.unwrap();
         let port = server.service_info().port;
 
-        let mut stream = TcpStream::connect(format!("127.0.0.1:{port}")).await.unwrap();
+        let mut stream = TcpStream::connect(format!("127.0.0.1:{port}"))
+            .await
+            .unwrap();
         let resp = send_rtsp(
             &mut stream,
             "POST /pair-pin-start RTSP/1.0\r\nCSeq: 1\r\nContent-Length: 0\r\n\r\n",
@@ -600,7 +656,10 @@ mod ap2_tests {
 
         assert!(resp.contains("RTSP/1.0 200 OK"), "got: {resp}");
         assert!(resp.contains("CSeq: 1"), "got: {resp}");
-        assert!(resp.contains("Content-Type: application/octet-stream"), "got: {resp}");
+        assert!(
+            resp.contains("Content-Type: application/octet-stream"),
+            "got: {resp}"
+        );
 
         server.stop().await;
     }
@@ -611,10 +670,17 @@ mod ap2_tests {
         use num_bigint::BigUint;
 
         let (mut server, port, _) = start_server().await;
-        let mut stream = TcpStream::connect(format!("127.0.0.1:{port}")).await.unwrap();
+        let mut stream = TcpStream::connect(format!("127.0.0.1:{port}"))
+            .await
+            .unwrap();
 
         // Helper to send RTSP and read response
-        async fn rtsp_post(stream: &mut TcpStream, url: &str, cseq: u32, body: &[u8]) -> (String, Vec<u8>) {
+        async fn rtsp_post(
+            stream: &mut TcpStream,
+            url: &str,
+            cseq: u32,
+            body: &[u8],
+        ) -> (String, Vec<u8>) {
             let req = format!(
                 "POST {} RTSP/1.0\r\nCSeq: {}\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\n\r\n",
                 url,
@@ -737,8 +803,14 @@ mod ap2_tests {
         // Verify M4: State=4, Proof present (no error)
         let m4 = TlvValues::decode(&body).expect("M4 TLV");
         assert_eq!(m4.get_type(TlvType::State), Some(&[4u8][..]));
-        assert!(m4.get_type(TlvType::Proof).is_some(), "M4 should have server proof");
-        assert!(m4.get_type(TlvType::Error).is_none(), "M4 should not have error");
+        assert!(
+            m4.get_type(TlvType::Proof).is_some(),
+            "M4 should have server proof"
+        );
+        assert!(
+            m4.get_type(TlvType::Error).is_none(),
+            "M4 should not have error"
+        );
 
         // Verify server proof
         let server_proof = m4.get_type(TlvType::Proof).unwrap();
@@ -747,7 +819,11 @@ mod ap2_tests {
         h.update(client_m);
         h.update(session_key);
         let expected_hamk: [u8; 64] = h.finalize().into();
-        assert_eq!(server_proof, &expected_hamk[..], "Server proof should match");
+        assert_eq!(
+            server_proof,
+            &expected_hamk[..],
+            "Server proof should match"
+        );
 
         server.stop().await;
     }
@@ -756,7 +832,9 @@ mod ap2_tests {
     #[serial]
     async fn ap2_get_info_plist_correctness() {
         let (mut server, port, _) = start_server().await;
-        let mut stream = TcpStream::connect(format!("127.0.0.1:{port}")).await.unwrap();
+        let mut stream = TcpStream::connect(format!("127.0.0.1:{port}"))
+            .await
+            .unwrap();
 
         let req = "GET /info RTSP/1.0\r\nCSeq: 1\r\n\r\n";
         stream.write_all(req.as_bytes()).await.unwrap();
@@ -776,7 +854,9 @@ mod ap2_tests {
 
         let cursor = std::io::Cursor::new(body);
         let plist_val = plist::Value::from_reader(cursor).expect("body should be a valid plist");
-        let dict = plist_val.as_dictionary().expect("plist should be a dictionary");
+        let dict = plist_val
+            .as_dictionary()
+            .expect("plist should be a dictionary");
 
         assert!(dict.contains_key("pi"), "should contain pairing_id (pi)");
         assert!(dict.contains_key("name"), "should contain name");
@@ -799,7 +879,12 @@ mod ap2_tests {
         use sha2::{Digest, Sha512};
 
         // Helper to send RTSP and read response
-        async fn rtsp_post(stream: &mut TcpStream, url: &str, cseq: u32, body: &[u8]) -> (String, Vec<u8>) {
+        async fn rtsp_post(
+            stream: &mut TcpStream,
+            url: &str,
+            cseq: u32,
+            body: &[u8],
+        ) -> (String, Vec<u8>) {
             let req = format!(
                 "POST {} RTSP/1.0\r\nCSeq: {}\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\n\r\n",
                 url,
@@ -921,7 +1006,10 @@ mod ap2_tests {
         // Verify M4: State=4, Proof present (no error)
         let m4 = TlvValues::decode(&body).expect("M4 TLV");
         assert_eq!(m4.get_type(TlvType::State), Some(&[4u8][..]));
-        assert!(m4.get_type(TlvType::Proof).is_some(), "M4 should have server proof");
+        assert!(
+            m4.get_type(TlvType::Proof).is_some(),
+            "M4 should have server proof"
+        );
 
         session_key
     }
@@ -930,7 +1018,9 @@ mod ap2_tests {
     #[serial]
     async fn ap2_remote_control_only_setup() {
         let (mut server, port, _) = start_server().await;
-        let mut stream = TcpStream::connect(format!("127.0.0.1:{port}")).await.unwrap();
+        let mut stream = TcpStream::connect(format!("127.0.0.1:{port}"))
+            .await
+            .unwrap();
 
         // Perform pairing first to populate conn.ap2_shared_secret and get session key
         let session_key = perform_transient_pairing(&mut stream).await;
@@ -974,13 +1064,23 @@ mod ap2_tests {
         let plist_val = plist::Value::from_reader(cursor).expect("SETUP body should be plist");
         let resp_dict = plist_val.as_dictionary().expect("should be dictionary");
 
-        assert!(resp_dict.contains_key("eventPort"), "should contain eventPort");
-        let event_port = resp_dict.get("eventPort").unwrap().as_unsigned_integer().unwrap();
+        assert!(
+            resp_dict.contains_key("eventPort"),
+            "should contain eventPort"
+        );
+        let event_port = resp_dict
+            .get("eventPort")
+            .unwrap()
+            .as_unsigned_integer()
+            .unwrap();
         assert!(event_port > 0, "eventPort should be valid");
 
         // Verify we can connect to that event port!
         let event_stream = TcpStream::connect(format!("127.0.0.1:{event_port}")).await;
-        assert!(event_stream.is_ok(), "should be able to connect to eventPort");
+        assert!(
+            event_stream.is_ok(),
+            "should be able to connect to eventPort"
+        );
 
         server.stop().await;
     }
@@ -990,7 +1090,9 @@ mod ap2_tests {
 #[serial]
 async fn set_parameter_volume_calls_handler() {
     let (mut server, port, state) = start_server().await;
-    let mut stream = TcpStream::connect(format!("127.0.0.1:{port}")).await.unwrap();
+    let mut stream = TcpStream::connect(format!("127.0.0.1:{port}"))
+        .await
+        .unwrap();
 
     let body = "volume: -20.000000\r\n";
     let req = format!(
@@ -1015,12 +1117,14 @@ async fn set_parameter_volume_calls_handler() {
 #[serial]
 async fn set_parameter_metadata_calls_handler() {
     let (mut server, port, state) = start_server().await;
-    let mut stream = TcpStream::connect(format!("127.0.0.1:{port}")).await.unwrap();
+    let mut stream = TcpStream::connect(format!("127.0.0.1:{port}"))
+        .await
+        .unwrap();
 
     // Minimal DMAP: mlit container with minm("Test")
     let dmap: &[u8] = &[
-        0x6d, 0x6c, 0x69, 0x74, 0x00, 0x00, 0x00, 0x0c, 0x6d, 0x69, 0x6e, 0x6d, 0x00, 0x00, 0x00, 0x04, 0x54, 0x65,
-        0x73, 0x74,
+        0x6d, 0x6c, 0x69, 0x74, 0x00, 0x00, 0x00, 0x0c, 0x6d, 0x69, 0x6e, 0x6d, 0x00, 0x00, 0x00,
+        0x04, 0x54, 0x65, 0x73, 0x74,
     ];
     let header = format!(
         "SET_PARAMETER rtsp://127.0.0.1/{} RTSP/1.0\r\nCSeq: 1\r\nContent-Type: application/x-dmap-tagged\r\nContent-Length: {}\r\n\r\n",
@@ -1047,7 +1151,9 @@ async fn set_parameter_metadata_calls_handler() {
 #[serial]
 async fn set_parameter_coverart_calls_handler() {
     let (mut server, port, state) = start_server().await;
-    let mut stream = TcpStream::connect(format!("127.0.0.1:{port}")).await.unwrap();
+    let mut stream = TcpStream::connect(format!("127.0.0.1:{port}"))
+        .await
+        .unwrap();
 
     let jpeg = b"\xff\xd8\xff\xe0fake-jpeg-data";
     let header = format!(
