@@ -72,6 +72,11 @@ const ROUTES: &[Route] = &[
         path: "/fp-setup",
         handler: handlers::handle_fp_setup,
     },
+    Route {
+        method: "POST",
+        path: "/auth-setup",
+        handler: handlers::handle_auth_setup,
+    },
     // --- AP2 POST endpoints ---
     #[cfg(feature = "ap2")]
     Route {

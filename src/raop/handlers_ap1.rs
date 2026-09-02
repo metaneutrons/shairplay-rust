@@ -173,6 +173,46 @@ pub(crate) fn handle_fp_setup(
     }
 }
 
+/// AP1 MFi auth-setup gate (`POST /auth-setup`).
+///
+/// PipeWire's `module-raop-sink` with `raop.encryption.type=auth_setup` (and
+/// AirPlay hardware that requires it) POSTs a fixed 33-byte body — `0x01`
+/// followed by a 32-byte curve25519 public key — and needs only a `200 OK`
+/// before it proceeds to ANNOUNCE. It never inspects the reply body (verified
+/// against PipeWire 1.6.7's source and an on-wire capture: a non-200, e.g.
+/// shairport-sync's `500`, makes it abort immediately).
+///
+/// We reply `200` with an ephemeral X25519 public key: a plausible auth-setup
+/// shape carrying **no Apple MFi material** (which we neither have nor embed).
+/// The audio that follows in this mode is unencrypted — the sender sends no
+/// `rsaaeskey`/`aesiv` — and is handled by the existing passthrough path.
+///
+/// A sender that *cryptographically validates* the reply (genuine Apple gear)
+/// cannot be satisfied here and should use FairPlay (`/fp-setup`) or RSA/none.
+pub(crate) fn handle_auth_setup(
+    _conn: &mut RaopConnection,
+    request: &HttpRequest,
+    response: &mut HttpResponse,
+) -> Option<Vec<u8>> {
+    // Expected shape: 0x01 || 32-byte curve25519 public key. We don't use the
+    // key (no shared-secret audio encryption in this mode); log if it deviates
+    // but still answer 200 so lenient senders proceed.
+    if let Some(data) = request.data()
+        && (data.len() != 33 || data[0] != 0x01)
+    {
+        tracing::debug!(
+            len = data.len(),
+            first = data.first().copied().unwrap_or(0),
+            "auth-setup: unexpected body shape"
+        );
+    }
+    use rand::rngs::OsRng;
+    let secret = x25519_dalek::StaticSecret::random_from_rng(OsRng);
+    let public = x25519_dalek::PublicKey::from(&secret);
+    response.add_header("Content-Type", "application/octet-stream");
+    Some(public.as_bytes().to_vec())
+}
+
 /// RTSP OPTIONS: return supported methods.
 pub(crate) fn handle_options(
     _conn: &mut RaopConnection,
@@ -205,7 +245,10 @@ pub(crate) fn handle_announce(
     let remote = sdp.connection()?;
     let rtpmap = sdp.rtpmap()?;
     let fmtp = sdp.fmtp()?;
-    let aesiv_str = sdp.aesiv()?;
+    // aesiv/rsaaeskey are absent when the sender negotiated no encryption
+    // (e.g. PipeWire's et=0 mode). Keep them optional; an all-zero aeskey
+    // signals the RTP buffer to pass audio through without AES decryption.
+    let aesiv_str = sdp.aesiv();
 
     let mut aeskey = [0u8; 16];
     let mut aesiv = [0u8; 16];
@@ -239,15 +282,33 @@ pub(crate) fn handle_announce(
         None
     };
 
-    let key_bytes = key_bytes?;
-    if key_bytes.len() >= 16 {
+    // Did the sender negotiate encryption? If it advertised a key
+    // (`a=rsaaeskey`/`a=fpaeskey`) but we can't recover a usable key+iv, we must
+    // fail the connection rather than silently fall back to the unencrypted
+    // passthrough — feeding still-encrypted bytes to the decoder as PCM plays
+    // loud static. Only a sender that advertised no key at all is unencrypted.
+    let encryption_expected = sdp.rsaaeskey().is_some() || sdp.fpaeskey().is_some();
+    if encryption_expected {
+        let Some(key_bytes) = key_bytes.filter(|k| k.len() >= 16) else {
+            tracing::warn!("ANNOUNCE: encryption negotiated but AES key unavailable/short; aborting");
+            response.set_disconnect(true);
+            return None;
+        };
         aeskey.copy_from_slice(&key_bytes[..16]);
-    }
 
-    let iv_bytes = conn.shared.rsakey.decode(aesiv_str).ok()?;
-    if iv_bytes.len() >= 16 {
+        // An encrypted stream carries `a=aesiv`; require it to decode cleanly.
+        let iv_ok = aesiv_str
+            .and_then(|iv_str| conn.shared.rsakey.decode(iv_str).ok())
+            .filter(|iv| iv.len() >= 16);
+        let Some(iv_bytes) = iv_ok else {
+            tracing::warn!("ANNOUNCE: encryption negotiated but aesiv missing/malformed; aborting");
+            response.set_disconnect(true);
+            return None;
+        };
         aesiv.copy_from_slice(&iv_bytes[..16]);
     }
+    // Otherwise no key was negotiated: aeskey/aesiv stay all-zero and the RTP
+    // buffer passes audio through without AES decryption.
 
     // Destroy existing RTP session if any
     conn.raop_rtp = None;
