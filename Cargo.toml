@@ -9,7 +9,7 @@ categories = ["multimedia::audio", "network-programming"]
 readme = "README.md"
 homepage = "https://github.com/metaneutrons/shairplay-rust"
 repository = "https://github.com/fabianlindfors/shairplay"
-rust-version = "1.88"
+rust-version = "1.94"
 
 [dependencies]
 # Async runtime
