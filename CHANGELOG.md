@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.8.0](https://github.com/metaneutrons/shairplay-rust/compare/shairplay-v0.7.0...shairplay-v0.8.0) (2026-09-02)
+
+
+### Features
+
+* **raop:** configurable AP1 capability advertisement ([#42](https://github.com/metaneutrons/shairplay-rust/issues/42)) ([cd6dc73](https://github.com/metaneutrons/shairplay-rust/commit/cd6dc73699695c5f20e222203bf8ca1b3f211276))
+* **raop:** decode raw-PCM (L16) streams and accept unencrypted audio ([#41](https://github.com/metaneutrons/shairplay-rust/issues/41)) ([249560b](https://github.com/metaneutrons/shairplay-rust/commit/249560b231e99129ad9593aa7a4dd5afc84f5175))
+
+
+### Bug Fixes
+
+* **meta:** point repository at this fork ([#48](https://github.com/metaneutrons/shairplay-rust/issues/48)) ([86e129a](https://github.com/metaneutrons/shairplay-rust/commit/86e129a56297c15b951b995947b817d4d5d85968))
+* **raop:** send Server header on RTSP replies ([#40](https://github.com/metaneutrons/shairplay-rust/issues/40)) ([763795b](https://github.com/metaneutrons/shairplay-rust/commit/763795b8cf1571d1d09150202b6292695a00d393))
+
 ## [0.7.0](https://github.com/metaneutrons/shairplay-rust/compare/shairplay-v0.6.2...shairplay-v0.7.0) (2026-07-03)
 
 
