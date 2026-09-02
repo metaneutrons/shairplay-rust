@@ -294,7 +294,8 @@ fn fairplay_reject_bad_version() {
 fn rtp_buffer_queue_dequeue() {
     let key = [0u8; 16];
     let iv = [0u8; 16];
-    let mut buf = RaopBuffer::new("96 352", "96 352 0 16 40 10 14 2 255 0 0 44100", &key, &iv).expect("valid fmtp");
+    let mut buf =
+        RaopBuffer::new("96 AppleLossless", "96 352 0 16 40 10 14 2 255 0 0 44100", &key, &iv).expect("valid fmtp");
     // Queue returns >= 0 for valid-length packets (ALAC decode may fail on dummy data)
     let mut pkt = vec![0x80, 0x60, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
     pkt.extend_from_slice(&[0u8; 256]);
@@ -309,7 +310,8 @@ fn rtp_buffer_queue_dequeue() {
 fn rtp_buffer_flush() {
     let key = [0u8; 16];
     let iv = [0u8; 16];
-    let mut buf = RaopBuffer::new("96 352", "96 352 0 16 40 10 14 2 255 0 0 44100", &key, &iv).expect("valid fmtp");
+    let mut buf =
+        RaopBuffer::new("96 AppleLossless", "96 352 0 16 40 10 14 2 255 0 0 44100", &key, &iv).expect("valid fmtp");
     buf.flush(100);
     assert!(buf.dequeue(true).is_none());
 }
@@ -318,7 +320,8 @@ fn rtp_buffer_flush() {
 fn rtp_buffer_reject_short_packet() {
     let key = [0u8; 16];
     let iv = [0u8; 16];
-    let mut buf = RaopBuffer::new("96 352", "96 352 0 16 40 10 14 2 255 0 0 44100", &key, &iv).expect("valid fmtp");
+    let mut buf =
+        RaopBuffer::new("96 AppleLossless", "96 352 0 16 40 10 14 2 255 0 0 44100", &key, &iv).expect("valid fmtp");
     assert_eq!(buf.queue(&[0u8; 4], true), -1); // too short
 }
 
@@ -327,13 +330,24 @@ fn rtp_buffer_rejects_malformed_fmtp() {
     let key = [0u8; 16];
     let iv = [0u8; 16];
     // Too few fields — previously panicked via `.expect("invalid fmtp")`.
-    assert!(RaopBuffer::new("96 352", "96 352", &key, &iv).is_none());
+    assert!(RaopBuffer::new("96 AppleLossless", "96 352", &key, &iv).is_none());
     // Non-numeric field — previously silently coerced to 0.
-    assert!(RaopBuffer::new("96 352", "96 abc 0 16 40 10 14 2 255 0 0 44100", &key, &iv).is_none());
+    assert!(RaopBuffer::new("96 AppleLossless", "96 abc 0 16 40 10 14 2 255 0 0 44100", &key, &iv).is_none());
     // Zero channels — would build a 0-channel decoder / zero-size buffers.
-    assert!(RaopBuffer::new("96 352", "96 352 0 16 40 10 14 0 255 0 0 44100", &key, &iv).is_none());
+    assert!(RaopBuffer::new("96 AppleLossless", "96 352 0 16 40 10 14 0 255 0 0 44100", &key, &iv).is_none());
     // Well-formed input still succeeds.
-    assert!(RaopBuffer::new("96 352", "96 352 0 16 40 10 14 2 255 0 0 44100", &key, &iv).is_some());
+    assert!(RaopBuffer::new("96 AppleLossless", "96 352 0 16 40 10 14 2 255 0 0 44100", &key, &iv).is_some());
+}
+
+#[test]
+fn rtp_buffer_rejects_unsupported_or_malformed_rtpmap() {
+    let key = [0u8; 16];
+    let iv = [0u8; 16];
+    let fmtp = "96 352 0 16 40 10 14 2 255 0 0 44100";
+
+    assert!(RaopBuffer::new("96 opus/48000/2", fmtp, &key, &iv).is_none());
+    assert!(RaopBuffer::new("invalid AppleLossless", fmtp, &key, &iv).is_none());
+    assert!(RaopBuffer::new("96 L16/44100/2/extra", "", &key, &iv).is_none());
 }
 
 // ============================================================
@@ -344,9 +358,7 @@ fn rtp_buffer_rejects_malformed_fmtp() {
 /// big-endian S16 samples decode straight to f32 without an ALAC decoder.
 #[test]
 fn rtp_buffer_pcm_l16_decodes_big_endian_s16() {
-    let key = [0u8; 16]; // all-zero ⇒ unencrypted passthrough
-    let iv = [0u8; 16];
-    let mut buf = RaopBuffer::new("96 L16/44100/2", "", &key, &iv).expect("L16 rtpmap is valid without fmtp");
+    let mut buf = RaopBuffer::new_unencrypted("96 L16/44100/2", "").expect("L16 rtpmap is valid without fmtp");
 
     // RTP header (12 bytes) + two big-endian S16 samples: 0x4000 (+0.5), 0xC000 (-0.5).
     let mut pkt = vec![0x80, 0x60, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
@@ -362,9 +374,7 @@ fn rtp_buffer_pcm_l16_decodes_big_endian_s16() {
 /// `L16` without an explicit channel count defaults to mono (RFC 3551).
 #[test]
 fn rtp_buffer_pcm_l16_mono_default() {
-    let key = [0u8; 16];
-    let iv = [0u8; 16];
-    let mut buf = RaopBuffer::new("96 L16/44100", "", &key, &iv).expect("mono L16 valid");
+    let mut buf = RaopBuffer::new_unencrypted("96 L16/44100", "").expect("mono L16 valid");
     let mut pkt = vec![0x80, 0x60, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
     pkt.extend_from_slice(&[0x00, 0x00, 0x7F, 0xFF]); // 0.0, ~+1.0
     assert_eq!(buf.queue(&pkt, true), 1);
@@ -372,6 +382,16 @@ fn rtp_buffer_pcm_l16_mono_default() {
     assert_eq!(samples.len(), 2);
     assert!(samples[0].abs() < 1e-6);
     assert!(samples[1] > 0.99);
+}
+
+#[test]
+fn rtp_buffer_pcm_l16_rejects_incomplete_frames() {
+    let mut buf = RaopBuffer::new_unencrypted("96 L16/44100/2", "").expect("valid stereo L16");
+    let mut pkt = vec![0x80, 0x60, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+    pkt.extend_from_slice(&[0x00, 0x01]);
+
+    assert_eq!(buf.queue(&pkt, true), -1);
+    assert!(buf.dequeue(true).is_none());
 }
 
 // ============================================================

@@ -25,6 +25,12 @@ const PCM_DEFAULT_FRAME_SAMPLES: usize = 352;
 
 type Aes128CbcDec = cbc::Decryptor<aes::Aes128>;
 
+#[derive(Clone, Copy)]
+struct AesSession {
+    key: [u8; RAOP_AESKEY_LEN],
+    iv: [u8; RAOP_AESIV_LEN],
+}
+
 /// Raw-PCM (`L16`) stream configuration, parsed from the SDP `rtpmap` attribute.
 #[derive(Debug, Clone)]
 pub(crate) struct PcmConfig {
@@ -51,6 +57,12 @@ enum Codec {
     Alac { config: AlacConfig, decoder: AlacDecoder },
     /// Raw linear PCM (`L16`): big-endian interleaved S16, no compression.
     Pcm { config: PcmConfig },
+}
+
+/// Validated codec parameters parsed from the SDP `rtpmap` attribute.
+enum CodecConfig {
+    Alac,
+    Pcm(PcmConfig),
 }
 
 /// A single slot in the circular buffer holding one decoded audio frame.
@@ -110,13 +122,6 @@ fn parse_fmtp(fmtp: &str) -> Option<AlacConfig> {
     Some(config)
 }
 
-/// Parse the encoding name from an SDP `rtpmap` value (`"<pt> <encoding>"`).
-/// Returns the second whitespace-separated token, e.g. `AppleLossless` or
-/// `L16/44100/2`.
-fn rtpmap_encoding(rtpmap: &str) -> Option<&str> {
-    rtpmap.split_whitespace().nth(1)
-}
-
 /// Parse an `L16/<rate>[/<channels>]` rtpmap encoding into a [`PcmConfig`].
 /// Per RFC 3551, `L16` defaults to a single channel when the count is omitted.
 fn parse_l16(encoding: &str) -> Option<PcmConfig> {
@@ -129,13 +134,30 @@ fn parse_l16(encoding: &str) -> Option<PcmConfig> {
         Some(ch) => ch.parse().ok()?,
         None => 1,
     };
-    if sample_rate == 0 || num_channels == 0 {
+    if parts.next().is_some() || sample_rate == 0 || num_channels == 0 {
         return None;
     }
     Some(PcmConfig {
         num_channels,
         sample_rate,
     })
+}
+
+/// Parse and validate an SDP `rtpmap` value (`"<payload-type> <encoding>"`).
+fn parse_codec(rtpmap: &str) -> Option<CodecConfig> {
+    let mut fields = rtpmap.split_whitespace();
+    fields.next()?.parse::<u8>().ok()?;
+    let encoding = fields.next()?;
+    if fields.next().is_some() {
+        return None;
+    }
+
+    let name = encoding.split('/').next()?;
+    if name.eq_ignore_ascii_case("AppleLossless") {
+        Some(CodecConfig::Alac)
+    } else {
+        parse_l16(encoding).map(CodecConfig::Pcm)
+    }
 }
 
 /// Build the 48-byte decoder info block expected by `AlacDecoder::set_info`.
@@ -168,8 +190,7 @@ fn build_decoder_info(config: &AlacConfig) -> [u8; 48] {
 /// RTP packet → AES-128-CBC decrypt → ALAC or L16 decode → f32 → buffer slot
 /// ```
 pub struct RaopBuffer {
-    aeskey: [u8; RAOP_AESKEY_LEN],
-    aesiv: [u8; RAOP_AESIV_LEN],
+    aes: Option<AesSession>,
     codec: Codec,
     is_empty: bool,
     /// Sequence number of the next frame to dequeue (oldest buffered).
@@ -185,7 +206,7 @@ pub struct RaopBuffer {
 }
 
 impl RaopBuffer {
-    /// Create a new buffer from SDP parameters and AES session keys.
+    /// Create a new encrypted buffer from SDP parameters and AES session keys.
     ///
     /// `rtpmap` selects the codec (`AppleLossless` → ALAC, `L16/...` → PCM);
     /// `fmtp` supplies the ALAC config (ignored for PCM). The decoder is
@@ -199,24 +220,38 @@ impl RaopBuffer {
         aes_key: &[u8; RAOP_AESKEY_LEN],
         aes_iv: &[u8; RAOP_AESIV_LEN],
     ) -> Option<Self> {
-        // Switch to raw PCM only when the rtpmap *explicitly* names `L16`;
-        // everything else (AppleLossless, or a bare payload type) is treated as
-        // ALAC — the historical default and the classic-AirPlay codec.
-        let l16 = rtpmap_encoding(rtpmap).and_then(parse_l16);
+        Self::build(
+            rtpmap,
+            fmtp,
+            Some(AesSession {
+                key: *aes_key,
+                iv: *aes_iv,
+            }),
+        )
+    }
 
-        let (codec, frame_capacity, silence_samples) = if let Some(config) = l16 {
-            // PCM frames are variable-length: size each slot to the largest RTP
-            // payload (worst case) so a big packet never overflows the slot.
-            let capacity = (RAOP_PACKET_LEN - 12) / 2;
-            let silence = PCM_DEFAULT_FRAME_SAMPLES * config.num_channels as usize;
-            (Codec::Pcm { config }, capacity, silence)
-        } else {
-            let config = parse_fmtp(fmtp)?;
-            // ALAC outputs one f32 per sample: frame_length × channels.
-            let frame_samples = config.frame_length as usize * config.num_channels as usize;
-            let mut decoder = AlacDecoder::new(config.bit_depth as i32, config.num_channels as i32);
-            decoder.set_info(&build_decoder_info(&config));
-            (Codec::Alac { config, decoder }, frame_samples, frame_samples)
+    /// Create a new unencrypted buffer from SDP parameters.
+    pub fn new_unencrypted(rtpmap: &str, fmtp: &str) -> Option<Self> {
+        Self::build(rtpmap, fmtp, None)
+    }
+
+    fn build(rtpmap: &str, fmtp: &str, aes: Option<AesSession>) -> Option<Self> {
+        let (codec, frame_capacity, silence_samples) = match parse_codec(rtpmap)? {
+            CodecConfig::Pcm(config) => {
+                // PCM frames are variable-length: size each slot to the largest RTP
+                // payload (worst case) so a big packet never overflows the slot.
+                let capacity = (RAOP_PACKET_LEN - 12) / 2;
+                let silence = PCM_DEFAULT_FRAME_SAMPLES * config.num_channels as usize;
+                (Codec::Pcm { config }, capacity, silence)
+            }
+            CodecConfig::Alac => {
+                let config = parse_fmtp(fmtp)?;
+                // ALAC outputs one f32 per sample: frame_length × channels.
+                let frame_samples = config.frame_length as usize * config.num_channels as usize;
+                let mut decoder = AlacDecoder::new(config.bit_depth as i32, config.num_channels as i32);
+                decoder.set_info(&build_decoder_info(&config));
+                (Codec::Alac { config, decoder }, frame_samples, frame_samples)
+            }
         };
 
         let entries = (0..RAOP_BUFFER_LENGTH)
@@ -233,8 +268,7 @@ impl RaopBuffer {
             .collect();
 
         Some(Self {
-            aeskey: *aes_key,
-            aesiv: *aes_iv,
+            aes,
             codec,
             is_empty: true,
             first_seqnum: 0,
@@ -292,25 +326,19 @@ impl RaopBuffer {
             return 0;
         }
 
-        // Parse RTP header fields.
-        self.entries[idx].flags = data[0];
-        self.entries[idx].entry_type = data[1];
-        self.entries[idx].seqnum = seqnum;
-        self.entries[idx].timestamp = u32::from_be_bytes([data[4], data[5], data[6], data[7]]);
-        self.entries[idx].ssrc = u32::from_be_bytes([data[8], data[9], data[10], data[11]]);
-        self.entries[idx].available = true;
+        // A failed replacement must not leave stale data available in this slot.
+        self.entries[idx].available = false;
+        self.entries[idx].audio_buffer_len = 0;
 
         // AES-128-CBC decrypt: only full 16-byte blocks are encrypted,
         // trailing bytes (< 16) are sent in the clear.
         let payload = &data[12..];
         let encrypted_len = (payload.len() / 16) * 16;
 
-        // An all-zero session key means the sender negotiated no encryption
-        // (RAOP et=0, or auth_setup which sends no key material); borrow the
-        // payload as-is in that case, allocating only when we actually decrypt.
-        let unencrypted = self.aeskey == [0u8; RAOP_AESKEY_LEN];
-        let packet_buf: Cow<[u8]> = if encrypted_len > 0 && !unencrypted {
-            let decryptor = Aes128CbcDec::new((&self.aeskey).into(), (&self.aesiv).into());
+        // Unencrypted sessions borrow the payload directly. Encrypted sessions
+        // allocate only when at least one complete AES block is present.
+        let packet_buf: Cow<[u8]> = if let (Some(aes), true) = (self.aes, encrypted_len > 0) {
+            let decryptor = Aes128CbcDec::new((&aes.key).into(), (&aes.iv).into());
             let mut buf = payload.to_vec();
             decryptor
                 .decrypt_padded::<aes::cipher::block_padding::NoPadding>(&mut buf[..encrypted_len])
@@ -336,18 +364,22 @@ impl RaopBuffer {
                 let limit = output_size.min(s16_buf.len());
                 let out = &mut self.entries[idx].audio_buffer;
                 let mut n = 0;
-                for (chunk, out_sample) in s16_buf[..limit].chunks_exact(2).zip(out.iter_mut()) {
-                    *out_sample = i16::from_le_bytes([chunk[0], chunk[1]]) as f32 / 32768.0;
+                for (chunk, out_sample) in s16_buf[..limit].as_chunks::<2>().0.iter().zip(out.iter_mut()) {
+                    *out_sample = i16::from_le_bytes(*chunk) as f32 / 32768.0;
                     n += 1;
                 }
                 n
             }
-            Codec::Pcm { .. } => {
+            Codec::Pcm { config } => {
                 // Raw L16: big-endian (network order) interleaved S16 → f32.
+                let frame_width = usize::from(config.num_channels) * size_of::<i16>();
+                if packet_buf.is_empty() || !packet_buf.len().is_multiple_of(frame_width) {
+                    return -1;
+                }
                 let out = &mut self.entries[idx].audio_buffer;
                 let mut n = 0;
-                for (chunk, out_sample) in packet_buf.chunks_exact(2).zip(out.iter_mut()) {
-                    *out_sample = i16::from_be_bytes([chunk[0], chunk[1]]) as f32 / 32768.0;
+                for (chunk, out_sample) in packet_buf.as_chunks::<2>().0.iter().zip(out.iter_mut()) {
+                    *out_sample = i16::from_be_bytes(*chunk) as f32 / 32768.0;
                     n += 1;
                 }
                 if n == 0 {
@@ -359,7 +391,15 @@ impl RaopBuffer {
                 n
             }
         };
-        self.entries[idx].audio_buffer_len = num_samples;
+
+        let entry = &mut self.entries[idx];
+        entry.flags = data[0];
+        entry.entry_type = data[1];
+        entry.seqnum = seqnum;
+        entry.timestamp = u32::from_be_bytes([data[4], data[5], data[6], data[7]]);
+        entry.ssrc = u32::from_be_bytes([data[8], data[9], data[10], data[11]]);
+        entry.audio_buffer_len = num_samples;
+        entry.available = true;
 
         // Update buffer window.
         if self.is_empty {

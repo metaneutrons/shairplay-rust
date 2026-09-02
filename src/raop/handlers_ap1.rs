@@ -7,7 +7,7 @@ use crate::crypto::pairing::PairingSession;
 use crate::error::{CodecError, ShairplayError};
 use crate::proto::http::{HttpRequest, HttpResponse};
 use crate::proto::sdp::Sdp;
-use crate::raop::rtp::RaopRtp;
+use crate::raop::rtp::{RaopRtp, RtpEncryption};
 
 #[cfg(feature = "ap2")]
 use crate::crypto::pairing_homekit::{PairVerifyServer, SrpServer};
@@ -204,17 +204,31 @@ pub(crate) fn handle_announce(
 
     let remote = sdp.connection()?;
     let rtpmap = sdp.rtpmap()?;
-    let fmtp = sdp.fmtp()?;
+    let fmtp = sdp.fmtp();
     // aesiv/rsaaeskey are absent when the sender negotiated no encryption
-    // (e.g. PipeWire's et=0 mode). Keep them optional; an all-zero aeskey
-    // signals the RTP buffer to pass audio through without AES decryption.
+    // (e.g. PipeWire's et=0 mode).
+    let rsa_key = sdp.rsaaeskey();
+    let fairplay_key = sdp.fpaeskey();
     let aesiv_str = sdp.aesiv();
+
+    if rsa_key.is_some() && fairplay_key.is_some() {
+        tracing::warn!("ANNOUNCE: multiple audio encryption keys supplied");
+        response.set_disconnect(true);
+        return None;
+    }
+
+    let encryption_expected = rsa_key.is_some() || fairplay_key.is_some();
+    if !encryption_expected && aesiv_str.is_some() {
+        tracing::warn!("ANNOUNCE: aesiv supplied without an audio encryption key");
+        response.set_disconnect(true);
+        return None;
+    }
 
     let mut aeskey = [0u8; 16];
     let mut aesiv = [0u8; 16];
 
     // Decrypt AES key from RSA or FairPlay
-    let key_bytes = if let Some(rsa_key_str) = sdp.rsaaeskey() {
+    let key_bytes = if let Some(rsa_key_str) = rsa_key {
         match conn.shared.rsakey.decrypt(rsa_key_str) {
             Ok(k) => Some(k),
             Err(e) => {
@@ -223,20 +237,28 @@ pub(crate) fn handle_announce(
                 None
             }
         }
-    } else if let Some(fp_key_str) = sdp.fpaeskey() {
-        let fp_data = conn.shared.rsakey.decode(fp_key_str).ok()?;
-        if fp_data.len() == 72 {
-            let input: &[u8; 72] = fp_data.as_slice().try_into().ok()?;
-            match conn.fairplay.decrypt(input) {
-                Ok(key) => Some(key.to_vec()),
-                Err(e) => {
-                    tracing::warn!("ANNOUNCE fpaeskey decrypt failed: {e}");
-                    conn.shared.handler.on_error(&ShairplayError::Crypto(e));
-                    None
+    } else if let Some(fp_key_str) = fairplay_key {
+        match conn.shared.rsakey.decode(fp_key_str) {
+            Ok(fp_data) if fp_data.len() == 72 => {
+                let input: &[u8; 72] = fp_data.as_slice().try_into().ok()?;
+                match conn.fairplay.decrypt(input) {
+                    Ok(key) => Some(key.to_vec()),
+                    Err(e) => {
+                        tracing::warn!("ANNOUNCE fpaeskey decrypt failed: {e}");
+                        conn.shared.handler.on_error(&ShairplayError::Crypto(e));
+                        None
+                    }
                 }
             }
-        } else {
-            None
+            Ok(fp_data) => {
+                tracing::warn!(len = fp_data.len(), "ANNOUNCE fpaeskey has invalid length");
+                None
+            }
+            Err(e) => {
+                tracing::warn!("ANNOUNCE fpaeskey decode failed: {e}");
+                conn.shared.handler.on_error(&ShairplayError::Crypto(e));
+                None
+            }
         }
     } else {
         None
@@ -247,7 +269,6 @@ pub(crate) fn handle_announce(
     // fail the connection rather than silently fall back to the unencrypted
     // passthrough — feeding still-encrypted bytes to the decoder as PCM plays
     // loud static. Only a sender that advertised no key at all is unencrypted.
-    let encryption_expected = sdp.rsaaeskey().is_some() || sdp.fpaeskey().is_some();
     if encryption_expected {
         let Some(key_bytes) = key_bytes.filter(|k| k.len() >= 16) else {
             tracing::warn!("ANNOUNCE: encryption negotiated but AES key unavailable/short; aborting");
@@ -267,8 +288,7 @@ pub(crate) fn handle_announce(
         };
         aesiv.copy_from_slice(&iv_bytes[..16]);
     }
-    // Otherwise no key was negotiated: aeskey/aesiv stay all-zero and the RTP
-    // buffer passes audio through without AES decryption.
+    let encryption = encryption_expected.then_some(RtpEncryption { key: aeskey, iv: aesiv });
 
     // Destroy existing RTP session if any
     conn.raop_rtp = None;
@@ -279,16 +299,16 @@ pub(crate) fn handle_announce(
             remote: remote.to_string(),
             local_addr: local_ip_from(conn),
             rtpmap: rtpmap.to_string(),
-            fmtp: fmtp.to_string(),
-            aes_key: aeskey,
-            aes_iv: aesiv,
+            fmtp: fmtp.map(str::to_owned),
+            encryption,
             output_sample_rate: conn.shared.output_sample_rate,
             remote_socket: conn.remote_socket,
         },
     );
 
     if conn.raop_rtp.is_none() {
-        tracing::warn!(rtpmap, fmtp, "ANNOUNCE: RaopRtp::new failed (malformed fmtp)");
+        let fmtp = fmtp.unwrap_or("<missing>");
+        tracing::warn!(rtpmap, fmtp, "ANNOUNCE: unsupported or malformed audio format");
         conn.shared
             .handler
             .on_error(&ShairplayError::Codec(CodecError::UnsupportedFormat(format!(

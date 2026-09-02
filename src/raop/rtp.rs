@@ -94,16 +94,20 @@ pub(crate) struct RtpConfig {
     pub(crate) local_addr: IpAddr,
     /// SDP `a=rtpmap` attribute.
     pub(crate) rtpmap: String,
-    /// SDP `a=fmtp` attribute (ALAC configuration).
-    pub(crate) fmtp: String,
-    /// 128-bit AES session key (decrypted from SDP).
-    pub(crate) aes_key: [u8; 16],
-    /// 128-bit AES initialization vector.
-    pub(crate) aes_iv: [u8; 16],
+    /// Optional SDP `a=fmtp` attribute. Required for ALAC and unused for L16.
+    pub(crate) fmtp: Option<String>,
+    /// AES-CBC parameters when encryption was negotiated; `None` for plaintext RTP.
+    pub(crate) encryption: Option<RtpEncryption>,
     /// If set, resample decoded audio to this rate.
     pub(crate) output_sample_rate: Option<u32>,
     /// Full socket address of the remote peer (preserves scope_id for link-local IPv6).
     pub(crate) remote_socket: std::net::SocketAddr,
+}
+
+/// Validated AES-CBC parameters for an encrypted RTP session.
+pub(crate) struct RtpEncryption {
+    pub(crate) key: [u8; 16],
+    pub(crate) iv: [u8; 16],
 }
 
 /// AP1 RTP streaming session.
@@ -163,9 +167,13 @@ impl RaopRtp {
     /// Create a new RTP session from SDP parameters and AES session keys.
     /// Does not bind sockets or start receiving — call [`start`](Self::start) for that.
     ///
-    /// Returns `None` if the (peer-supplied) `fmtp` attribute is malformed.
+    /// Returns `None` if the peer-supplied codec configuration is unsupported or malformed.
     pub(crate) fn new(callbacks: Arc<dyn AudioHandler>, config: RtpConfig) -> Option<Self> {
-        let buffer = RaopBuffer::new(&config.rtpmap, &config.fmtp, &config.aes_key, &config.aes_iv)?;
+        let fmtp = config.fmtp.as_deref().unwrap_or_default();
+        let buffer = match config.encryption {
+            Some(encryption) => RaopBuffer::new(&config.rtpmap, fmtp, &encryption.key, &encryption.iv),
+            None => RaopBuffer::new_unencrypted(&config.rtpmap, fmtp),
+        }?;
         let format = buffer.format();
         Some(Self {
             handler: callbacks,
