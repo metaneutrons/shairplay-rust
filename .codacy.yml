@@ -1,0 +1,4 @@
+---
+exclude_paths:
+  - "Cargo.lock"
+  - "fuzz/Cargo.lock"

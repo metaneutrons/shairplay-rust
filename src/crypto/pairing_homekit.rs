@@ -446,25 +446,7 @@ fn setup_verify_client_identity(
     session_key: &[u8],
     data: &[u8],
 ) -> Result<(String, [u8; 32]), CryptoError> {
-    let tlv = TlvValues::decode(data).map_err(|e| CryptoError::PairingHandshake(e.to_string()))?;
-
-    let enc = tlv
-        .get_type(TlvType::EncryptedData)
-        .ok_or_else(|| CryptoError::PairingHandshake("M5: missing encrypted data".into()))?;
-
-    let mut derived_key = [0u8; 32];
-    hkdf_derive(
-        session_key,
-        PS_ENCRYPT_SALT,
-        PS_ENCRYPT_INFO,
-        &mut derived_key,
-    )?;
-
-    let nonce = make_nonce(b"PS-Msg05");
-    let decrypted = decrypt_chacha(&derived_key, &nonce, enc)?;
-
-    let inner =
-        TlvValues::decode(&decrypted).map_err(|e| CryptoError::PairingHandshake(e.to_string()))?;
+    let inner = decrypt_setup_m5(session_key, data)?;
     let identifier = inner
         .get_type(TlvType::Identifier)
         .ok_or_else(|| CryptoError::PairingHandshake("M5: missing identifier".into()))?;
@@ -475,6 +457,35 @@ fn setup_verify_client_identity(
         .get_type(TlvType::PublicKey)
         .ok_or_else(|| CryptoError::PairingHandshake("M5: missing public key".into()))?;
 
+    let public_key = verify_controller_identity(session_key, identifier, signature, client_pk)?;
+    let identifier = String::from_utf8(identifier.to_vec())
+        .map_err(|_| CryptoError::PairingHandshake("M5: invalid identifier encoding".into()))?;
+    Ok((identifier, public_key))
+}
+
+fn decrypt_setup_m5(session_key: &[u8], data: &[u8]) -> Result<TlvValues, CryptoError> {
+    let tlv = TlvValues::decode(data).map_err(|e| CryptoError::PairingHandshake(e.to_string()))?;
+    let enc = tlv
+        .get_type(TlvType::EncryptedData)
+        .ok_or_else(|| CryptoError::PairingHandshake("M5: missing encrypted data".into()))?;
+    let mut derived_key = [0u8; 32];
+    hkdf_derive(
+        session_key,
+        PS_ENCRYPT_SALT,
+        PS_ENCRYPT_INFO,
+        &mut derived_key,
+    )?;
+    let nonce = make_nonce(b"PS-Msg05");
+    let decrypted = decrypt_chacha(&derived_key, &nonce, enc)?;
+    TlvValues::decode(&decrypted).map_err(|e| CryptoError::PairingHandshake(e.to_string()))
+}
+
+fn verify_controller_identity(
+    session_key: &[u8],
+    identifier: &[u8],
+    signature: &[u8],
+    client_pk: &[u8],
+) -> Result<[u8; 32], CryptoError> {
     let mut device_x = [0u8; 32];
     hkdf_derive(
         session_key,
@@ -482,12 +493,10 @@ fn setup_verify_client_identity(
         "Pair-Setup-Controller-Sign-Info",
         &mut device_x,
     )?;
-
     let mut info = Vec::new();
     info.extend_from_slice(&device_x);
     info.extend_from_slice(identifier);
     info.extend_from_slice(client_pk);
-
     let pk_array: [u8; 32] = client_pk
         .try_into()
         .map_err(|_| CryptoError::PairingHandshake("M5: invalid public key length".into()))?;
@@ -500,11 +509,7 @@ fn setup_verify_client_identity(
     );
     vk.verify(&info, &sig)
         .map_err(|_| CryptoError::PairingVerify)?;
-
-    let id_str = String::from_utf8(identifier.to_vec())
-        .map_err(|_| CryptoError::PairingHandshake("M5: invalid identifier encoding".into()))?;
-
-    Ok((id_str, pk_array))
+    Ok(pk_array)
 }
 
 /// Build the accessory's encrypted M6 identity TLV, signed with the long-term identity key.
