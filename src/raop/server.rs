@@ -7,6 +7,8 @@ use crate::crypto::pairing::Pairing;
 use crate::crypto::rsa::RsaKey;
 use crate::error::{ServerError, ShairplayError};
 use crate::net::mdns::{AirPlayServiceInfo, MdnsService};
+#[cfg(feature = "diagnostic-headers")]
+use crate::net::protocol_diagnostics::HeaderDiagnostics;
 use crate::net::server::{BindConfig, HttpServer};
 use std::sync::Arc;
 
@@ -65,6 +67,8 @@ pub struct RaopServerBuilder {
     password: Option<String>,
     name: String,
     bind: BindConfig,
+    #[cfg(feature = "diagnostic-headers")]
+    header_diagnostics: HeaderDiagnostics,
     #[cfg(feature = "ap2")]
     pairing_store: Option<Arc<dyn PairingStore>>,
     #[cfg(feature = "ap2")]
@@ -96,6 +100,8 @@ impl RaopServerBuilder {
             password: None,
             name: "Shairplay".to_string(),
             bind: BindConfig::default(),
+            #[cfg(feature = "diagnostic-headers")]
+            header_diagnostics: HeaderDiagnostics::default(),
             #[cfg(feature = "ap2")]
             pairing_store: None,
             #[cfg(feature = "ap2")]
@@ -141,6 +147,17 @@ impl RaopServerBuilder {
     /// Set the AirPlay display name. Default: "Shairplay".
     pub fn name(mut self, name: impl Into<String>) -> Self {
         self.name = name.into();
+        self
+    }
+
+    /// Configure structured RTSP request and response header diagnostics.
+    ///
+    /// Diagnostics remain silent unless the `shairplay::protocol_headers`
+    /// tracing target is enabled at `TRACE`. The default is
+    /// [`HeaderDiagnostics::Disabled`].
+    #[cfg(feature = "diagnostic-headers")]
+    pub fn header_diagnostics(mut self, diagnostics: HeaderDiagnostics) -> Self {
+        self.header_diagnostics = diagnostics;
         self
     }
 
@@ -234,6 +251,8 @@ impl RaopServerBuilder {
 
     /// Build the server with the given audio handler.
     pub fn build(self, handler: Arc<dyn AudioHandler>) -> Result<RaopServer, ShairplayError> {
+        #[cfg(feature = "diagnostic-headers")]
+        self.header_diagnostics.validate()?;
         if self.max_clients == 0 {
             return Err(ServerError::MaxClients(0).into());
         }
@@ -317,6 +336,8 @@ impl RaopServerBuilder {
 
         let mut httpd = HttpServer::new(shared.clone(), self.max_clients);
         httpd.set_bind_config(self.bind.clone());
+        #[cfg(feature = "diagnostic-headers")]
+        httpd.set_header_diagnostics(self.header_diagnostics);
 
         Ok(RaopServer {
             shared,

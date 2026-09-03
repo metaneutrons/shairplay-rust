@@ -49,6 +49,8 @@ server.start().await?;
 
 # Feature Flags
 
+- `diagnostic-headers` — opt-in, redacted RTSP header diagnostics
+- `dangerous-raw-headers` — adds raw header diagnostics for debug-assertion builds
 - `ap2` — AirPlay 2 support (SRP-6a pairing, buffered AAC, encrypted transport)
 - `video` — Experimental screen mirroring (implies `ap2`)
 "]
@@ -69,6 +71,8 @@ pub(crate) mod util;
 
 pub use error::ShairplayError;
 pub use net::mdns::AirPlayServiceInfo;
+#[cfg(feature = "diagnostic-headers")]
+pub use net::protocol_diagnostics::HeaderDiagnostics;
 pub use net::server::BindConfig;
 #[cfg(feature = "hls")]
 pub use raop::hls::{HlsHandler, HlsSession};

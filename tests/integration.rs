@@ -240,6 +240,36 @@ fn builder_rejects_invalid_hwaddr_length() {
     ));
 }
 
+#[cfg(feature = "diagnostic-headers")]
+#[test]
+fn builder_accepts_redacted_header_diagnostics() {
+    let result = RaopServer::builder()
+        .name("RedactedDiagnostics")
+        .port(0)
+        .header_diagnostics(shairplay::HeaderDiagnostics::Redacted)
+        .build(empty_handler());
+    assert!(result.is_ok());
+}
+
+#[cfg(feature = "dangerous-raw-headers")]
+#[test]
+fn builder_enforces_the_raw_header_build_profile() {
+    let result = RaopServer::builder()
+        .name("RawDiagnostics")
+        .port(0)
+        .header_diagnostics(shairplay::HeaderDiagnostics::Raw)
+        .build(empty_handler());
+
+    if cfg!(debug_assertions) {
+        assert!(result.is_ok());
+    } else {
+        assert_invalid_configuration(
+            result,
+            "raw header diagnostics require a build with debug assertions enabled",
+        );
+    }
+}
+
 #[tokio::test]
 #[serial]
 async fn server_start_stop() {

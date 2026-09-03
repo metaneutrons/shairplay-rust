@@ -79,6 +79,8 @@ gethostname = "1"
 
 [features]
 default = []
+diagnostic-headers = []
+dangerous-raw-headers = ["diagnostic-headers"]
 resample = ["dep:rubato"]
 ap2 = ["resample", "dep:chacha20poly1305", "dep:hkdf", "dep:num-bigint", "dep:uuid", "dep:symphonia"]
 video = ["ap2"]
