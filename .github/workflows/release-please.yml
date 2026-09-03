@@ -17,8 +17,8 @@ permissions:
 jobs:
   release-please:
     runs-on: ubuntu-24.04
-    # Die App-Secrets liegen nach der unverhandelbaren Regel ausschliesslich in
-    # dieser Environment. Ohne die Deklaration sind sie dem Job nicht sichtbar.
+    # Die App-Zugangsdaten liegen nach der unverhandelbaren Regel ausschliesslich
+    # in dieser Environment. Ohne die Deklaration sind sie dem Job nicht sichtbar.
     environment: release
     steps:
       # Die Release-PR MUSS mit einem App-Token erzeugt werden. GitHub
@@ -28,7 +28,7 @@ jobs:
       - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
         id: app-token
         with:
-          app-id: ${{ vars.RELEASE_PLEASE_APP_ID }}
+          client-id: ${{ vars.RELEASE_PLEASE_CLIENT_ID }}
           private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
 
       - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
