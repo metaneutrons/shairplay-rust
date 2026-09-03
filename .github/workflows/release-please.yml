@@ -1,53 +1,85 @@
+# Der einzige automatische Weg, auf dem ein Produktions-Tag entsteht.
 name: Release Please
 
 on:
   push:
     branches: [main]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: write
   pull-requests: write
+  actions: write
 
 jobs:
   release-please:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    # Die App-Secrets liegen nach der unverhandelbaren Regel ausschliesslich in
+    # dieser Environment. Ohne die Deklaration sind sie dem Job nicht sichtbar.
     environment: release
-    outputs:
-      release_created: ${{ steps.release.outputs.release_created }}
-      tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
-      # Author the release PR with a GitHub App token, not the default
-      # GITHUB_TOKEN. GitHub blocks GITHUB_TOKEN-authored PRs/pushes from
-      # triggering other workflows (recursion guard), so ci.yml never ran on the
-      # release PR and its required checks stayed stuck. An App token is a real
-      # actor, so its pushes DO fire ci.yml.
-      # Both RELEASE_PLEASE_APP_* secrets exist now, so this step must not
-      # be softened and the token must not have a fallback. A fallback
-      # would silently produce a release PR without CI, which is exactly
-      # what the App token is here to prevent.
-      - uses: actions/create-github-app-token@v2
+      # Die Release-PR MUSS mit einem App-Token erzeugt werden. GitHub
+      # unterdrückt Workflow-Auslösungen durch GITHUB_TOKEN-Pushes als
+      # Rekursionsschutz; die CI liefe dann nie auf der Release-PR und die
+      # Required Checks blieben hängen. Ein App-Token ist ein echter Akteur.
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
         id: app-token
         with:
           app-id: ${{ vars.RELEASE_PLEASE_APP_ID }}
           private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
-      - uses: googleapis/release-please-action@v5
-        id: release
+
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        id: rp
         with:
           token: ${{ steps.app-token.outputs.token }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
-  publish:
-    name: Publish to crates.io
-    needs: release-please
-    if: ${{ needs.release-please.outputs.release_created }}
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Install ALSA (Linux)
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
-      - name: Publish
-        run: cargo publish
+      # Rust-Zweig: release-please schreibt die Version nach Cargo.toml, fasst
+      # Cargo.lock aber nicht an. In anderen Sprachen fehlen diese Dateien und
+      # der Schritt endet nach dem Klonen erfolgreich ohne Änderung.
+      # Ein regulaeres pnpm-lock.yaml traegt die eigene Paketversion nicht; fuer
+      # projektspezifisch erzeugte Lock-Metadaten siehe release.md.
+      # Der Push geht ausschließlich auf den PR-Branch, nie auf main: keine
+      # Schleife. Mit dem App-Token werden die Required Checks auf dem neuen
+      # Kopf der PR neu bewertet.
+      - name: "Rust: Cargo.lock in die Release-PR synchronisieren"
+        if: ${{ steps.rp.outputs.pr }}
         env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PR_JSON: ${{ steps.rp.outputs.pr }}
+        run: |
+          set -euo pipefail
+          branch=$(printf '%s' "$PR_JSON" | jq -r .headBranchName)
+          git clone --branch "$branch" --depth 1 \
+            "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" rp-lock
+          cd rp-lock
+          if [[ ! -f Cargo.toml || ! -f Cargo.lock ]]; then
+            echo "Kein Rust-Lockfile; Rust-Synchronisation entfällt."
+            exit 0
+          fi
+          rustup show
+          cargo update --workspace -q
+          if git diff --quiet -- Cargo.lock; then
+            echo "Cargo.lock entspricht bereits der Release-Version."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -m "chore: sync Cargo.lock to the release version" -- Cargo.lock
+            git push origin "HEAD:$branch"
+          fi
+
+      # release.yml hat bewusst KEINEN Tag-Trigger. Das hier ist der einzige
+      # automatische Startpunkt, sonst liefen zwei Pipelines parallel.
+      - name: Release-Build für den neuen Draft starten
+        if: ${{ steps.rp.outputs.release_created == 'true' }}
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          TAG: ${{ steps.rp.outputs.tag_name }}
+        run: |
+          set -euo pipefail
+          test -n "$TAG"
+          gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref "$TAG"
