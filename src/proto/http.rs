@@ -6,6 +6,8 @@ use crate::error::ProtocolError;
 
 /// Maximum size accepted for RTSP/HTTP headers.
 const MAX_HEADER_BYTES: usize = 64 * 1024;
+/// Maximum number of headers accepted or emitted by protocol diagnostics.
+pub(crate) const MAX_HEADER_COUNT: usize = 64;
 /// Maximum size accepted for a single request body.
 const MAX_BODY_BYTES: usize = 32 * 1024 * 1024;
 
@@ -72,7 +74,7 @@ impl HttpRequest {
             self.buffer[pos..pos + 4].copy_from_slice(b"HTTP");
         }
 
-        let mut header_buf = [httparse::EMPTY_HEADER; 64];
+        let mut header_buf = [httparse::EMPTY_HEADER; MAX_HEADER_COUNT];
         let mut req = httparse::Request::new(&mut header_buf);
 
         match req.parse(&self.buffer) {
@@ -163,6 +165,14 @@ impl HttpRequest {
         self.headers
             .get(&name.to_ascii_lowercase())
             .map(|s| s.as_str())
+    }
+
+    /// Iterate over parsed headers for the transport diagnostics layer.
+    #[cfg(feature = "diagnostic-headers")]
+    pub(crate) fn headers(&self) -> impl Iterator<Item = (&str, &str)> {
+        self.headers
+            .iter()
+            .map(|(name, value)| (name.as_str(), value.as_str()))
     }
 
     /// The request body, if present.

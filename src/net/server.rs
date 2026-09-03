@@ -12,13 +12,61 @@ use crate::proto::http::{HttpRequest, HttpResponse};
 
 const MAX_ENCRYPTED_BUFFER_LEN: usize = 1024 * 1024;
 
+#[derive(Debug, Clone, Copy, Default)]
+struct ConnectionConfig {
+    #[cfg(feature = "diagnostic-headers")]
+    header_diagnostics: crate::net::protocol_diagnostics::HeaderDiagnostics,
+}
+
+impl ConnectionConfig {
+    #[cfg(feature = "diagnostic-headers")]
+    fn set_header_diagnostics(
+        &mut self,
+        diagnostics: crate::net::protocol_diagnostics::HeaderDiagnostics,
+    ) {
+        self.header_diagnostics = diagnostics;
+    }
+
+    fn warn_if_raw(self) {
+        #[cfg(feature = "diagnostic-headers")]
+        self.header_diagnostics.warn_if_raw();
+    }
+
+    fn trace_request(self, request: &HttpRequest, encrypted: bool) {
+        #[cfg(feature = "diagnostic-headers")]
+        crate::net::protocol_diagnostics::trace_request(
+            self.header_diagnostics,
+            request,
+            encrypted,
+        );
+        #[cfg(not(feature = "diagnostic-headers"))]
+        let _ = (request, encrypted);
+    }
+
+    fn trace_response(self, response: &HttpResponse, encrypted: bool) {
+        #[cfg(feature = "diagnostic-headers")]
+        crate::net::protocol_diagnostics::trace_response(
+            self.header_diagnostics,
+            response,
+            encrypted,
+        );
+        #[cfg(not(feature = "diagnostic-headers"))]
+        let _ = (response, encrypted);
+    }
+}
+
 async fn write_bad_request_and_close<S: AsyncWrite + Unpin>(
     stream: &mut S,
     handler: Option<&mut dyn ConnectionHandler>,
+    config: ConnectionConfig,
 ) {
     let mut response = HttpResponse::new("RTSP/1.0", 400, "Bad Request");
     response.add_header("Connection", "close");
     response.finish(None);
+    let encrypted = handler
+        .as_ref()
+        .is_some_and(|handler| handler.is_encrypted());
+    config.trace_response(&response, encrypted);
     let wire_out = match handler {
         Some(handler) if handler.is_encrypted() => handler.encrypt_outgoing(response.get_data()),
         _ => response.get_data().to_vec(),
@@ -141,6 +189,7 @@ pub(crate) struct HttpServer {
     port: u16,
     running: bool,
     bind_config: BindConfig,
+    connection_config: ConnectionConfig,
 }
 
 impl HttpServer {
@@ -153,6 +202,7 @@ impl HttpServer {
             port: 0,
             running: false,
             bind_config: BindConfig::default(),
+            connection_config: ConnectionConfig::default(),
         }
     }
 
@@ -161,11 +211,20 @@ impl HttpServer {
         self.bind_config = config;
     }
 
+    #[cfg(feature = "diagnostic-headers")]
+    pub(crate) fn set_header_diagnostics(
+        &mut self,
+        diagnostics: crate::net::protocol_diagnostics::HeaderDiagnostics,
+    ) {
+        self.connection_config.set_header_diagnostics(diagnostics);
+    }
+
     /// Start listening. Returns the actual port (may differ if auto-sensing).
     pub(crate) async fn start(&mut self, port: u16) -> Result<u16, NetworkError> {
         if self.running {
             return Ok(self.port);
         }
+        self.connection_config.warn_if_raw();
 
         let bind_port = if port > 0 {
             port
@@ -205,6 +264,7 @@ impl HttpServer {
 
         let callbacks = self.callbacks.clone();
         let semaphore = Arc::new(Semaphore::new(self.max_connections));
+        let connection_config = self.connection_config;
 
         for listener in listeners {
             if let Ok(addr) = listener.local_addr() {
@@ -215,6 +275,7 @@ impl HttpServer {
                 callbacks.clone(),
                 semaphore.clone(),
                 shutdown_rx.clone(),
+                connection_config,
             );
         }
 
@@ -262,16 +323,20 @@ async fn send_completed_responses<S: AsyncWrite + Unpin>(
     stream: &mut S,
     handler: &mut dyn ConnectionHandler,
     request: &mut HttpRequest,
+    config: ConnectionConfig,
 ) -> bool {
     while request.is_complete() {
         let method = request.method().unwrap_or("?").to_string();
         let url = request.url().unwrap_or("?").to_string();
         tracing::debug!(%method, %url, body_len = request.data().map_or(0, <[u8]>::len), "RTSP request");
+        config.trace_request(request, handler.is_encrypted());
         let response = handler.conn_request(request);
         let status = response.status_code();
         tracing::debug!(%method, %url, status, "RTSP response");
+        let response_encrypted = handler.is_encrypted();
+        config.trace_response(&response, response_encrypted);
         let disconnect = response.get_disconnect();
-        let wire_out = if handler.is_encrypted() {
+        let wire_out = if response_encrypted {
             handler.encrypt_outgoing(response.get_data())
         } else {
             response.get_data().to_vec()
@@ -291,7 +356,7 @@ async fn send_completed_responses<S: AsyncWrite + Unpin>(
         let leftover = request.take_leftover();
         *request = HttpRequest::new();
         if !leftover.is_empty() && request.add_data(&leftover).is_err() {
-            write_bad_request_and_close(stream, Some(handler)).await;
+            write_bad_request_and_close(stream, Some(handler), config).await;
             return false;
         }
     }
@@ -303,6 +368,7 @@ async fn add_request_data<S: AsyncWrite + Unpin>(
     handler: &mut dyn ConnectionHandler,
     request: &mut HttpRequest,
     data: &[u8],
+    config: ConnectionConfig,
 ) -> bool {
     if request.add_data(data).is_ok() {
         tracing::trace!(
@@ -313,7 +379,7 @@ async fn add_request_data<S: AsyncWrite + Unpin>(
         return true;
     }
     tracing::warn!(data_len = data.len(), "HTTP parse error");
-    write_bad_request_and_close(stream, Some(handler)).await;
+    write_bad_request_and_close(stream, Some(handler), config).await;
     false
 }
 
@@ -323,6 +389,7 @@ async fn ingest_encrypted_data<S: AsyncWrite + Unpin>(
     request: &mut HttpRequest,
     raw_buf: &mut Vec<u8>,
     data: &[u8],
+    config: ConnectionConfig,
 ) -> bool {
     raw_buf.extend_from_slice(data);
     if raw_buf.len() > MAX_ENCRYPTED_BUFFER_LEN {
@@ -348,7 +415,7 @@ async fn ingest_encrypted_data<S: AsyncWrite + Unpin>(
     }
     tracing::trace!(plain_len = plain.len(), consumed, "Decrypted request data");
     raw_buf.drain(..consumed);
-    plain.is_empty() || add_request_data(stream, handler, request, &plain).await
+    plain.is_empty() || add_request_data(stream, handler, request, &plain, config).await
 }
 
 /// Drive one accepted connection until the peer closes or processing fails.
@@ -356,6 +423,7 @@ async fn process_connection<S>(
     mut stream: S,
     mut handler: Box<dyn ConnectionHandler>,
     remote: SocketAddr,
+    config: ConnectionConfig,
 ) where
     S: AsyncRead + AsyncWrite + Unpin,
 {
@@ -364,7 +432,7 @@ async fn process_connection<S>(
     let mut raw_buf = Vec::new(); // accumulates encrypted data
 
     loop {
-        if !send_completed_responses(&mut stream, handler.as_mut(), &mut request).await {
+        if !send_completed_responses(&mut stream, handler.as_mut(), &mut request, config).await {
             break;
         }
         let n = match stream.read(&mut buf).await {
@@ -378,11 +446,19 @@ async fn process_connection<S>(
                 &mut request,
                 &mut raw_buf,
                 &buf[..n],
+                config,
             )
             .await
         } else {
             tracing::trace!(n, "Read plaintext data");
-            add_request_data(&mut stream, handler.as_mut(), &mut request, &buf[..n]).await
+            add_request_data(
+                &mut stream,
+                handler.as_mut(),
+                &mut request,
+                &buf[..n],
+                config,
+            )
+            .await
         };
         if !accepted {
             break;
@@ -396,6 +472,7 @@ fn spawn_accept_loop(
     callbacks: Arc<dyn HttpdCallbacks>,
     semaphore: Arc<Semaphore>,
     mut shutdown_rx: watch::Receiver<bool>,
+    config: ConnectionConfig,
 ) {
     tokio::spawn(async move {
         loop {
@@ -421,7 +498,7 @@ fn spawn_accept_loop(
                             Some(h) => h,
                             None => return,
                         };
-                        process_connection(stream, handler, remote).await;
+                        process_connection(stream, handler, remote, config).await;
                     });
                 }
                 _ = shutdown_rx.changed() => {
@@ -457,6 +534,7 @@ mod tests {
             server,
             Box::new(OkHandler { disconnect: false }),
             remote,
+            ConnectionConfig::default(),
         ));
 
         client
@@ -484,6 +562,7 @@ mod tests {
             server,
             Box::new(OkHandler { disconnect: true }),
             remote,
+            ConnectionConfig::default(),
         ));
 
         client
@@ -529,6 +608,7 @@ mod tests {
             server,
             Box::new(InvalidConsumptionHandler),
             remote,
+            ConnectionConfig::default(),
         ));
 
         client.write_all(b"encrypted").await.unwrap();
