@@ -50,9 +50,6 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - run: rustup show
-      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
-        with:
-          cache-targets: false
       - name: Package and checksum the crate
         env:
           CRATE_NAME: ${{ needs.metadata.outputs.crate_name }}
@@ -188,9 +185,6 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - run: rustup show
-      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
-        with:
-          cache-targets: false
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: crate-candidate
@@ -216,19 +210,8 @@ jobs:
           VERSION: ${{ needs.metadata.outputs.version }}
         run: |
           set -euo pipefail
-          expected=$(cut -d ' ' -f 1 candidate/SHA256SUMS)
-          actual=''
-          for attempt in {1..12}; do
-            actual=$(curl -fsSL \
-              "https://crates.io/api/v1/crates/${CRATE_NAME}/${VERSION}" \
-              | jq -r '.version.checksum')
-            [[ "$actual" == "$expected" ]] && break
-            [[ "$attempt" -lt 12 ]] && sleep 10
-          done
-          if [[ "$actual" != "$expected" ]]; then
-            echo "::error::crates.io checksum does not match the release candidate."
-            exit 1
-          fi
+          scripts/release/verify-registry.sh "$CRATE_NAME" "$VERSION" \
+            "$(cut -d ' ' -f 1 candidate/SHA256SUMS)"
 
   promote:
     name: Promote verified stable release

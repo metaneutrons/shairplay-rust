@@ -1,0 +1,4 @@
+#!/bin/bash
+set -euo pipefail
+[[ "$*" == "10" ]]
+printf 'sleep\n' >> "$TEST_STATE_DIR/sleeps"
