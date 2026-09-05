@@ -242,10 +242,12 @@ jobs:
       - name: Promote without changing assets
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           TAG: ${{ needs.metadata.outputs.tag }}
         run: |
           set -euo pipefail
           gh release edit "$TAG" --prerelease=false --latest
-          gh release view "$TAG" --json isDraft,isPrerelease,isLatest \
-            --jq 'select(.isDraft == false and .isPrerelease == false and .isLatest == true)' \
-            >/dev/null
+          gh api "repos/${GH_REPO}/releases/latest" \
+            | jq --exit-status --arg tag "$TAG" \
+                '.tag_name == $tag and .draft == false and .prerelease == false' \
+            > /dev/null
