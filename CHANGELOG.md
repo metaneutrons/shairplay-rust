@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.0](https://github.com/metaneutrons/shairplay-rust/compare/v0.8.0...v0.9.0) (2026-09-05)
+
+
+### Features
+
+* **diagnostics:** add gated RTSP header tracing ([#55](https://github.com/metaneutrons/shairplay-rust/issues/55)) ([eaf0a7d](https://github.com/metaneutrons/shairplay-rust/commit/eaf0a7da43559c7f141a1da2968f12d0d5b7d0f4)), closes [#39](https://github.com/metaneutrons/shairplay-rust/issues/39) [#43](https://github.com/metaneutrons/shairplay-rust/issues/43)
+
 ## [0.8.0](https://github.com/metaneutrons/shairplay-rust/compare/shairplay-v0.7.0...shairplay-v0.8.0) (2026-09-02)
 
 ### Minimum Supported Rust Version
