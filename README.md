@@ -150,6 +150,11 @@ The order supplied by the application is preserved. Empty and duplicate lists
 are rejected during `build()`. With the `ap2` feature enabled, also select
 `AirPlayMode::AirPlay1`; AP2 uses a separate fixed capability profile.
 
+MFi-SAP (`et=4`, `POST /auth-setup`) is neither advertised nor implemented.
+It is distinct from FairPlay and HomeKit pairing. See the
+[`/auth-setup` protocol status](docs/protocol/auth-setup.md) for the evidence,
+known compatibility impact, and the requirements for any future implementation.
+
 ## Feature Flags
 
 | Flag | Dependencies | Description |
@@ -196,6 +201,11 @@ Full pipeline: SRP-6a pairing → encrypted RTSP → FairPlay → PTP timing →
 
 - **Type 103 (buffered)** — AAC over TCP with timed playout buffer. Used for music.
 - **Type 96 (realtime)** — ALAC over UDP with immediate delivery. Used for Siri, phone calls, system sounds.
+
+Scope: the AP2 profile implements FairPlay and HomeKit pairing, but not licensed
+MFi-SAP receiver authentication through `/auth-setup`. The profile does not
+advertise `et=4` or the MFi feature bits; see the
+[`/auth-setup` protocol status](docs/protocol/auth-setup.md).
 
 Connections are **instant** (starts streaming in under 50ms) using deterministic key persistence and correct `eventPort` handling on `isRemoteControlOnly` channels, matching commercial receiver capabilities.
 

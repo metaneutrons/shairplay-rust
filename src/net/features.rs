@@ -50,11 +50,11 @@ pub(crate) enum AirPlayFeature {
     AudioFormats4 = 22,
     /// Bit 23 — RSA authentication (legacy, not used)
     Authentication1 = 23,
-    /// Bit 26 — MFi authentication
+    /// Bit 26 — MFi authentication (`Authentication_8`, reverse-engineered name)
     Authentication8Mfi = 26,
     /// Bit 27 — Legacy pairing
     SupportsLegacyPairing = 27,
-    /// Bit 30 — Unified advertiser info
+    /// Bit 30 — Unified advertiser info (not by itself an MFi implementation)
     HasUnifiedAdvertiserInfo = 30,
     /// Bit 32 — Volume control (when NOT CarPlay)
     SupportsVolume = 32,
@@ -86,7 +86,7 @@ pub(crate) enum AirPlayFeature {
     SupportsAirPlayVideoV2 = 49,
     /// Bit 50 — Receive NowPlaying via binary plist (overrides bit 17)
     MetadataNowPlayingBplist = 50,
-    /// Bit 51 — Unified pair-setup and MFi
+    /// Bit 51 — Unified pair-setup and MFi (not implemented)
     SupportsUnifiedPairSetupAndMfi = 51,
     /// Bit 52 — Extended SETPEERS message
     SupportsSetPeersExtendedMessage = 52,
@@ -210,6 +210,10 @@ pub(crate) fn receiver_features_for_pairing(requires_pin_pairing: bool) -> u64 {
             AudioFormats4,                         // bit 22
             SupportsTransientPairing,              // bit 47
         ];
+
+        // Bits 26 (MFi authentication) and 51 (unified pair-setup and MFi)
+        // stay clear: this crate has no /auth-setup route, MFi certificate, or
+        // authentication-IC signing provider. See docs/protocol/auth-setup.md.
 
         let mut features = features_from(&bits);
         if requires_pin_pairing {
