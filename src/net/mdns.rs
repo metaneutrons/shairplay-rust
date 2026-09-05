@@ -34,7 +34,8 @@ pub(crate) const RAOP_EK: &str = "1";
 /// AP2 codecs advertised in `_raop` TXT (0=PCM, 1=ALAC) — AP2 supports both.
 #[cfg(feature = "ap2")]
 pub(crate) const RAOP_AP2_CN: &str = "0,1";
-/// AP2 encryption types advertised in `_raop` TXT (0=none, 3/5=FairPlay).
+/// AP2 encryption types advertised in `_raop` TXT
+/// (0=none, 3=FairPlay, 5=FairPlay SAP 2.5; 4=MFi-SAP is not advertised).
 #[cfg(feature = "ap2")]
 pub(crate) const RAOP_AP2_ET: &str = "0,3,5";
 /// AP2 `_raop` protocol version (65537 = 0x10001).

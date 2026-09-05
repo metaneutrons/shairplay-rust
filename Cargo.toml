@@ -26,6 +26,7 @@ include = [
     "/CHANGELOG.md",
     "/LICENSE",
     "/AP2-STATUS.md",
+    "/docs/**",
     "/airport.key",
 ]
 

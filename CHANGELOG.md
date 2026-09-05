@@ -195,7 +195,7 @@
 
 ### Bug Fixes
 
-* advertise et=0,3,5 (FairPlay + MFi-SAP encryption types) ([2b3c9ef](https://github.com/metaneutrons/shairplay-rust/commit/2b3c9ef363b0ca4de606f81afb877e0890e26cd5))
+* advertise et=0,3,5 (none, FairPlay, and FairPlay SAP 2.5) ([2b3c9ef](https://github.com/metaneutrons/shairplay-rust/commit/2b3c9ef363b0ca4de606f81afb877e0890e26cd5))
 * **airplay2:** activate encryption via after_response() callback ([bdc15dd](https://github.com/metaneutrons/shairplay-rust/commit/bdc15ddc865fea3c8a99ef95c80348b8c4a8f190))
 * **airplay2:** bind event port on IPv6 when client connects via IPv6 ([f1e475a](https://github.com/metaneutrons/shairplay-rust/commit/f1e475ac2bf2d3402e2c36e360e06a1bda330e94))
 * **airplay2:** bind real event port in initial SETUP ([e3fde32](https://github.com/metaneutrons/shairplay-rust/commit/e3fde3226f88e5b67ef11c1d65139dd48f813e44))
@@ -311,7 +311,7 @@
 
 ### Bug Fixes
 
-* advertise et=0,3,5 (FairPlay + MFi-SAP encryption types) ([2b3c9ef](https://github.com/metaneutrons/shairplay-rust/commit/2b3c9ef363b0ca4de606f81afb877e0890e26cd5))
+* advertise et=0,3,5 (none, FairPlay, and FairPlay SAP 2.5) ([2b3c9ef](https://github.com/metaneutrons/shairplay-rust/commit/2b3c9ef363b0ca4de606f81afb877e0890e26cd5))
 * **airplay2:** activate encryption via after_response() callback ([bdc15dd](https://github.com/metaneutrons/shairplay-rust/commit/bdc15ddc865fea3c8a99ef95c80348b8c4a8f190))
 * **airplay2:** bind event port on IPv6 when client connects via IPv6 ([f1e475a](https://github.com/metaneutrons/shairplay-rust/commit/f1e475ac2bf2d3402e2c36e360e06a1bda330e94))
 * **airplay2:** bind real event port in initial SETUP ([e3fde32](https://github.com/metaneutrons/shairplay-rust/commit/e3fde3226f88e5b67ef11c1d65139dd48f813e44))
