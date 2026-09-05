@@ -28,6 +28,8 @@ jobs:
       - name: Install ALSA development headers
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev
       - run: cargo fmt --all -- --check
+      - name: Test release registry verification
+        run: bash scripts/release/tests/verify-registry.sh
       - name: Validate hook configuration
         env:
           LEFTHOOK_VERSION: "2.1.12"

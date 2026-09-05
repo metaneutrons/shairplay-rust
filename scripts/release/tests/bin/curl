@@ -1,0 +1,37 @@
+#!/bin/bash
+# Offline registry responses for verify-registry.sh regression tests.
+set -euo pipefail
+
+[[ "${!#}" == "$TEST_INDEX_URL" ]]
+printf 'request\n' >> "$TEST_STATE_DIR/requests"
+attempt=$(wc -l < "$TEST_STATE_DIR/requests" | tr -d ' ')
+
+case "$TEST_SCENARIO" in
+  unavailable) exit 22 ;;
+  transport-retry) [[ "$attempt" -gt 1 ]] || exit 22 ;;
+  malformed) printf '{invalid json\n'; exit 0 ;;
+esac
+
+record=$(jq --null-input --compact-output \
+  --arg name "$TEST_NAME" --arg checksum "$TEST_CHECKSUM" \
+  '{name: $name, vers: "0.9.0", cksum: $checksum, yanked: false}')
+case "$TEST_SCENARIO" in
+  delayed)
+    if [[ "$attempt" -eq 1 ]]; then
+      printf '%s\n' "$record" | jq --compact-output '.vers = "0.8.0"'
+      exit 0
+    fi
+    ;;
+  missing) printf '%s\n' "$record" | jq --compact-output '.vers = "0.8.0"'; exit 0 ;;
+  wrong-name) printf '%s\n' "$record" | jq --compact-output '.name = "another-crate"'; exit 0 ;;
+  yanked) printf '%s\n' "$record" | jq --compact-output '.yanked = true'; exit 0 ;;
+  missing-yank) printf '%s\n' "$record" | jq --compact-output 'del(.yanked)'; exit 0 ;;
+  missing-checksum) printf '%s\n' "$record" | jq --compact-output 'del(.cksum)'; exit 0 ;;
+  malformed-checksum) printf '%s\n' "$record" | jq --compact-output '.cksum = "not-a-sha256"'; exit 0 ;;
+  mismatch) printf '%s\n' "$record" | jq --compact-output '.cksum = ("b" * 64)'; exit 0 ;;
+  duplicate) printf '%s\n' "$record" "$record"; exit 0 ;;
+esac
+
+# Unrelated versions must not determine the result.
+printf '%s\n' "$record" | jq --compact-output '.vers = "0.8.0" | .cksum = ("b" * 64)'
+printf '%s\n' "$record"
