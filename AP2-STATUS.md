@@ -22,6 +22,23 @@
 | **Video (screen mirroring)** | **110** | **AES-128-CTR decrypt, H.264 decode, working on iOS 18** |
 | Unified output | — | Always F32LE interleaved PCM to app |
 
+## MFi `/auth-setup` — Not Implemented
+
+The AP2 profile implements FairPlay (`/fp-setup`) and HomeKit pairing
+(`/pair-setup`, `/pair-verify`), but not MFi-SAP receiver authentication. It
+advertises `et=0,3,5`; `et=5` is FairPlay SAP 2.5, while the commonly documented
+MFi-SAP value `et=4` is absent. Feature bits 26 and 51 are also not set.
+
+`/auth-setup` is not exclusively an AP1 or AP2 mechanism: public
+reverse-engineering sources place it in both classic RAOP compatibility and
+AirPlay 2 contexts. A forced PipeWire `auth_setup` sender currently receives
+`404` after the Digest check, or `401` for missing/invalid required authorization,
+and aborts. The normal advertised profiles do not select that path.
+A status-only PipeWire workaround would not constitute MFi
+authentication. See the dedicated
+[`/auth-setup` protocol status](docs/protocol/auth-setup.md) for evidence levels,
+security boundaries, unknowns, and required regression coverage.
+
 ## Open / Unwired — scaffolding present, not connected
 
 Implemented building blocks that are **not** wired into the runtime path. Kept
