@@ -30,6 +30,10 @@ jobs:
       - run: cargo fmt --all -- --check
       - name: Test release registry verification
         run: bash scripts/release/tests/verify-registry.sh
+      - name: Test release identity verification
+        run: bash scripts/release/tests/verify-metadata.sh
+      - name: Test release candidate verification
+        run: bash scripts/release/tests/verify-candidate.sh
       - name: Validate hook configuration
         env:
           LEFTHOOK_VERSION: "2.1.12"

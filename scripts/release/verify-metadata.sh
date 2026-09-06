@@ -16,12 +16,22 @@ fail() {
 
 [[ "$ref_type" == tag && "$tag" =~ $semver ]] ||
     fail 'expected a canonical v-prefixed SemVer tag'
-[[ "$(git rev-parse "${tag}^{}")" == "$(git rev-parse "$expected_commit")" ]] ||
+[[ "$verify_registry" == true || "$verify_registry" == false ]] ||
+    fail 'registry verification must be true or false'
+tag_commit=$(git rev-parse --verify "refs/tags/${tag}^{commit}") ||
+    fail 'tag must resolve to a commit'
+expected_commit=$(git rev-parse --verify "${expected_commit}^{commit}") ||
+    fail 'expected commit must resolve to a commit'
+[[ "$tag_commit" == "$expected_commit" ]] ||
     fail 'tag does not resolve to the expected commit'
+[[ "$(git rev-parse --verify 'HEAD^{commit}')" == "$expected_commit" ]] ||
+    fail 'checkout does not match the expected commit'
 
 version=${tag#v}
-core=${version%%[-+]*}
-metadata=$(cargo metadata --no-deps --format-version 1)
+# A hyphen inside build metadata is not a prerelease separator.
+release_version=${version%%+*}
+core=${release_version%%-*}
+metadata=$(cargo metadata --locked --no-deps --format-version 1)
 [[ "$(jq '.packages | length' <<< "$metadata")" -eq 1 ]] ||
     fail 'workspace must contain exactly one package'
 crate_name=$(jq -r '.packages[0].name' <<< "$metadata")
@@ -31,7 +41,7 @@ manifest_version=$(jq -r '.["."]' .release-please-manifest.json)
     fail 'tag core, Cargo package version, and release manifest must match'
 
 is_prerelease=false
-[[ "$version" == *-* ]] && is_prerelease=true
+[[ "$release_version" == *-* ]] && is_prerelease=true
 [[ "$verify_registry" != true || "$is_prerelease" == true ]] ||
     fail 'registry verification is reserved for non-publishing prerelease tests'
 

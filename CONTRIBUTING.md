@@ -70,6 +70,12 @@ Releases are fully automated via [release-please](https://github.com/googleapis/
    crates.io Trusted Publishing, verifies the registry result, and only then
    promotes the GitHub Release to latest.
 
+Historical `shairplay-v*` tags remain immutable compatibility references. New
+releases use `vX.Y.Z`; release titles can be normalized without renaming tags.
+Own `.crate` assets and checksums accompany stable releases starting at `0.9.0`.
+See [release qualification and recovery](docs/release-process.md) before
+changing the release pipeline or handling a partially published release.
+
 Commit prefixes and their effect on versioning:
 
 | Prefix | Example | Version bump |
