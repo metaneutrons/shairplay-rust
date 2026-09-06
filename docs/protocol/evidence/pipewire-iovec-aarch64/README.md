@@ -40,6 +40,9 @@ artifacts for 30 days. The local reports here have not been relabelled as CI run
 The result confirms the ignored second iovec as a causal sender defect in this
 configuration. It does not qualify unmodified PipeWire 1.6.7, TCP, password
 playback, physical devices, other sender versions or MFi authentication. The
-upstream patch has not been submitted or accepted. See the
+fix was submitted on 2026-09-06 as
+[PipeWire MR !2984](https://gitlab.freedesktop.org/pipewire/pipewire/-/merge_requests/2984)
+with a native Meson callback regression. It has not been merged or released;
+these historical reports still describe the exact revisions recorded above. See the
 [qualification document](../../pipewire-qualification.md) and
 [#72](https://github.com/metaneutrons/shairplay-rust/issues/72) for remaining work.

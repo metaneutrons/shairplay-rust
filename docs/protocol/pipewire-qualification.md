@@ -100,8 +100,22 @@ not be reported as an unmodified 1.6.7 qualification pass.
 The patch also passes `git apply --check` against 1.6.8
 (`b741e0c74f5436f0c925f7741140db0efd32cf4e`) and the checked development head
 (`b0b792fa72451fd9a068c1a8f877d21d4c67cd3f`). This is source applicability only;
-neither version has been live-tested here. An upstream submission is prepared
-as a minimal patch plus reproducible callback/live tests, but has not been filed.
+neither version has been live-tested here. The minimal fix and reproducible
+callback/live tests were submitted on
+2026-09-06 as [PipeWire MR !2984](https://gitlab.freedesktop.org/pipewire/pipewire/-/merge_requests/2984).
+
+The submitted commit `28aea435ba766cddd132cfb1a0992ceb1d797d51` targets the
+development head above and includes a native Meson regression,
+`pw-test-raop-iovec`, that exercises the actual sender callback. On Linux
+aarch64 with ASan/UBSan and `b_ndebug=true`, the unmodified callback fails
+352 of 354 cases and the fix passes all 354; the existing
+`pw-test-raop-rtsp-client` also passes. This adds callback-level build/test
+evidence for that development revision, not live playback qualification.
+
+The MR is submitted for review, not merged or released. Upstream acceptance,
+selection and qualification of a supported fixed sender baseline, and the
+original desktop confirmation remain outstanding. #65 and draft #73 remain
+blocked; TCP and password playback are separate limitations.
 
 Normal `cargo test` does not launch PipeWire: the live test is Linux-only and
 ignored unless explicitly requested. Its oracle/subprocess self-tests run
