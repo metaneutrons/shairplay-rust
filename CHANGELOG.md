@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.9.0](https://github.com/metaneutrons/shairplay-rust/compare/v0.8.0...v0.9.0) (2026-09-05)
+## [0.9.0](https://github.com/metaneutrons/shairplay-rust/compare/shairplay-v0.8.0...v0.9.0) (2026-09-05)
 
 
 ### Features
@@ -130,7 +130,7 @@
 
 * **security:** harden protocol handling and input validation ([8288c7b](https://github.com/metaneutrons/shairplay-rust/commit/8288c7b61a3cc9171b64edd4839769b2c9e54289))
 
-## [0.2.0](https://github.com/metaneutrons/shairplay-rust/compare/shairplay-v0.1.0...shairplay-v0.2.0) (2026-04-05)
+## [0.2.0](https://github.com/metaneutrons/shairplay-rust/compare/v0.1.0...shairplay-v0.2.0) (2026-04-05)
 
 
 ### ⚠ BREAKING CHANGES

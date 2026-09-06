@@ -155,6 +155,8 @@ jobs:
           mkdir downloaded
           gh release download "$TAG" --dir downloaded
           scripts/release/verify-candidate.sh downloaded "$CRATE_NAME" "$VERSION"
+          cmp "release/${CRATE_NAME}-${VERSION}.crate" "downloaded/${CRATE_NAME}-${VERSION}.crate"
+          cmp release/SHA256SUMS downloaded/SHA256SUMS
           gh release edit "$TAG" --draft=false --prerelease --latest=false
       - name: Verify public release bytes
         env:
@@ -170,8 +172,9 @@ jobs:
             -o "public/$crate"
           curl -fsSL "https://github.com/${REPOSITORY}/releases/download/${TAG}/SHA256SUMS" \
             -o public/SHA256SUMS
-          test "$(wc -l < public/SHA256SUMS | tr -d ' ')" -eq 1
-          (cd public && sha256sum --check SHA256SUMS)
+          scripts/release/verify-candidate.sh public "$CRATE_NAME" "$VERSION"
+          cmp "release/$crate" "public/$crate"
+          cmp release/SHA256SUMS public/SHA256SUMS
 
   publish-crate:
     name: Publish crate to crates.io
