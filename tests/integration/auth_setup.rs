@@ -122,13 +122,12 @@ async fn read_response(client: &mut BufReader<TcpStream>) -> Response {
 }
 
 #[test]
-fn source_probe_survives_every_body_split() {
+fn source_probe_survives_every_request_split() {
     let body = probe();
     assert_eq!(body.len(), 33);
     assert_eq!(body[0], 1);
     let wire = request(1, None);
-    let body_start = wire.len() - body.len();
-    for split in body_start..=wire.len() {
+    for split in 0..=wire.len() {
         let mut parsed = HttpRequest::new();
         parsed
             .add_data(&wire[..split])
@@ -144,6 +143,34 @@ fn source_probe_survives_every_body_split() {
         );
         assert_eq!(parsed.data(), Some(body.as_slice()));
     }
+    let mut parsed = HttpRequest::new();
+    for byte in &wire {
+        parsed.add_data(std::slice::from_ref(byte)).unwrap();
+    }
+    assert!(parsed.is_complete());
+    assert_eq!(parsed.data(), Some(body.as_slice()));
+}
+
+#[tokio::test]
+#[serial]
+async fn unavailable_probe_pipeline_preserves_large_coverart() {
+    let (mut server, port, state) = start_server().await;
+    let mut client = connect(port).await;
+    let coverart = vec![0x55; 128 * 1024];
+    let mut wire = request(1, None);
+    wire.extend_from_slice(format!(
+        "SET_PARAMETER rtsp://127.0.0.1/{port} RTSP/1.0\r\nCSeq: 2\r\nContent-Type: image/jpeg\r\nContent-Length: {}\r\n\r\n", coverart.len()
+    ).as_bytes());
+    wire.extend_from_slice(&coverart);
+    wire.extend_from_slice(&request(3, None));
+    write(&mut client, &wire).await;
+    read_response(&mut client).await.assert_empty(404, "1");
+    read_response(&mut client).await.assert_empty(200, "2");
+    read_response(&mut client).await.assert_empty(404, "3");
+    assert_eq!(*state.coverart.lock().unwrap(), vec![coverart]);
+    assert!(state.inits.lock().unwrap().is_empty());
+    drop(client);
+    server.stop().await;
 }
 
 #[tokio::test]

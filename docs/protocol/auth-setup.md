@@ -278,27 +278,60 @@ do not count them as part of the probe or discard them on a successful request.
 On early rejection, close rather than draining an unbounded declared body.
 
 This is deliberately not a global 33-byte cap: legitimate larger requests on
-other endpoints must remain supported. The current parser's 32 MiB body limit
-does not satisfy this enabled-endpoint budget. Header-arrival timeouts and other
+other endpoints must remain supported. The shared parser's 32 MiB body limit
+alone does not satisfy this enabled-endpoint budget. Header-arrival timeouts and other
 pre-existing global transport limitations must not be described as fixed by a
 probe-body deadline.
+
+### Ingestion foundation (B)
+
+The parser now retains at most 64 KiB of headers, independently of a coalesced
+body. It rejects invalid or duplicate `Content-Length`, duplicate `Content-Type`
+and all `Transfer-Encoding` values; it does not implement chunked decoding.
+These framing checks apply to every request, including when compatibility is
+disabled. An absent length still means no body unless a connection policy
+requires one. The global body ceiling remains 32 MiB.
+
+After parsing complete headers, the connection selects a `RequestBodyPolicy`
+exactly once, before the parser retains any body bytes. This internal hook can
+require header metadata, lower the body ceiling and set an absolute body deadline.
+The same hook applies to plaintext, decrypted input and pipelined requests.
+Framing/policy failures return `400` with `Connection: close`; body deadlines
+close without a success response. No draining of a rejected body is attempted.
+
+**Not yet enabled:** the production RAOP handler still uses the default policy
+(32 MiB, no body deadline). `/auth-setup` remains absent. The 33-byte/five-second
+policy is exercised by a test handler, not by a production route. Step C must
+select it through the route's compile-time and runtime gates, implement the
+remaining header/probe validation and retain existing Digest authorization.
+This foundation does not duplicate routing or authentication in the transport.
+
+The transport reads 4096-byte chunks. Encrypted input has a separate 1 MiB raw
+buffer ceiling checked before copying; the existing cipher may materialize a
+decrypted chunk before the request policy runs. Thus the per-request body ceiling
+is not a claim that total connection memory is only 33 bytes. Following pipelined
+bytes are retained separately from the current body. Header-arrival, idle and
+response-write deadlines remain outside this change; an incomplete encrypted
+frame before complete request headers does not start a body deadline.
 
 ### Test obligations
 
 The fixture and baseline tests in `tests/integration/auth_setup.rs` establish
-the source-derived probe, body-fragment parsing, pipelined response framing,
+the source-derived probe, every request split and one-byte ingestion, pipelined response framing,
 Digest precedence and unchanged discovery while the endpoint is absent. They
 do **not** qualify the future enabled handler. Future production validation
 must be tested against this independent fixture rather than importing the
 implementation's expected probe constant as the test oracle.
 
-**Known prerequisite failure:** a full split-point sweep on the current parser
-fails at byte 18 of `POST /auth-setup RTSP/1.0`, after the first `R`. The parser
-passes this partial version token to `httparse` before its complete-token RTSP
-rewrite can run. Baseline body-split coverage does not claim request-line
-fragmentation works. [Ingestion work #64](https://github.com/metaneutrons/shairplay-rust/issues/64)
-must fix this and add a passing sweep over every request split before endpoint
-activation; the failure is not an accepted compatibility exception.
+The former failure at byte 18 of `POST /auth-setup RTSP/1.0` is covered by the
+full split-point sweep. Parsing waits for complete headers and translates only
+the request-line version; RTSP-like bytes in the URI, headers or body stay intact.
+Parser regressions cover ordinary HTTP, invalid versions, framing ambiguity,
+exact bounds and pre-body policy rejection. Transport regressions cover absolute
+deadlines, real TCP client-slot release, large-body positive controls and the
+existing AP2 control cipher with bytewise frame ingestion and encrypted replies.
+The HTTP fuzz target compares whole-input and fragmented parsing. These are
+mechanism tests, not evidence that PipeWire playback or AP2 `/auth-setup` works.
 
 The implementation adds tests for feature/runtime gates, every rejection row,
 byte mutations, lengths around 33, conflicting framing, repeated requests,

@@ -835,7 +835,7 @@ dependencies = [
 
 [[package]]
 name = "shairplay"
-version = "0.8.0"
+version = "0.9.1"
 dependencies = [
  "aes",
  "astro-dnssd",
