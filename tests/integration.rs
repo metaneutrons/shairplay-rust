@@ -8,6 +8,9 @@ use tokio::net::TcpStream;
 
 use shairplay::{AudioCodec, AudioFormat, AudioHandler, AudioSession, RaopServer, TrackMetadata};
 
+#[path = "integration/auth_setup.rs"]
+mod auth_setup;
+
 struct TestHandler {
     inits: Arc<Mutex<Vec<AudioFormat>>>,
     volumes: Arc<Mutex<Vec<f32>>>,

@@ -110,6 +110,23 @@ These facts justify a PipeWire regression test. They do not establish that an
 empty or truncated response is valid MFi-SAP, nor that other senders behave the
 same way.
 
+### PipeWire password challenge limitation
+
+**Source-verified behavior, inferred interoperability limitation.** The pinned
+sender handles `401` in `rtsp_options_reply` by learning the challenge and
+retrying `OPTIONS`. Its `/auth-setup` callback instead aborts on every non-200
+status. shairplay currently exempts `OPTIONS` from Digest authentication and
+challenges subsequent requests when a password is configured.
+
+Consequently, enabling the compatibility acknowledgement alone is not expected
+to make that sender work with a password-protected receiver. This is not a
+reason to bypass Digest or change the existing `OPTIONS` policy in this work.
+The first live qualification must distinguish a passwordless positive case
+from the protected negative case. A synthetic client successfully answering a
+Digest challenge proves server behavior, not PipeWire password interoperability.
+
+Source: [PipeWire authentication callbacks](https://github.com/PipeWire/pipewire/blob/b0b792fa72451fd9a068c1a8f877d21d4c67cd3f/src/modules/module-raop-sink.c#L1270-L1412).
+
 ### Reverse-engineered wire format
 
 **Corroborated, not normative.** The Unofficial AirPlay Specification describes
@@ -195,24 +212,112 @@ This mode must not be declared complete without authorized specification
 review, independent cryptographic vectors, and successful negative and
 positive tests against validating hardware.
 
-## Required Regression Coverage
+## First Compatibility Contract
 
-For a PipeWire compatibility implementation:
+This is the implementation contract for the first increment, **not implemented
+endpoint behavior or a normative MFi-SAP specification**. The current-state
+table above remains authoritative about what is shipped. Work and acceptance
+evidence are tracked in [epic #62](https://github.com/metaneutrons/shairplay-rust/issues/62);
+this document is the single behavioral specification, not a progress checklist.
 
-1. Feature absent: `/auth-setup` remains `404` after the Digest check and `et=4`
-   cannot be advertised; required authorization still produces `401` when invalid.
-2. Feature present but runtime policy disabled: the same fail-closed behavior.
-3. Policy enabled: the exact current PipeWire 33-byte request receives `200`.
-4. Missing body, wrong length, unsupported mode byte, and oversized body are
-   rejected without panic or allocation abuse.
-5. Existing AP1 and AP2 advertisements remain byte-for-byte unchanged. Any later
-   opt-in `et=4` advertisement needs its own sender-selection regression tests.
-6. A sender simulation proceeds through `ANNOUNCE`, `SETUP`, and `RECORD` with
-   unencrypted audio after the compatibility acknowledgement.
-7. Builds and tests cover default features, the compatibility feature, `ap2`,
-   and their supported combination on macOS and Linux.
+### Activation and scope
 
-For conformant MFi-SAP, add parser and serializer boundary tests, independent
+The Cargo feature is `pipewire-auth-setup-compat`, excluded from defaults and
+independent of `ap2`. A feature-gated builder policy defaults to disabled;
+merely compiling the feature, including through Cargo feature unification, must
+not activate the endpoint. There is no debug-build exception to these gates.
+
+The first interoperability claim is an explicitly configured PipeWire sender
+using classic RAOP, unencrypted PCM and the transport actually qualified in the
+live test. The library stays platform-neutral. Compiling `ap2` does not imply
+support for MFi or additional AP2 authentication flows. Existing AP1/AP2
+advertisements and feature bits remain unchanged in every gate combination.
+
+### Request and response
+
+Only `POST /auth-setup` in origin form, without a query or fragment, is eligible
+for the new handler. Other requests retain existing routing, including wildcard
+`OPTIONS`; this rule must not introduce a new global routing policy.
+
+The enabled endpoint requires exactly one decimal `Content-Length` declaring
+33 bytes, no `Transfer-Encoding`, and one `Content-Type` whose media type is
+`application/octet-stream` (ASCII case-insensitive, surrounding whitespace
+allowed, no parameters). Its body must exactly match
+[`tests/fixtures/pipewire-auth-setup.hex`](../../tests/fixtures/pipewire-auth-setup.hex).
+The fixture contains the fixed probe from `rtsp_do_post_auth_setup` at PipeWire
+commit `b0b792fa72451fd9a068c1a8f877d21d4c67cd3f`. It is source-derived data, not
+a captured exchange, secret, credential or authenticated client identifier.
+
+An enabled, authorized, matching probe receives `RTSP/1.0 200 OK`, the normal
+`CSeq` and `Server` headers, explicit `Content-Length: 0`, and no body. The
+handler creates no key material and changes no pairing, encryption, stream or
+authentication state. It must not log authentication success. Repeated probes
+are independent; later RTSP requests still go through their normal checks.
+
+### Rejection and resource boundaries
+
+| Condition | Contract |
+|-----------|----------|
+| Feature absent or runtime disabled; well-framed request passes Digest | Existing `404`, no compatibility acknowledgement |
+| Bounded, otherwise valid request without valid required authorization | Existing `401` challenge, regardless of whether the compatibility policy is enabled |
+| Enabled path with missing/invalid/duplicate length, transfer encoding, unsupported media type, wrong length/mode or any differing probe byte | `400`, no success payload, close the connection |
+| Invalid generic HTTP/RTSP framing or global parser limit exceeded | Existing transport rejection takes precedence; no dispatch or success acknowledgement |
+| Enabled probe body incomplete after its absolute body deadline | Close the connection and release the client slot; no success acknowledgement |
+
+The error codes above are project policy, not an assertion about Apple's
+unspecified error semantics. Endpoint size/framing rejection may happen before
+Digest; the `401` guarantee applies to bounded, well-framed requests. Never
+bypass required authorization to obtain `200`.
+
+The enabled probe has a 33-byte body budget enforced once its headers are known,
+before further body accumulation, including when a network read contains both
+headers and body. Its body-completion deadline is five seconds after headers
+complete; individual bytes must not reset it. Header/global limits still apply.
+Bytes beyond a correctly framed body may belong to a pipelined next request:
+do not count them as part of the probe or discard them on a successful request.
+On early rejection, close rather than draining an unbounded declared body.
+
+This is deliberately not a global 33-byte cap: legitimate larger requests on
+other endpoints must remain supported. The current parser's 32 MiB body limit
+does not satisfy this enabled-endpoint budget. Header-arrival timeouts and other
+pre-existing global transport limitations must not be described as fixed by a
+probe-body deadline.
+
+### Test obligations
+
+The fixture and baseline tests in `tests/integration/auth_setup.rs` establish
+the source-derived probe, body-fragment parsing, pipelined response framing,
+Digest precedence and unchanged discovery while the endpoint is absent. They
+do **not** qualify the future enabled handler. Future production validation
+must be tested against this independent fixture rather than importing the
+implementation's expected probe constant as the test oracle.
+
+**Known prerequisite failure:** a full split-point sweep on the current parser
+fails at byte 18 of `POST /auth-setup RTSP/1.0`, after the first `R`. The parser
+passes this partial version token to `httparse` before its complete-token RTSP
+rewrite can run. Baseline body-split coverage does not claim request-line
+fragmentation works. [Ingestion work #64](https://github.com/metaneutrons/shairplay-rust/issues/64)
+must fix this and add a passing sweep over every request split before endpoint
+activation; the failure is not an accepted compatibility exception.
+
+The implementation adds tests for feature/runtime gates, every rejection row,
+byte mutations, lengths around 33, conflicting framing, repeated requests,
+deadline/slot release, and unchanged larger requests. Exercise default,
+compatibility-only, `ap2`, their combination and all features on the supported
+platform matrix. A simulated sender must reach actual expected decoded samples
+through `ANNOUNCE`, `SETUP`, `RECORD`, teardown and reconnect.
+
+Only a real PipeWire run with recorded version, configuration and expected
+audio establishes the supported live scope. Record password protection as a
+negative case until separately proven otherwise; record David's external
+confirmation or its absence. Neither a 200-only test nor this fixture closes
+the original interoperability report. No complete MFi or broad Apple-device
+claim follows from this milestone.
+
+## Later MFi Regression Coverage
+
+Beyond the compatibility test obligations above, conformant MFi-SAP needs
+parser and serializer boundary tests, independent
 KDF/signature vectors, invalid-certificate and invalid-signature tests, and an
 authorized real-device interoperability test.
 
