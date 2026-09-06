@@ -73,6 +73,8 @@ jobs:
         with:
           tool: cargo-nextest
       - run: cargo nextest run --workspace --all-features --locked
+      - name: Verify auth-setup baseline without optional features
+        run: cargo nextest run --workspace --no-default-features --locked --test integration -E 'test(auth_setup::)'
       - name: Install coverage tooling
         if: matrix.name == 'linux-x86_64'
         uses: taiki-e/install-action@b6ff580856c41316412a0b9b60540fbc6f8c82cc # v2.86.7
