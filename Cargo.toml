@@ -2,7 +2,7 @@
 resolver = "3"
 
 [workspace.package]
-version = "0.9.0"
+version = "0.9.1"
 
 [package]
 name = "shairplay"
