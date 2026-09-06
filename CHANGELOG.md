@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.10.0](https://github.com/metaneutrons/shairplay-rust/compare/v0.9.1...v0.10.0) (2026-09-06)
+
+
+### Features
+
+* **raop:** add opt-in PipeWire auth-setup compatibility ([#71](https://github.com/metaneutrons/shairplay-rust/issues/71)) ([a87fbbc](https://github.com/metaneutrons/shairplay-rust/commit/a87fbbc7099db770246cae00e7c0e7f634d6b46e))
+
+
+### Bug Fixes
+
+* **rtsp:** bound request ingestion before body dispatch ([#69](https://github.com/metaneutrons/shairplay-rust/issues/69)) ([87a811d](https://github.com/metaneutrons/shairplay-rust/commit/87a811d22f54f38b091b47567d0a87b58c65ce86))
+
 ## [0.9.1](https://github.com/metaneutrons/shairplay-rust/compare/v0.9.0...v0.9.1) (2026-09-06)
 
 
