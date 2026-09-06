@@ -64,18 +64,15 @@ fn rejects_ambiguous_body_framing_and_latches_failure() {
 #[test]
 fn policy_runs_once_before_coalesced_body_allocation() {
     let mut wire = b"POST /small RTSP/1.0\r\nContent-Length: 1048576\r\n\r\n".to_vec();
-    wire.resize(wire.len() + 1024 * 1024, b'x');
+    wire.resize(wire.len() + 1024 * 1024, 0x55);
     let mut request = HttpRequest::new();
-    assert!(
-        request
-            .add_data_with_body_limit(&wire, |headers| {
-                assert!(headers.headers_complete());
-                assert!(headers.buffer.is_empty());
-                assert!(headers.data().is_none());
-                Ok(33)
-            })
-            .is_err()
-    );
+    let result = request.add_data_with_body_limit(&wire, |headers| {
+        assert!(headers.headers_complete());
+        assert!(headers.buffer.is_empty());
+        assert!(headers.data().is_none());
+        Ok(33)
+    });
+    assert!(result.is_err());
     assert!(request.buffer.is_empty());
     assert!(request.buffer.capacity() <= MAX_HEADER_BYTES);
 
@@ -97,16 +94,13 @@ fn policy_can_require_length_without_breaking_bodyless_requests() {
     let wire = b"OPTIONS * RTSP/1.0\r\n\r\n";
     assert!(parse_fragmented(wire).data().is_none());
     let mut request = HttpRequest::new();
-    assert!(
-        request
-            .add_data_with_body_limit(wire, |headers| {
-                headers
-                    .header("content-length")
-                    .ok_or_else(|| ProtocolError::InvalidRtsp("length required".into()))?;
-                Ok(33)
-            })
-            .is_err()
-    );
+    let result = request.add_data_with_body_limit(wire, |headers| {
+        headers
+            .header("content-length")
+            .ok_or_else(|| ProtocolError::InvalidRtsp("length required".into()))?;
+        Ok(33)
+    });
+    assert!(result.is_err());
     assert!(!request.is_complete());
 }
 
@@ -127,7 +121,7 @@ fn header_limits_exclude_coalesced_bodies_and_include_terminators() {
     let prefix = b"GET / RTSP/1.0\r\nX: ";
     for extra in [0, 1] {
         let mut wire = prefix.to_vec();
-        wire.resize(MAX_HEADER_BYTES - 4 + extra, b'x');
+        wire.resize(MAX_HEADER_BYTES - 4 + extra, 0x55);
         wire.extend_from_slice(b"\r\n\r\n");
         let mut request = HttpRequest::new();
         assert_eq!(request.add_data(&wire).is_ok(), extra == 0);
@@ -135,7 +129,7 @@ fn header_limits_exclude_coalesced_bodies_and_include_terminators() {
     }
     let size = MAX_HEADER_BYTES + 1;
     let mut wire = format!("POST /large RTSP/1.0\r\nContent-Length: {size}\r\n\r\n").into_bytes();
-    wire.resize(wire.len() + size, b'x');
+    wire.resize(wire.len() + size, 0x55);
     let mut request = HttpRequest::new();
     request.add_data(&wire).unwrap();
     assert_eq!(request.data().unwrap().len(), size);

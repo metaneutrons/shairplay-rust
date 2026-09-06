@@ -107,22 +107,26 @@ impl HttpRequest {
         }
 
         if self.headers_complete {
-            let needed = self.content_length.unwrap_or(0);
-            let accepted = data.len().min(needed - self.buffer.len());
-            self.buffer.extend_from_slice(&data[..accepted]);
-            if self.buffer.len() == needed {
-                if needed != 0 {
-                    self.body = Some(std::mem::take(&mut self.buffer));
-                }
-                self.complete = true;
-                // Following bytes belong to the next pipelined request, not this body.
-                self.buffer.extend_from_slice(&data[accepted..]);
-            }
+            self.buffer_body_and_leftover(data);
         }
         Ok(())
     }
 
-    fn try_parse_headers(&mut self) -> Result<bool, ProtocolError> {
+    fn buffer_body_and_leftover(&mut self, data: &[u8]) {
+        let needed = self.content_length.unwrap_or(0);
+        let accepted = data.len().min(needed - self.buffer.len());
+        self.buffer.extend_from_slice(&data[..accepted]);
+        if self.buffer.len() == needed {
+            if needed != 0 {
+                self.body = Some(std::mem::take(&mut self.buffer));
+            }
+            self.complete = true;
+            // Following bytes belong to the next pipelined request, not this body.
+            self.buffer.extend_from_slice(&data[accepted..]);
+        }
+    }
+
+    fn normalize_request_version(&mut self) {
         // httparse accepts HTTP, so translate only the complete request-line version.
         // Leading empty lines are permitted by httparse; URI/header/body bytes stay intact.
         if let Some(start) = self.request_line_start {
@@ -137,7 +141,10 @@ impl HttpRequest {
                 line[start..start + 4].copy_from_slice(b"HTTP");
             }
         }
+    }
 
+    fn try_parse_headers(&mut self) -> Result<bool, ProtocolError> {
+        self.normalize_request_version();
         let mut header_buf = [httparse::EMPTY_HEADER; MAX_HEADER_COUNT];
         let mut req = httparse::Request::new(&mut header_buf);
 
@@ -162,25 +169,7 @@ impl HttpRequest {
                         .insert(name, String::from_utf8_lossy(h.value).to_string());
                 }
 
-                self.content_length = self
-                    .headers
-                    .get("content-length")
-                    .map(|value| {
-                        if value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit()) {
-                            return Err(ProtocolError::InvalidRtsp(
-                                "invalid Content-Length".into(),
-                            ));
-                        }
-                        value.parse::<usize>().map_err(|_| {
-                            ProtocolError::InvalidRtsp("Content-Length overflow".into())
-                        })
-                    })
-                    .transpose()?;
-                if self.content_length.unwrap_or(0) > MAX_BODY_BYTES {
-                    return Err(ProtocolError::InvalidRtsp(
-                        "request body exceeds 32 MiB".into(),
-                    ));
-                }
+                self.content_length = self.parse_content_length()?;
 
                 self.headers_complete = true;
 
@@ -192,6 +181,27 @@ impl HttpRequest {
             Ok(httparse::Status::Partial) => Ok(false),
             Err(e) => Err(ProtocolError::InvalidRtsp(e.to_string())),
         }
+    }
+
+    fn parse_content_length(&self) -> Result<Option<usize>, ProtocolError> {
+        let length = self
+            .headers
+            .get("content-length")
+            .map(|value| {
+                if value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit()) {
+                    return Err(ProtocolError::InvalidRtsp("invalid Content-Length".into()));
+                }
+                value
+                    .parse::<usize>()
+                    .map_err(|_| ProtocolError::InvalidRtsp("Content-Length overflow".into()))
+            })
+            .transpose()?;
+        if length.unwrap_or(0) > MAX_BODY_BYTES {
+            return Err(ProtocolError::InvalidRtsp(
+                "request body exceeds 32 MiB".into(),
+            ));
+        }
+        Ok(length)
     }
 
     /// Return any bytes in the buffer beyond the complete request.

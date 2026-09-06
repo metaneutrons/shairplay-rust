@@ -133,7 +133,7 @@ async fn reapplies_policy_to_pipeline_and_preserves_larger_endpoint() {
     let mut wire = headers("/bounded", 33);
     wire.extend_from_slice(&[1; 33]);
     wire.extend_from_slice(&headers("/large", 128 * 1024));
-    wire.resize(wire.len() + 128 * 1024, b'x');
+    wire.resize(wire.len() + 128 * 1024, 0x55);
     wire.extend_from_slice(&headers("/bounded", 34));
     // The invalid last request is already buffered; no further read is required to reject it.
     client.write_all(&wire).await.unwrap();
@@ -188,15 +188,14 @@ async fn completed_body_clears_deadline_and_next_request_gets_its_own() {
     assert!(pending.body_deadline.is_none());
     let (mut client, mut server) = tokio::io::duplex(1024);
     let mut handler = handler;
-    assert!(
-        send_completed_responses(
-            &mut server,
-            &mut handler,
-            &mut pending,
-            ConnectionConfig::default()
-        )
-        .await
-    );
+    let accepted = send_completed_responses(
+        &mut server,
+        &mut handler,
+        &mut pending,
+        ConnectionConfig::default(),
+    )
+    .await;
+    assert!(accepted);
     pending
         .add_data(&handler, &headers("/bounded", 33))
         .unwrap();
@@ -268,17 +267,16 @@ async fn encrypted_buffer_limit_is_checked_before_copying() {
     let mut pending = PendingRequest::default();
     let mut raw = vec![0; MAX_ENCRYPTED_BUFFER_LEN];
     let mut sink = tokio::io::sink();
-    assert!(
-        !ingest_encrypted_data(
-            &mut sink,
-            &mut handler,
-            &mut pending,
-            &mut raw,
-            b"x",
-            ConnectionConfig::default()
-        )
-        .await
-    );
+    let accepted = ingest_encrypted_data(
+        &mut sink,
+        &mut handler,
+        &mut pending,
+        &mut raw,
+        b"x",
+        ConnectionConfig::default(),
+    )
+    .await;
+    assert!(!accepted);
     assert_eq!(raw.len(), MAX_ENCRYPTED_BUFFER_LEN);
 }
 
@@ -320,17 +318,16 @@ async fn encrypted_fragments_and_pipeline_use_identical_policy() {
     let mut accepted = true;
     for byte in ciphertext {
         assert!(accepted);
-        assert!(
-            ingest_encrypted_data(
-                &mut server,
-                &mut handler,
-                &mut pending,
-                &mut raw,
-                &[byte],
-                ConnectionConfig::default()
-            )
-            .await
-        );
+        let ingested = ingest_encrypted_data(
+            &mut server,
+            &mut handler,
+            &mut pending,
+            &mut raw,
+            &[byte],
+            ConnectionConfig::default(),
+        )
+        .await;
+        assert!(ingested);
         accepted = send_completed_responses(
             &mut server,
             &mut handler,
