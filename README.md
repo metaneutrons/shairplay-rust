@@ -195,9 +195,12 @@ Only an exact, bounded public probe receives an empty acknowledgement, after
 the normal Digest check. This is not MFi authentication or a confidentiality
 guarantee. Do not enable it as a substitute for encryption.
 
-Local simulated-sender tests cover PCM delivery over UDP/TCP, teardown and
-reconnect. Real PipeWire playback remains unqualified, and the current sender's
-Digest flow does not establish password-protected interoperability. See the
+Real PipeWire 1.6.7 reaches passwordless UDP playback, teardown and reconnect,
+but longer bit-exact tests expose audio discontinuities: live qualification
+is **not complete**. Its `PCM` setting sends uncompressed ALAC, not raw L16.
+TCP and password-protected playback also remain unsupported. Simulated-sender tests cover
+the library's separate raw L16 UDP/TCP paths. See the
+[reproducible live test](docs/protocol/pipewire-qualification.md) and
 [contract and known limitations](docs/protocol/auth-setup.md#first-compatibility-contract)
 before deployment; the feature does not automatically configure a PipeWire sender.
 
