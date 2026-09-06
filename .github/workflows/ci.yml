@@ -46,6 +46,7 @@ jobs:
           "$RUNNER_TEMP/lefthook" validate
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+      - run: cargo clippy --workspace --all-targets --features pipewire-auth-setup-compat --locked -- -D warnings
       - uses: taiki-e/install-action@b6ff580856c41316412a0b9b60540fbc6f8c82cc # v2.86.7
         with:
           tool: cargo-deny
@@ -75,6 +76,15 @@ jobs:
       - run: cargo nextest run --workspace --all-features --locked
       - name: Verify auth-setup baseline without optional features
         run: cargo nextest run --workspace --no-default-features --locked --test integration -E 'test(auth_setup::)'
+      - name: Verify standalone PipeWire compatibility
+        run: cargo nextest run --workspace --features pipewire-auth-setup-compat --locked --test integration -E 'test(auth_setup::)'
+      - name: Verify AP2 without compatibility
+        run: cargo nextest run --workspace --features ap2 --locked --test integration -E 'test(auth_setup::)'
+      - name: Verify AP2 with compatibility
+        run: cargo nextest run --workspace --features ap2,pipewire-auth-setup-compat --locked --test integration -E 'test(auth_setup::)'
+      - name: Verify release-profile compatibility gates
+        if: matrix.name == 'linux-x86_64'
+        run: cargo nextest run --workspace --release --features pipewire-auth-setup-compat --locked --test integration -E 'test(auth_setup::)'
       - name: Install coverage tooling
         if: matrix.name == 'linux-x86_64'
         uses: taiki-e/install-action@b6ff580856c41316412a0b9b60540fbc6f8c82cc # v2.86.7

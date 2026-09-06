@@ -35,6 +35,44 @@ struct Route {
     handler: Handler,
 }
 
+// The compatibility route requires an exact origin-form target, unlike legacy
+// routes that deliberately ignore a query string. Both ingress and dispatch use it.
+#[cfg(feature = "pipewire-auth-setup-compat")]
+const PIPEWIRE_AUTH_SETUP_ROUTE: Route = Route {
+    method: "POST",
+    path: "/auth-setup",
+    handler: super::auth_setup::handle,
+};
+
+#[cfg(feature = "pipewire-auth-setup-compat")]
+fn pipewire_auth_setup_route(
+    conn: &RaopConnection,
+    request: &HttpRequest,
+) -> Option<&'static Route> {
+    if !conn.shared.pipewire_auth_setup_compat {
+        return None;
+    }
+    #[cfg(feature = "ap2")]
+    if conn.is_ap2 {
+        return None;
+    }
+    (request.method() == Some(PIPEWIRE_AUTH_SETUP_ROUTE.method)
+        && request.url() == Some(PIPEWIRE_AUTH_SETUP_ROUTE.path))
+    .then_some(&PIPEWIRE_AUTH_SETUP_ROUTE)
+}
+
+#[cfg(feature = "pipewire-auth-setup-compat")]
+pub(super) fn request_body_policy(
+    conn: &RaopConnection,
+    request: &HttpRequest,
+) -> Result<crate::net::server::RequestBodyPolicy, crate::error::ProtocolError> {
+    if pipewire_auth_setup_route(conn, request).is_some() {
+        super::auth_setup::body_policy(request)
+    } else {
+        Ok(crate::net::server::RequestBodyPolicy::default())
+    }
+}
+
 /// Static route table — checked in order, first match wins.
 /// Feature-gated routes are included/excluded at compile time.
 const ROUTES: &[Route] = &[
@@ -241,7 +279,7 @@ pub(crate) fn dispatch(conn: &mut RaopConnection, request: &HttpRequest) -> Http
     response
 }
 
-fn new_response(status: u16, message: &str, cseq: &str) -> HttpResponse {
+pub(super) fn new_response(status: u16, message: &str, cseq: &str) -> HttpResponse {
     let mut response = HttpResponse::new("RTSP/1.0", status, message);
     response.add_header("CSeq", cseq);
     response.add_header("Server", RTSP_SERVER_HEADER_VALUE);
@@ -257,6 +295,11 @@ fn resolve_handler(
     method: &str,
     url: &str,
 ) -> Option<RouteResolution> {
+    #[cfg(feature = "pipewire-auth-setup-compat")]
+    if let Some(route) = pipewire_auth_setup_route(conn, request) {
+        return Some(RouteResolution::Handler(route.handler));
+    }
+
     // 1. Check static route table (exact path or prefix match for query-string routes)
     for route in ROUTES {
         if route.method == method {

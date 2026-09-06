@@ -80,6 +80,7 @@ gethostname = "1"
 
 [features]
 default = []
+pipewire-auth-setup-compat = []
 diagnostic-headers = []
 dangerous-raw-headers = ["diagnostic-headers"]
 resample = ["dep:rubato"]

@@ -65,6 +65,8 @@ pub struct RaopServerBuilder {
     max_clients: usize,
     hwaddr: Option<Vec<u8>>,
     password: Option<String>,
+    #[cfg(feature = "pipewire-auth-setup-compat")]
+    pipewire_auth_setup_compat: bool,
     name: String,
     bind: BindConfig,
     #[cfg(feature = "diagnostic-headers")]
@@ -98,6 +100,8 @@ impl RaopServerBuilder {
             max_clients: 10,
             hwaddr: None,
             password: None,
+            #[cfg(feature = "pipewire-auth-setup-compat")]
+            pipewire_auth_setup_compat: false,
             name: "Shairplay".to_string(),
             bind: BindConfig::default(),
             #[cfg(feature = "diagnostic-headers")]
@@ -132,6 +136,21 @@ impl RaopServerBuilder {
     /// Set an optional HTTP Digest authentication password.
     pub fn password(mut self, pw: impl Into<String>) -> Self {
         self.password = Some(pw.into());
+        self
+    }
+
+    /// Opt into the fixed PipeWire `/auth-setup` probe acknowledgement.
+    ///
+    /// Disabled by default, even when the Cargo feature is compiled in. This is
+    /// experimental classic-RAOP compatibility, not MFi receiver authentication
+    /// or audio encryption. Discovery and HTTP Digest requirements stay unchanged.
+    /// Password-protected PipeWire interoperability is not established.
+    ///
+    /// With `ap2` compiled in, enabling this requires `AirPlayMode::AirPlay1`;
+    /// already AP2-paired connections remain excluded. Debug builds use the same gates.
+    #[cfg(feature = "pipewire-auth-setup-compat")]
+    pub fn pipewire_auth_setup_compat(mut self, enabled: bool) -> Self {
+        self.pipewire_auth_setup_compat = enabled;
         self
     }
     /// Set the RTSP listening port. Default: 5000.
@@ -270,6 +289,13 @@ impl RaopServerBuilder {
             )
             .into());
         }
+        #[cfg(all(feature = "ap2", feature = "pipewire-auth-setup-compat"))]
+        if self.pipewire_auth_setup_compat && self.mode != AirPlayMode::AirPlay1 {
+            return Err(ServerError::InvalidConfiguration(
+                "PipeWire auth-setup compatibility requires AirPlayMode::AirPlay1",
+            )
+            .into());
+        }
         let ap1_advertisement = Ap1Advertisement::try_new(self.ap1_codecs, self.ap1_encryption)?;
         let rsakey = airport_rsakey();
         let pairing = Arc::new(Pairing::generate()?);
@@ -307,6 +333,8 @@ impl RaopServerBuilder {
             pairing,
             hwaddr: hwaddr.clone(),
             password: self.password.unwrap_or_default(),
+            #[cfg(feature = "pipewire-auth-setup-compat")]
+            pipewire_auth_setup_compat: self.pipewire_auth_setup_compat,
             handler,
             #[cfg(feature = "ap2")]
             pairing_store,

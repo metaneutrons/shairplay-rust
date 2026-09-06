@@ -1,4 +1,8 @@
-//! Baseline for the source-derived PipeWire probe; no compatibility route yet.
+//! Source-derived PipeWire probe: disabled baseline and opt-in compatibility.
+
+#[cfg(feature = "pipewire-auth-setup-compat")]
+#[path = "auth_setup/enabled.rs"]
+mod enabled;
 
 use super::{ap1_builder, empty_handler, raop_txt, start_server};
 use md5::{Digest, Md5};
@@ -221,10 +225,14 @@ fn authorization(nonce: &str, password: &str) -> String {
 #[tokio::test]
 #[serial]
 async fn digest_remains_required_for_each_probe_even_after_valid_authorization() {
-    let mut server = ap1_builder("AuthSetupDigestBaseline")
-        .password("test-password")
-        .build(empty_handler())
-        .unwrap();
+    verify_digest(false).await;
+}
+
+async fn verify_digest(enabled: bool) {
+    let builder = ap1_builder("AuthSetupDigestBaseline").password("test-password");
+    #[cfg(feature = "pipewire-auth-setup-compat")]
+    let builder = builder.pipewire_auth_setup_compat(enabled);
+    let mut server = builder.build(empty_handler()).unwrap();
     server.start().await.unwrap();
     let mut client = connect(server.service_info().port).await;
 
@@ -244,7 +252,11 @@ async fn digest_remains_required_for_each_probe_even_after_valid_authorization()
         .strip_suffix('"')
         .unwrap();
 
-    for (cseq, password, expected) in [(3, "incorrect", 401), (4, "test-password", 404)] {
+    let authorized_status = if enabled { 200 } else { 404 };
+    for (cseq, password, expected) in [
+        (3, "incorrect", 401),
+        (4, "test-password", authorized_status),
+    ] {
         write(
             &mut client,
             &request(cseq, Some(&authorization(nonce, password))),

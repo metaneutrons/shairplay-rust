@@ -19,6 +19,8 @@ pub(crate) struct RaopShared {
     pub(crate) pairing: Arc<Pairing>,
     pub(crate) hwaddr: Vec<u8>,
     pub(crate) password: String,
+    #[cfg(feature = "pipewire-auth-setup-compat")]
+    pub(crate) pipewire_auth_setup_compat: bool,
     pub(crate) handler: Arc<dyn AudioHandler>,
     #[cfg(feature = "ap2")]
     pub(crate) pairing_store: Arc<dyn PairingStore>,
@@ -157,6 +159,14 @@ impl Drop for RaopConnectionHandler {
 }
 
 impl ConnectionHandler for RaopConnectionHandler {
+    #[cfg(feature = "pipewire-auth-setup-compat")]
+    fn request_body_policy(
+        &self,
+        request: &HttpRequest,
+    ) -> Result<crate::net::server::RequestBodyPolicy, crate::error::ProtocolError> {
+        rtsp::request_body_policy(&self.conn, request)
+    }
+
     fn conn_request(&mut self, request: &HttpRequest) -> HttpResponse {
         // Connect-latency timeline: one line per RTSP request, elapsed since the
         // connection opened. `/feedback` is a ~2s keep-alive heartbeat, so it drops
