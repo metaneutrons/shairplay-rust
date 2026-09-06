@@ -907,7 +907,7 @@ mod ap2_tests {
         server.stop().await;
     }
 
-    async fn perform_transient_pairing(stream: &mut TcpStream) -> [u8; 64] {
+    pub(super) async fn perform_transient_pairing(stream: &mut TcpStream) -> [u8; 64] {
         use num_bigint::BigUint;
         use sha2::{Digest, Sha512};
 

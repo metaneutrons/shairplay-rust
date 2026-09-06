@@ -49,6 +49,7 @@ server.start().await?;
 
 # Feature Flags
 
+- `pipewire-auth-setup-compat` - experimental classic-RAOP probe acknowledgement; requires explicit runtime opt-in, not MFi authentication
 - `diagnostic-headers` — opt-in, redacted RTSP header diagnostics
 - `dangerous-raw-headers` — adds raw header diagnostics for debug-assertion builds
 - `ap2` — AirPlay 2 support (SRP-6a pairing, buffered AAC, encrypted transport)

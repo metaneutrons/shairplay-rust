@@ -115,6 +115,7 @@ let mut server = RaopServer::builder()
 | `.hwaddr()` | random locally administered address | | 6-byte MAC address for mDNS |
 | `.port()` | `5000` | | RTSP listening port |
 | `.password()` | none | | HTTP Digest auth password |
+| `.pipewire_auth_setup_compat()` | `false` | `pipewire-auth-setup-compat` | Experimental fixed-probe acknowledgement in classic RAOP; not MFi authentication |
 | `.max_clients()` | `10` | | Maximum concurrent connections |
 | `.bind()` | all interfaces | | Bind to specific IPs (multi-interface) |
 | `.header_diagnostics()` | `Disabled` | `diagnostic-headers` | Structured, redacted RTSP header diagnostics |
@@ -150,22 +151,55 @@ The order supplied by the application is preserved. Empty and duplicate lists
 are rejected during `build()`. With the `ap2` feature enabled, also select
 `AirPlayMode::AirPlay1`; AP2 uses a separate fixed capability profile.
 
-MFi-SAP (`et=4`, `POST /auth-setup`) is neither advertised nor implemented.
-It is distinct from FairPlay and HomeKit pairing. See the
+Conformant MFi-SAP (`et=4`) is neither advertised nor implemented.
+The experimental `pipewire-auth-setup-compat` feature can acknowledge one fixed
+`POST /auth-setup` probe; it does not authenticate the receiver or encrypt audio.
+See the
 [`/auth-setup` protocol status](docs/protocol/auth-setup.md) for the evidence,
-known compatibility impact, and the requirements for any future implementation.
+limits and requirements for conformant receiver authentication.
 
 ## Feature Flags
 
 | Flag | Dependencies | Description |
 |------|-------------|-------------|
 | *(default)* | — | AirPlay 1 only |
+| `pipewire-auth-setup-compat` | none | Experimental PipeWire probe acknowledgement; explicit runtime opt-in required |
 | `diagnostic-headers` | none | Opt-in, redacted RTSP request and response header diagnostics |
 | `dangerous-raw-headers` | (implies `diagnostic-headers`) | Raw header values for explicit use in debug-assertion builds |
 | `resample` | rubato | Sample rate conversion + channel mixdown |
 | `ap2` | chacha20poly1305, hkdf, symphonia, … (implies `resample`) | Full AirPlay 2 audio |
 | `video` | (implies `ap2`) | Legacy feature set for screen mirroring (`0x527FFEE6`) |
 | `hls` | (implies `video`) | HLS video playback (YouTube, etc.) — receiver relays URL to app |
+
+### Experimental PipeWire Probe Compatibility
+
+Compile with `--features pipewire-auth-setup-compat`, then explicitly opt in:
+
+```rust
+let builder = shairplay::RaopServer::builder()
+    .pipewire_auth_setup_compat(true);
+```
+
+When `ap2` is also compiled in, select classic mode explicitly:
+
+```rust
+let builder = shairplay::RaopServer::builder()
+    .mode(shairplay::AirPlayMode::AirPlay1)
+    .pipewire_auth_setup_compat(true);
+```
+
+The default stays disabled, including in debug and all-feature builds.
+Enabling it in `AirPlayMode::AirPlay2` is rejected; already AP2-paired
+connections cannot use this compatibility response. Discovery is unchanged.
+Only an exact, bounded public probe receives an empty acknowledgement, after
+the normal Digest check. This is not MFi authentication or a confidentiality
+guarantee. Do not enable it as a substitute for encryption.
+
+Local simulated-sender tests cover PCM delivery over UDP/TCP, teardown and
+reconnect. Real PipeWire playback remains unqualified, and the current sender's
+Digest flow does not establish password-protected interoperability. See the
+[contract and known limitations](docs/protocol/auth-setup.md#first-compatibility-contract)
+before deployment; the feature does not automatically configure a PipeWire sender.
 
 ### RTSP Header Diagnostics
 

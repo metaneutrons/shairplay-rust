@@ -4,6 +4,8 @@ pub use crate::proto::dmap::TrackMetadata;
 
 #[cfg(feature = "ap2")]
 pub mod audio_pipeline;
+#[cfg(feature = "pipewire-auth-setup-compat")]
+mod auth_setup;
 pub mod buffer;
 #[cfg(feature = "ap2")]
 pub mod buffered_audio;

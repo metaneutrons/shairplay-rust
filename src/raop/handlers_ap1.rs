@@ -500,6 +500,8 @@ mod tests {
             pairing: Arc::new(Pairing::generate().unwrap()),
             hwaddr: vec![0u8; 6],
             password: String::new(),
+            #[cfg(feature = "pipewire-auth-setup-compat")]
+            pipewire_auth_setup_compat: false,
             handler,
             output_sample_rate: None,
             output_max_channels: None,
