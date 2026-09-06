@@ -1,7 +1,5 @@
 use std::fs::{self, File};
 use std::io::Read;
-use std::os::unix::fs::PermissionsExt;
-use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
@@ -9,7 +7,7 @@ use super::process::Process;
 use serde_json::{Value, json};
 
 pub(super) struct Sender {
-    root: PathBuf,
+    root: tempfile::TempDir,
     daemon: Option<Process>,
     player: Option<Process>,
     sink_id: Option<u64>,
@@ -29,16 +27,16 @@ impl Sender {
                     ""
                 },
             );
-        fs::write(sender.root.join("pipewire.conf"), config).unwrap();
-        fs::write(sender.root.join("source.wav"), super::audio::wav()).unwrap();
+        fs::write(sender.root.path().join("pipewire.conf"), config).unwrap();
+        fs::write(sender.root.path().join("source.wav"), super::audio::wav()).unwrap();
         sender.daemon = Some(Process::spawn(
             sender
                 .command("pipewire", "daemon")
                 .arg("-c")
-                .arg(sender.root.join("pipewire.conf")),
+                .arg(sender.root.path().join("pipewire.conf")),
         ));
         tokio::time::timeout(Duration::from_secs(10), async {
-            while !sender.root.join("pipewire-qualification").exists() {
+            while !sender.root.path().join("pipewire-qualification").exists() {
                 sender.daemon.as_mut().unwrap().assert_running();
                 tokio::time::sleep(Duration::from_millis(20)).await;
             }
@@ -49,36 +47,31 @@ impl Sender {
     }
 
     fn workspace() -> Self {
-        let root = std::env::temp_dir().join(format!(
-            "shairplay-pw-{}-{}",
-            std::process::id(),
-            rand::random::<u64>()
-        ));
-        fs::create_dir(&root).unwrap();
-        let sender = Self {
-            root,
+        Self {
+            root: tempfile::Builder::new()
+                .prefix("shairplay-pw-")
+                .tempdir()
+                .unwrap(),
             daemon: None,
             player: None,
             sink_id: None,
-        };
-        fs::set_permissions(&sender.root, fs::Permissions::from_mode(0o700)).unwrap();
-        sender
+        }
     }
 
     fn command(&self, binary: &str, log: &str) -> Command {
         let mut command = Command::new(binary);
         command
-            .env("XDG_RUNTIME_DIR", &self.root)
+            .env("XDG_RUNTIME_DIR", self.root.path())
             .env("PIPEWIRE_REMOTE", "pipewire-qualification")
             .env("PIPEWIRE_DEBUG", "2")
             .stdin(Stdio::null())
             .stdout(Stdio::null())
-            .stderr(File::create(self.root.join(format!("{log}.log"))).unwrap());
+            .stderr(File::create(self.root.path().join(format!("{log}.log"))).unwrap());
         command
     }
 
     async fn output(&self, binary: &str, args: &[&str]) -> Vec<u8> {
-        let path = self.root.join("output.json");
+        let path = self.root.path().join("output.json");
         Process::spawn(
             self.command(binary, binary)
                 .args(args)
@@ -185,7 +178,7 @@ impl Sender {
                     "--target=0",
                     "--properties={ node.name = qualification-source }",
                 ])
-                .arg(self.root.join("source.wav")),
+                .arg(self.root.path().join("source.wav")),
         ));
         let ids = self.nodes().await;
         self.sink_id = Some(ids[1]);
@@ -212,13 +205,12 @@ impl Drop for Sender {
         self.daemon = None;
         if std::thread::panicking() {
             for name in ["daemon", "player", "link", "configure", "suspend"] {
-                if let Ok(file) = File::open(self.root.join(format!("{name}.log"))) {
+                if let Ok(file) = File::open(self.root.path().join(format!("{name}.log"))) {
                     let mut log = String::new();
                     let _ = file.take(16384).read_to_string(&mut log);
                     eprintln!("{name}: {log}");
                 }
             }
         }
-        let _ = fs::remove_dir_all(&self.root);
     }
 }

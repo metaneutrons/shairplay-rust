@@ -4,7 +4,8 @@ ARG PIPEWIRE_COMMIT=3b2cb4fb037bf6033b87d3c87ee917b2f686d309
 ARG PIPEWIRE_SHA256=c8746b3c3408becb27e40cf67a5587105f057cd540769db4c345a67bf45c86df
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    meson ninja-build pkg-config libsndfile1-dev libssl-dev libasound2-dev \
+    meson=1.0.1-5 ninja-build=1.11.1-2~deb12u1 pkg-config=1.8.1-1 \
+    libsndfile1-dev=1.2.0-1+deb12u1 libssl-dev=3.0.20-1~deb12u2 libasound2-dev=1.2.8-1+b1 \
     && rm -rf /var/lib/apt/lists/*
 RUN curl -fsSL "https://codeload.github.com/PipeWire/pipewire/tar.gz/${PIPEWIRE_COMMIT}" -o /tmp/pipewire.tar.gz \
     && printf '%s  /tmp/pipewire.tar.gz\n' "$PIPEWIRE_SHA256" | sha256sum --check \

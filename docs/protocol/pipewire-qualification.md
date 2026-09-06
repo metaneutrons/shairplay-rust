@@ -9,7 +9,11 @@ Short exploratory UDP runs delivered all three seconds of expected stereo audio
 and reconnected successfully. Other runs lost source samples, including in the
 release profile. The final regression uses 25 seconds of non-silent content to
 exercise a complete sender ring-buffer wraparound. A partial success or a green
-short run must not close #38 or #65.
+short run must not close #38 or #65. [Versioned aarch64 evidence](evidence/pipewire-1.6.7-aarch64/README.md)
+records all five configurations: gate-only cases pass; all six positive-path
+audio sessions fail. [#72](https://github.com/metaneutrons/shairplay-rust/issues/72)
+tracks the remaining investigation; [draft #73](https://github.com/metaneutrons/shairplay-rust/pull/73)
+contains this harness and is not ready for merge.
 
 ## Tested Configuration
 
@@ -54,8 +58,9 @@ ignored unless explicitly requested. Its oracle/subprocess self-tests run
 normally on Linux. No production dependency or public API is added.
 
 The [Dockerfile](../../scripts/pipewire/Dockerfile) pins the Rust image digest,
-PipeWire commit and source archive SHA-256; Cargo uses `Cargo.lock`. Debian
-packages come from Bookworm repositories, so this is not a bit-for-bit hermetic
+PipeWire commit, source archive SHA-256 and direct Debian build-package versions;
+Cargo uses `Cargo.lock`. Transitive Debian packages still come from live Bookworm
+repositories, so this is not a bit-for-bit hermetic
 image build. Evidence identifies the image, source, toolchain and runtime
 package versions. Network access is allowed only during image/dependency
 acquisition. The actual tests run without external networking, capabilities,

@@ -1,0 +1,47 @@
+{
+  "ap2_feature": true,
+  "architecture": "aarch64",
+  "compatibility_feature": false,
+  "container_image": "sha256:290a590927bcf63ade38324d712ec58ae07d3217ea9fe5bef9e3afc2bcb0d081",
+  "debug_assertions": true,
+  "passed": true,
+  "pipewire": {
+    "archive_sha256": "c8746b3c3408becb27e40cf67a5587105f057cd540769db4c345a67bf45c86df",
+    "commit": "3b2cb4fb037bf6033b87d3c87ee917b2f686d309",
+    "kernel": "Linux 6.8.0-100-generic",
+    "runtime_packages": "libasound2=1.2.8-1+b1\nlibc6=2.36-9+deb12u14\nlibsndfile1=1.2.0-1+deb12u1\nlibssl3=3.0.20-1~deb12u2\n",
+    "rustc": "rustc 1.98.0 (88d9e12ae 2026-08-18)",
+    "version_output": "pipewire\nCompiled with libpipewire 1.6.7\nLinked with libpipewire 1.6.7"
+  },
+  "receiver_revision": "311a4fd2956d81e6330f39df7fd82576ae8d6cf3",
+  "scenarios": [
+    {
+      "audio": [],
+      "discovery_unchanged": true,
+      "exchanges": [
+        {
+          "exact_probe": false,
+          "normal_headers": true,
+          "request": "OPTIONS",
+          "response_bytes": 0,
+          "status": 200
+        },
+        {
+          "exact_probe": true,
+          "normal_headers": true,
+          "request": "POST /auth-setup",
+          "response_bytes": 0,
+          "status": 404
+        }
+      ],
+      "expected_probe_status": 404,
+      "password_protected": false,
+      "runtime_enabled": false,
+      "transport": "udp"
+    }
+  ],
+  "schema_version": 1,
+  "sender_config_sha256": "934eacf1ff3ebc903edeb02c8584b5614264ea18a0558e6d5deb00b7690a2b75",
+  "source_wav_sha256": "fbc238d205d19bebeb2474ea4b0e0b039d4817e261eb03270919b99a57b05cc7",
+  "working_tree_dirty": false
+}
