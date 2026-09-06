@@ -41,7 +41,7 @@ The advertised profiles do not intentionally invite this exchange:
 A manually configured PipeWire sender using `raop.encryption.type=auth_setup`
 calls the endpoint and aborts on a non-success response, as reported in
 [#38](https://github.com/metaneutrons/shairplay-rust/issues/38). The opt-in path
-now acknowledges its exact public probe. [Real PipeWire 1.6.7 testing](pipewire-qualification.md)
+now acknowledges its exact public probe. [Unmodified PipeWire 1.6.7 testing](pipewire-qualification.md)
 reaches passwordless UDP audio, teardown and reconnect, but exposes audio
 discontinuities under a full-payload comparison. Qualification remains open in
 #65. The `PCM` sender setting produces uncompressed ALAC; decoded output is f32
@@ -163,7 +163,7 @@ treated as conformant.
 | FairPlay | `/fp-setup` implemented separately | Project fact |
 | HomeKit pairing | `/pair-setup` and `/pair-verify` implemented separately | Project fact |
 | MFi certificate/signing | No provider API, certificate, or authentication-IC integration | Project fact |
-| PipeWire forced `auth_setup` | 1.6.7 reaches UDP audio but discontinuities block qualification; password challenge abort confirmed; TCP fails | Live observations and [open findings](pipewire-qualification.md), not a qualification pass |
+| PipeWire forced `auth_setup` | Unmodified 1.6.7 reaches UDP audio but discontinuities block qualification; password challenge abort confirmed; TCP fails | Live observations and [controlled sender experiment](pipewire-qualification.md), not an unmodified-release qualification pass |
 | Apple/MFi sender interoperability | Not tested | Unknown |
 
 The draft implementation in
@@ -375,7 +375,9 @@ claim follows from this milestone.
 The separate [live qualification harness](pipewire-qualification.md) runs the
 unmodified PipeWire 1.6.7 sender and checks its uncompressed ALAC output against
 25 seconds of exact stereo source samples, including a sender ring-buffer
-wraparound. Current failures remain visible; they are not tolerated as a pass.
+wraparound. An explicitly labelled sender-patch variant isolates the ignored
+second audio iovec and passes the same full matrix; this does not qualify an
+unmodified release. Baseline failures remain visible and are not tolerated as a pass.
 It complements, rather than
 replaces, the deterministic parser, security-policy and simulated-sender tests.
 

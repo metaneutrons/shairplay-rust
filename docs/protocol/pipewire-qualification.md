@@ -15,6 +15,13 @@ audio sessions fail. [#72](https://github.com/metaneutrons/shairplay-rust/issues
 tracks the remaining investigation; [draft #73](https://github.com/metaneutrons/shairplay-rust/pull/73)
 contains this harness and is not ready for merge.
 
+The [controlled before/after experiment](evidence/pipewire-iovec-aarch64/README.md)
+now isolates a sender defect: the unmodified baseline fails all six audio
+sessions, while the same matrix with an explicit scatter/gather patch passes
+all six bit-exactly, including release and reconnect. This validates the narrow
+patched combination, **not an unmodified PipeWire release**. TCP, password
+interoperability and the original desktop setup remain outside that success.
+
 ## Tested Configuration
 
 | Property | Scope |
@@ -74,10 +81,12 @@ Both images compile a [callback regression](../../scripts/pipewire/test-raop-iov
 against the actual source, with AddressSanitizer and UndefinedBehaviorSanitizer.
 It sends one contiguous 352-frame packet plus every possible frame-aligned
 two-segment split, including empty head/tail, through the real callback and
-`sendmsg`. Each datagram must be byte-identical to the contiguous packet.
+`sendmsg` over a local datagram socketpair. Each datagram must be byte-identical
+to the contiguous packet.
 The build checks the exact expected baseline result (352 failures / 354 cases)
 or patched result (zero failures). A compiler, sanitizer or unexpected test
-failure stops the build. Recognizing the known baseline defect here does **not**
+failure stops the build; sanitizer failures use distinct exit codes. Recognizing
+the known baseline defect here does **not**
 convert failed live qualification to success.
 
 Schema-2 reports add `pipewire.source`: variant, patch SHA-256 (null for baseline),
@@ -87,6 +96,12 @@ Image tags, run directories and CI artifacts distinguish `baseline` from
 silently. Historical schema-1 evidence remains unchanged. A patched success
 establishes only the explicitly identified experimental combination; it must
 not be reported as an unmodified 1.6.7 qualification pass.
+
+The patch also passes `git apply --check` against 1.6.8
+(`b741e0c74f5436f0c925f7741140db0efd32cf4e`) and the checked development head
+(`b0b792fa72451fd9a068c1a8f877d21d4c67cd3f`). This is source applicability only;
+neither version has been live-tested here. An upstream submission is prepared
+as a minimal patch plus reproducible callback/live tests, but has not been filed.
 
 Normal `cargo test` does not launch PipeWire: the live test is Linux-only and
 ignored unless explicitly requested. Its oracle/subprocess self-tests run
@@ -147,11 +162,12 @@ experimental configuration was removed; it is not a supported workaround.
 The pinned [RAOP callback](https://github.com/PipeWire/pipewire/blob/3b2cb4fb037bf6033b87d3c87ee917b2f686d309/src/modules/module-raop-sink.c#L454-L520)
 encodes only `iov[1]`. The [RTP audio producer](https://github.com/PipeWire/pipewire/blob/3b2cb4fb037bf6033b87d3c87ee917b2f686d309/src/modules/module-rtp/audio.c#L503-L575)
 can provide two audio segments at ring-buffer wraparound and advances by the
-entire packet length. Losing the second segment is a source-verified defect
-consistent with the observed short gaps, but the exact causal link still needs
-a packet-level trace or an independently tested upstream fix. Some failing
-runs also reported late timers; neither all timing failures nor the receiver
-can be ruled out from these observations alone.
+entire packet length. Losing the second segment is now reproduced directly in
+the sender callback for every split boundary. In the controlled 25-second live
+comparison, fixing only this defect changes all six failures to bit-exact
+passes. This establishes a causal sender defect for the tested configuration;
+it does not rule out unrelated timing, network or receiver defects. Some
+earlier exploratory runs also reported late timers.
 
 The 25-second regression exceeds the sender's 4 MiB S16 stereo ring capacity.
 Do not shorten the test, permit missing samples, retry until green, patch the

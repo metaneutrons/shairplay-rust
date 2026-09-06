@@ -13,7 +13,10 @@ cc -D_GNU_SOURCE -Werror=implicit-function-declaration -O1 -g \
     /tmp/pw-build/src/modules/libpipewire-module-rtp-common-lib.a "${flags[@]}" \
     -Wl,--gc-sections -lm -o /tmp/test-raop-iovec
 status=0
-result=$(/tmp/test-raop-iovec) || status=$?
+# A sanitizer failure must never look like the expected baseline test exit (1).
+result=$(ASAN_OPTIONS=halt_on_error=1:exitcode=86 \
+    UBSAN_OPTIONS=halt_on_error=1:exitcode=87 LSAN_OPTIONS=exitcode=88 \
+    /tmp/test-raop-iovec) || status=$?
 patch=null
 case "$PIPEWIRE_VARIANT" in
     baseline)
