@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.1](https://github.com/metaneutrons/shairplay-rust/compare/v0.9.0...v0.9.1) (2026-09-06)
+
+
+### Bug Fixes
+
+* **ci:** resolve repo doctor findings and qualify releases ([#60](https://github.com/metaneutrons/shairplay-rust/issues/60)) ([7d688bf](https://github.com/metaneutrons/shairplay-rust/commit/7d688bf3a4e8011d772f6419c9673bb9f39280c9))
+
 ## [0.9.0](https://github.com/metaneutrons/shairplay-rust/compare/shairplay-v0.8.0...v0.9.0) (2026-09-05)
 
 
