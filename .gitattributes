@@ -1,0 +1,2 @@
+# Unified-diff context requires a leading marker before tabs and blank lines.
+/scripts/pipewire/raop-iovec.patch whitespace=-blank-at-eol,-space-before-tab

@@ -12,6 +12,7 @@ externally verified behavior, and reverse-engineered information.
 | Level | Meaning |
 |-------|---------|
 | **Project fact** | Directly established by this repository's current source and tests. |
+| **Live-qualified** | Observed with an identified real sender, configuration and expected decoded audio; limited to that tested scope. |
 | **Source-verified** | Directly established by a pinned external implementation's source. This proves that implementation's behavior, not a universal protocol rule. |
 | **Corroborated** | Consistent across Apple's public security description and multiple independent implementations or protocol notes, but not backed by a public Apple endpoint specification. |
 | **Unknown** | Not established by public documentation, an authorized specification, or a successful real-device test. |
@@ -40,10 +41,12 @@ The advertised profiles do not intentionally invite this exchange:
 A manually configured PipeWire sender using `raop.encryption.type=auth_setup`
 calls the endpoint and aborts on a non-success response, as reported in
 [#38](https://github.com/metaneutrons/shairplay-rust/issues/38). The opt-in path
-now acknowledges its exact public probe. Local simulated-sender tests establish
-decoded PCM delivery over UDP/TCP, teardown and reconnect, not successful real
-PipeWire playback. Live qualification remains open in #65; password-protected
-PipeWire interoperability is not established.
+now acknowledges its exact public probe. [Unmodified PipeWire 1.6.7 testing](pipewire-qualification.md)
+reaches passwordless UDP audio, teardown and reconnect, but exposes audio
+discontinuities under a full-payload comparison. Qualification remains open in
+#65. The `PCM` sender setting produces uncompressed ALAC; decoded output is f32
+stereo at 44.1 kHz. TCP and password-protected playback are also not qualified.
+David's confirmation against the original #38 setup remains outstanding.
 
 ## What Is Established
 
@@ -98,7 +101,8 @@ comparing profiles, and require sender tests before changing advertisements.
 ### PipeWire behavior
 
 **Source-verified** against PipeWire commit
-[`b0b792f`](https://github.com/PipeWire/pipewire/commit/b0b792fa72451fd9a068c1a8f877d21d4c67cd3f):
+[`b0b792f`](https://github.com/PipeWire/pipewire/commit/b0b792fa72451fd9a068c1a8f877d21d4c67cd3f)
+(1.7.0 development source, distinct from the live-tested 1.6.7 release):
 
 1. Discovery maps `et=4` to `auth_setup` and `et=5` to `fp_sap25`.
 2. `auth_setup` sends a fixed 33-byte body: `0x01` followed by a fixed 32-byte
@@ -124,8 +128,8 @@ challenges subsequent requests when a password is configured.
 Consequently, enabling the compatibility acknowledgement alone is not expected
 to make that sender work with a password-protected receiver. This is not a
 reason to bypass Digest or change the existing `OPTIONS` policy in this work.
-The first live qualification must distinguish a passwordless positive case
-from the protected negative case. A synthetic client successfully answering a
+Live PipeWire 1.6.7 qualification confirms this protected negative case, even
+with the same test password configured on both sides. A synthetic client successfully answering a
 Digest challenge proves server behavior, not PipeWire password interoperability.
 
 Source: [PipeWire authentication callbacks](https://github.com/PipeWire/pipewire/blob/b0b792fa72451fd9a068c1a8f877d21d4c67cd3f/src/modules/module-raop-sink.c#L1270-L1412).
@@ -159,7 +163,7 @@ treated as conformant.
 | FairPlay | `/fp-setup` implemented separately | Project fact |
 | HomeKit pairing | `/pair-setup` and `/pair-verify` implemented separately | Project fact |
 | MFi certificate/signing | No provider API, certificate, or authentication-IC integration | Project fact |
-| PipeWire forced `auth_setup` | Opt-in acknowledgement satisfies the source-observed status check; real-sender playback and password-protected interoperability remain unqualified | Project/source-verified; live result unknown |
+| PipeWire forced `auth_setup` | Unmodified 1.6.7 reaches UDP audio but discontinuities block qualification; password challenge abort confirmed; TCP fails | Live observations and [controlled sender experiment](pipewire-qualification.md), not an unmodified-release qualification pass |
 | Apple/MFi sender interoperability | Not tested | Unknown |
 
 The draft implementation in
@@ -238,9 +242,9 @@ also excludes a connection once AP2 pairing has completed, even on a server
 configured for classic discovery. Both ingress policy and dispatch use the
 same exact route selection; unrelated routes retain their previous behavior.
 
-The first interoperability claim is an explicitly configured PipeWire sender
-using classic RAOP, unencrypted PCM and the transport actually qualified in the
-live test. The library stays platform-neutral. Compiling `ap2` does not imply
+The first interoperability target is an explicitly configured PipeWire sender
+using classic RAOP, `raop.audio.codec=PCM` (uncompressed ALAC on the wire), and
+UDP; live qualification is not yet complete. The library stays platform-neutral. Compiling `ap2` does not imply
 support for MFi or additional AP2 authentication flows. Existing AP1/AP2
 advertisements and feature bits remain unchanged in every gate combination.
 
@@ -350,7 +354,7 @@ mechanism tests, not evidence that PipeWire playback or AP2 `/auth-setup` works.
 Enabled-route regressions cover feature/runtime gates, every one-bit probe
 mutation, media types, lengths around 33, conflicting framing, exact path
 matching, repeated requests, real deadline/slot release and larger requests.
-A simulated sender reaches known decoded PCM samples through `ANNOUNCE`,
+A simulated sender sends raw L16 and reaches known decoded PCM samples through `ANNOUNCE`,
 `SETUP` and `RECORD` over local UDP and TCP sockets, repeats the probe during
 playback, tears down and reconnects. An AP2-paired connection is excluded through
 the actual encrypted control channel. These tests do not identify a client as
@@ -367,6 +371,15 @@ negative case until separately proven otherwise; record David's external
 confirmation or its absence. Neither a 200-only test nor this fixture closes
 the original interoperability report. No complete MFi or broad Apple-device
 claim follows from this milestone.
+
+The separate [live qualification harness](pipewire-qualification.md) runs the
+unmodified PipeWire 1.6.7 sender and checks its uncompressed ALAC output against
+25 seconds of exact stereo source samples, including a sender ring-buffer
+wraparound. An explicitly labelled sender-patch variant isolates the ignored
+second audio iovec and passes the same full matrix; this does not qualify an
+unmodified release. Baseline failures remain visible and are not tolerated as a pass.
+It complements, rather than
+replaces, the deterministic parser, security-policy and simulated-sender tests.
 
 ## Later MFi Regression Coverage
 
