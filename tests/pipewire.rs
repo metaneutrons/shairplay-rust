@@ -120,7 +120,7 @@ fn write_report(version: serde_json::Value, scenarios: Vec<serde_json::Value>) {
             .iter()
             .all(|audio| audio["exact_payload"] == true)
     });
-    let report = json!({"schema_version": 1, "pipewire": version, "passed": passed,
+    let report = json!({"schema_version": 2, "pipewire": version, "passed": passed,
             "source_wav_sha256": hex::encode(Sha256::digest(audio::wav())),
             "sender_config_sha256": hex::encode(Sha256::digest(include_bytes!("pipewire/pipewire.conf.in"))),
             "receiver_revision": std::env::var("QUALIFICATION_REVISION").unwrap(),

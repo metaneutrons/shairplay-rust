@@ -114,6 +114,8 @@ impl Sender {
             )
             .await;
         json!({"version_output": version.trim(),
+            "source": serde_json::from_slice::<Value>(
+                &fs::read("/opt/pipewire/share/qualification/sender.json").unwrap()).unwrap(),
             "commit": std::env::var("PIPEWIRE_QUALIFICATION_COMMIT").unwrap(),
             "archive_sha256": std::env::var("PIPEWIRE_QUALIFICATION_SHA256").unwrap(),
             "runtime_packages": String::from_utf8(packages).unwrap(),

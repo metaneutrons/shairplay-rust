@@ -53,6 +53,41 @@ same strict script on Linux x86_64, blocks merge on failure and retains these
 reports as artifacts for 30 days, including failed qualification. Local validation uses
 Linux aarch64 through Docker on macOS.
 
+### Controlled sender experiment
+
+The default remains the **unmodified baseline**. To test only the suspected
+scatter/gather defect in the sender, run the same matrix separately:
+
+```sh
+PIPEWIRE_VARIANT=iovec-fix bash scripts/pipewire/run.sh
+```
+
+This applies the checked-in [candidate patch](../../scripts/pipewire/raop-iovec.patch)
+to the same pinned source before compilation. It iterates every frame-aligned
+audio iovec while retaining one ALAC header/end tag; it adds no allocation or
+audio copy. Neither receiver code, waveform, graph configuration, test duration,
+oracle nor feature matrix changes between variants. TCP framing and password
+handling are deliberately untouched. This is a local diagnostic patch, **not an
+upstream-accepted fix or an official PipeWire release**.
+
+Both images compile a [callback regression](../../scripts/pipewire/test-raop-iovec.c)
+against the actual source, with AddressSanitizer and UndefinedBehaviorSanitizer.
+It sends one contiguous 352-frame packet plus every possible frame-aligned
+two-segment split, including empty head/tail, through the real callback and
+`sendmsg`. Each datagram must be byte-identical to the contiguous packet.
+The build checks the exact expected baseline result (352 failures / 354 cases)
+or patched result (zero failures). A compiler, sanitizer or unexpected test
+failure stops the build. Recognizing the known baseline defect here does **not**
+convert failed live qualification to success.
+
+Schema-2 reports add `pipewire.source`: variant, patch SHA-256 (null for baseline),
+callback source SHA-256, regression source SHA-256 and regression counts.
+Image tags, run directories and CI artifacts distinguish `baseline` from
+`iovec-fix`. CI runs both without fail-fast, and neither is allowed to fail
+silently. Historical schema-1 evidence remains unchanged. A patched success
+establishes only the explicitly identified experimental combination; it must
+not be reported as an unmodified 1.6.7 qualification pass.
+
 Normal `cargo test` does not launch PipeWire: the live test is Linux-only and
 ignored unless explicitly requested. Its oracle/subprocess self-tests run
 normally on Linux. No production dependency or public API is added.

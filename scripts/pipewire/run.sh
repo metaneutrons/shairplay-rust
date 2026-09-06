@@ -6,8 +6,10 @@ root=$(cd "$(dirname "$0")/../.." && pwd -P)
 revision=$(git -C "$root" rev-parse HEAD)
 dirty=false
 if [[ -n $(git -C "$root" status --porcelain) ]]; then dirty=true; fi
-run_id="shairplay-pw-$(date -u +%Y%m%dT%H%M%S)-$$"
-image=shairplay-pipewire-qualification:1.6.7
+variant=${PIPEWIRE_VARIANT:-baseline}
+case "$variant" in baseline|iovec-fix) ;; *) printf 'Invalid PipeWire variant\n' >&2; exit 2 ;; esac
+run_id="shairplay-pw-$variant-$(date -u +%Y%m%dT%H%M%S)-$$"
+image="shairplay-pipewire-qualification:1.6.7-$variant"
 output="$root/target/pipewire-qualification/$run_id"
 evidence="$run_id-evidence"
 container=""
@@ -23,7 +25,8 @@ trap 'cleanup' EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-docker build --tag "$image" --file "$root/scripts/pipewire/Dockerfile" "$root/scripts/pipewire"
+docker build --tag "$image" --build-arg "PIPEWIRE_VARIANT=$variant" \
+    --file "$root/scripts/pipewire/Dockerfile" "$root/scripts/pipewire"
 image_id=$(docker image inspect --format '{{.Id}}' "$image")
 common=(--init --cap-drop=ALL --security-opt=no-new-privileges
     --mount "type=bind,source=$root,target=/repo,readonly"
