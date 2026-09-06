@@ -2,15 +2,61 @@
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::Arc;
+use std::time::Duration;
 
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::sync::{Semaphore, watch};
+use tokio::time::{Instant, timeout_at};
 
-use crate::error::NetworkError;
-use crate::proto::http::{HttpRequest, HttpResponse};
+use crate::error::{NetworkError, ProtocolError};
+use crate::proto::http::{HttpRequest, HttpResponse, MAX_BODY_BYTES};
 
 const MAX_ENCRYPTED_BUFFER_LEN: usize = 1024 * 1024;
+
+#[cfg(test)]
+mod ingestion_tests;
+
+/// Ingestion constraints selected by the connection after request headers arrive.
+pub(crate) struct RequestBodyPolicy {
+    pub(crate) max_bytes: usize,
+    pub(crate) completion_timeout: Option<Duration>,
+}
+
+impl Default for RequestBodyPolicy {
+    fn default() -> Self {
+        Self {
+            max_bytes: MAX_BODY_BYTES,
+            completion_timeout: None,
+        }
+    }
+}
+
+#[derive(Default)]
+struct PendingRequest {
+    request: HttpRequest,
+    body_deadline: Option<Instant>,
+}
+
+impl PendingRequest {
+    fn add_data(
+        &mut self,
+        handler: &dyn ConnectionHandler,
+        data: &[u8],
+    ) -> Result<(), ProtocolError> {
+        self.request.add_data_with_body_limit(data, |headers| {
+            let policy = handler.request_body_policy(headers)?;
+            self.body_deadline = policy
+                .completion_timeout
+                .map(|timeout| Instant::now() + timeout);
+            Ok(policy.max_bytes)
+        })?;
+        if self.request.is_complete() {
+            self.body_deadline = None;
+        }
+        Ok(())
+    }
+}
 
 #[derive(Debug, Clone, Copy, Default)]
 struct ConnectionConfig {
@@ -160,6 +206,15 @@ pub(crate) trait HttpdCallbacks: Send + Sync + 'static {
 pub(crate) trait ConnectionHandler: Send {
     /// Handle an HTTP/RTSP request and return the response.
     fn conn_request(&mut self, request: &HttpRequest) -> HttpResponse;
+
+    /// Select bounds or reject header metadata before any request body is retained.
+    /// Routing and authentication remain the handler's responsibility.
+    fn request_body_policy(
+        &self,
+        _request: &HttpRequest,
+    ) -> Result<RequestBodyPolicy, ProtocolError> {
+        Ok(RequestBodyPolicy::default())
+    }
 
     /// Decrypt incoming raw bytes. Returns decrypted data and bytes consumed.
     /// Default: passthrough (no encryption).
@@ -322,10 +377,11 @@ async fn bind_listener(
 async fn send_completed_responses<S: AsyncWrite + Unpin>(
     stream: &mut S,
     handler: &mut dyn ConnectionHandler,
-    request: &mut HttpRequest,
+    pending: &mut PendingRequest,
     config: ConnectionConfig,
 ) -> bool {
-    while request.is_complete() {
+    while pending.request.is_complete() {
+        let request = &mut pending.request;
         let method = request.method().unwrap_or("?").to_string();
         let url = request.url().unwrap_or("?").to_string();
         tracing::debug!(%method, %url, body_len = request.data().map_or(0, <[u8]>::len), "RTSP request");
@@ -354,8 +410,8 @@ async fn send_completed_responses<S: AsyncWrite + Unpin>(
             return false;
         }
         let leftover = request.take_leftover();
-        *request = HttpRequest::new();
-        if !leftover.is_empty() && request.add_data(&leftover).is_err() {
+        *pending = PendingRequest::default();
+        if !leftover.is_empty() && pending.add_data(handler, &leftover).is_err() {
             write_bad_request_and_close(stream, Some(handler), config).await;
             return false;
         }
@@ -366,14 +422,14 @@ async fn send_completed_responses<S: AsyncWrite + Unpin>(
 async fn add_request_data<S: AsyncWrite + Unpin>(
     stream: &mut S,
     handler: &mut dyn ConnectionHandler,
-    request: &mut HttpRequest,
+    pending: &mut PendingRequest,
     data: &[u8],
     config: ConnectionConfig,
 ) -> bool {
-    if request.add_data(data).is_ok() {
+    if pending.add_data(handler, data).is_ok() {
         tracing::trace!(
-            complete = request.is_complete(),
-            headers_complete = request.headers_complete(),
+            complete = pending.request.is_complete(),
+            headers_complete = pending.request.headers_complete(),
             "Parsed request data"
         );
         return true;
@@ -386,16 +442,16 @@ async fn add_request_data<S: AsyncWrite + Unpin>(
 async fn ingest_encrypted_data<S: AsyncWrite + Unpin>(
     stream: &mut S,
     handler: &mut dyn ConnectionHandler,
-    request: &mut HttpRequest,
+    request: &mut PendingRequest,
     raw_buf: &mut Vec<u8>,
     data: &[u8],
     config: ConnectionConfig,
 ) -> bool {
-    raw_buf.extend_from_slice(data);
-    if raw_buf.len() > MAX_ENCRYPTED_BUFFER_LEN {
+    if data.len() > MAX_ENCRYPTED_BUFFER_LEN.saturating_sub(raw_buf.len()) {
         tracing::warn!("Encrypted buffer exceeded 1 MB, dropping connection");
         return false;
     }
+    raw_buf.extend_from_slice(data);
     tracing::trace!(
         raw_len = raw_buf.len(),
         new_bytes = data.len(),
@@ -428,14 +484,25 @@ async fn process_connection<S>(
     S: AsyncRead + AsyncWrite + Unpin,
 {
     let mut buf = [0u8; 4096];
-    let mut request = HttpRequest::new();
+    let mut request = PendingRequest::default();
     let mut raw_buf = Vec::new(); // accumulates encrypted data
 
     loop {
         if !send_completed_responses(&mut stream, handler.as_mut(), &mut request, config).await {
             break;
         }
-        let n = match stream.read(&mut buf).await {
+        let read = if let Some(deadline) = request.body_deadline {
+            match timeout_at(deadline, stream.read(&mut buf)).await {
+                Ok(result) if Instant::now() < deadline => result,
+                _ => {
+                    tracing::debug!("Request body deadline exceeded");
+                    break;
+                }
+            }
+        } else {
+            stream.read(&mut buf).await
+        };
+        let n = match read {
             Ok(0) | Err(_) => break,
             Ok(n) => n,
         };
