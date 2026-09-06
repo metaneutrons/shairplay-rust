@@ -5,7 +5,7 @@ set -euo pipefail
 export PKG_CONFIG_PATH=/opt/pipewire/lib/pkgconfig
 export LD_LIBRARY_PATH=/opt/pipewire/lib
 read -r -a flags <<< "$(pkg-config --cflags --libs libpipewire-0.3 openssl)"
-cc -D_GNU_SOURCE -Werror=implicit-function-declaration -O1 -g \
+cc -D_GNU_SOURCE -Werror=implicit-function-declaration -Werror=format -O1 -g \
     -ffunction-sections -fdata-sections -fsanitize=address,undefined -fno-sanitize-recover=all \
     -I/tmp/pw-build -I/tmp/pipewire/src/modules \
     /tmp/qualification/test-raop-iovec.c \

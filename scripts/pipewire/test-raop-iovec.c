@@ -3,10 +3,10 @@
 #include "module-raop-sink.c"
 #include <assert.h>
 
-#define TEST_FRAMES 352
+#define TEST_FRAMES 352u
 #define TEST_BYTES (TEST_FRAMES * 4)
 
-static ssize_t packet(struct impl *sender, int receiver, struct iovec *audio,
+static ssize_t packet(struct impl *sender, int receiver, const struct iovec *audio,
 		size_t count, uint8_t *output, size_t capacity)
 {
 	struct rtp_header header = { .v = 2, .pt = 96,
@@ -14,7 +14,8 @@ static ssize_t packet(struct impl *sender, int receiver, struct iovec *audio,
 	struct iovec input[3] = {{ &header, sizeof(header) }};
 
 	assert(count <= 2);
-	memcpy(&input[1], audio, count * sizeof(*audio));
+	for (size_t i = 0; i < count; i++)
+		input[i + 1] = audio[i];
 	stream_send_packet(sender, input, count + 1);
 	ssize_t size = recv(receiver, output, capacity, MSG_DONTWAIT);
 	assert(size > 0);
@@ -23,21 +24,20 @@ static ssize_t packet(struct impl *sender, int receiver, struct iovec *audio,
 
 static unsigned int check_splits(struct impl *sender, int receiver)
 {
-	uint8_t samples[TEST_BYTES], tail[TEST_BYTES];
+	uint8_t samples[2][TEST_BYTES];
 	uint8_t reference[TEST_BYTES + 64], actual[sizeof(reference)];
-	struct iovec contiguous = { samples, sizeof(samples) };
+	const struct iovec contiguous = { samples[0], TEST_BYTES };
 	unsigned int failures = 0;
 
-	for (size_t i = 0; i < sizeof(samples); i++)
-		samples[i] = (uint8_t)(i * 73 + i / 256);
+	for (size_t i = 0; i < TEST_BYTES; i++)
+		samples[0][i] = samples[1][i] = (uint8_t)(i * 73 + i / 256);
 	ssize_t expected = packet(sender, receiver, &contiguous, 1,
 			reference, sizeof(reference));
 	assert(expected == 12 + TEST_BYTES + 8);
 	for (size_t split = 0; split <= TEST_FRAMES; split++) {
 		size_t first = split * 4;
-		memcpy(tail, samples + first, sizeof(samples) - first);
-		struct iovec audio[2] = {
-			{ samples, first }, { tail, sizeof(samples) - first }
+		const struct iovec audio[2] = {
+			{ samples[0], first }, { samples[1] + first, TEST_BYTES - first }
 		};
 		ssize_t size = packet(sender, receiver, audio, 2, actual, sizeof(actual));
 		if (size != expected || memcmp(actual, reference, (size_t)expected) != 0)
