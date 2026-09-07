@@ -7,9 +7,23 @@ revision=$(git -C "$root" rev-parse HEAD)
 dirty=false
 if [[ -n $(git -C "$root" status --porcelain) ]]; then dirty=true; fi
 variant=${PIPEWIRE_VARIANT:-baseline}
-case "$variant" in baseline|iovec-fix) ;; *) printf 'Invalid PipeWire variant\n' >&2; exit 2 ;; esac
+case "$variant" in
+    baseline|iovec-fix)
+        pipewire_version=1.6.7
+        pipewire_commit=3b2cb4fb037bf6033b87d3c87ee917b2f686d309
+        pipewire_sha256=c8746b3c3408becb27e40cf67a5587105f057cd540769db4c345a67bf45c86df
+        source_id=1.6.7
+        ;;
+    upstream-merged)
+        pipewire_version=1.7.0
+        pipewire_commit=bc7d1cba6dee390beba0785e50935275d3f1d484
+        pipewire_sha256=b57315ef2b9fe0062469752bc12be2edac70ab88dbabf35b69be843665969fcb
+        source_id=upstream-bc7d1cba
+        ;;
+    *) printf 'Invalid PipeWire variant\n' >&2; exit 2 ;;
+esac
 run_id="shairplay-pw-$variant-$(date -u +%Y%m%dT%H%M%S)-$$"
-image="shairplay-pipewire-qualification:1.6.7-$variant"
+image="shairplay-pipewire-qualification:$source_id-$variant"
 output="$root/target/pipewire-qualification/$run_id"
 evidence="$run_id-evidence"
 container=""
@@ -26,6 +40,9 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 docker build --tag "$image" --build-arg "PIPEWIRE_VARIANT=$variant" \
+    --build-arg "PIPEWIRE_COMMIT=$pipewire_commit" \
+    --build-arg "PIPEWIRE_SHA256=$pipewire_sha256" \
+    --build-arg "PIPEWIRE_QUALIFICATION_VERSION=$pipewire_version" \
     --file "$root/scripts/pipewire/Dockerfile" "$root/scripts/pipewire"
 image_id=$(docker image inspect --format '{{.Id}}' "$image")
 common=(--init --cap-drop=ALL --security-opt=no-new-privileges

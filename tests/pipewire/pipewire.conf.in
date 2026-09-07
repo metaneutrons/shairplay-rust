@@ -12,6 +12,9 @@ context.spa-libs = {
     support.* = support/libspa-support
 }
 context.modules = [
+    { name = libpipewire-module-scheduler-v1
+      flags = [ ifexists nofail ]
+    }
     { name = libpipewire-module-protocol-native }
     { name = libpipewire-module-spa-node-factory }
     { name = libpipewire-module-client-node }
