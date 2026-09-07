@@ -1,6 +1,6 @@
 # `/auth-setup` Protocol Status
 
-Last reviewed: 2026-09-06
+Last reviewed: 2026-09-07
 
 This document describes receiver-side `POST /auth-setup` support and the
 evidence available for implementing it. No public Apple endpoint specification
@@ -41,12 +41,14 @@ The advertised profiles do not intentionally invite this exchange:
 A manually configured PipeWire sender using `raop.encryption.type=auth_setup`
 calls the endpoint and aborts on a non-success response, as reported in
 [#38](https://github.com/metaneutrons/shairplay-rust/issues/38). The opt-in path
-now acknowledges its exact public probe. [Unmodified PipeWire 1.6.7 testing](pipewire-qualification.md)
-reaches passwordless UDP audio, teardown and reconnect, but exposes audio
-discontinuities under a full-payload comparison. Qualification remains open in
-#65. The `PCM` sender setting produces uncompressed ALAC; decoded output is f32
-stereo at 44.1 kHz. TCP and password-protected playback are also not qualified.
-David's confirmation against the original #38 setup remains outstanding.
+now acknowledges its exact public probe. [The merged upstream PipeWire source commit](pipewire-qualification.md)
+passes passwordless UDP audio, teardown and reconnect under a full-payload
+comparison. This result is limited to commit
+`bc7d1cba6dee390beba0785e50935275d3f1d484` (compiled as 1.7.0), not a released
+PipeWire baseline; #65 remains open pending that selection. The `PCM` sender
+setting produces uncompressed ALAC; decoded output is f32 stereo at 44.1 kHz.
+TCP and password-protected playback are also not qualified. David's
+confirmation against the original #38 setup remains outstanding.
 
 ## What Is Established
 
@@ -163,7 +165,7 @@ treated as conformant.
 | FairPlay | `/fp-setup` implemented separately | Project fact |
 | HomeKit pairing | `/pair-setup` and `/pair-verify` implemented separately | Project fact |
 | MFi certificate/signing | No provider API, certificate, or authentication-IC integration | Project fact |
-| PipeWire forced `auth_setup` | Unmodified 1.6.7 reaches UDP audio but discontinuities block qualification; password challenge abort confirmed; TCP fails | Live observations and [controlled sender experiment](pipewire-qualification.md), not an unmodified-release qualification pass |
+| PipeWire forced `auth_setup` | Upstream merge commit `bc7d1cba` passes strict passwordless UDP audio, teardown and reconnect; the 1.6.7 baseline loses samples; password challenge abort and TCP failure remain | [Live source-commit evidence](pipewire-qualification.md); no released-baseline qualification |
 | Apple/MFi sender interoperability | Not tested | Unknown |
 
 The draft implementation in
@@ -244,7 +246,7 @@ same exact route selection; unrelated routes retain their previous behavior.
 
 The first interoperability target is an explicitly configured PipeWire sender
 using classic RAOP, `raop.audio.codec=PCM` (uncompressed ALAC on the wire), and
-UDP; live qualification is not yet complete. The library stays platform-neutral. Compiling `ap2` does not imply
+UDP; qualification is complete only for the merged upstream source commit, not a released baseline. The library stays platform-neutral. Compiling `ap2` does not imply
 support for MFi or additional AP2 authentication flows. Existing AP1/AP2
 advertisements and feature bits remain unchanged in every gate combination.
 

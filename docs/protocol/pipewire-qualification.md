@@ -4,29 +4,31 @@ The endpoint contract lives in [auth-setup.md](auth-setup.md). This document
 records work package [D / #65](https://github.com/metaneutrons/shairplay-rust/issues/65),
 its reproducible test and its deliberately narrow interoperability target.
 
-**Status: qualification blocked, not ready for merge or a compatibility claim.**
-Short exploratory UDP runs delivered all three seconds of expected stereo audio
-and reconnected successfully. Other runs lost source samples, including in the
-release profile. The final regression uses 25 seconds of non-silent content to
-exercise a complete sender ring-buffer wraparound. A partial success or a green
-short run must not close #38 or #65. [Versioned aarch64 evidence](evidence/pipewire-1.6.7-aarch64/README.md)
-records all five configurations: gate-only cases pass; all six positive-path
-audio sessions fail. [#72](https://github.com/metaneutrons/shairplay-rust/issues/72)
-tracks the remaining investigation; [draft #73](https://github.com/metaneutrons/shairplay-rust/pull/73)
-contains this harness and is not ready for merge.
+**Status: qualified for the merged upstream source commit; no released fixed PipeWire baseline yet.**
+The 25-second regression exercises a complete sender ring-buffer wraparound.
+[Clean aarch64 evidence for PipeWire commit `bc7d1cba`](evidence/pipewire-upstream-bc7d1cba-aarch64/README.md)
+records all five feature/profile configurations. The six passwordless UDP
+sessions pass bit-exactly, including release and reconnect; the required 404
+and 401 probes also pass. The commit is compiled as PipeWire 1.7.0 and contains
+[PipeWire MR !2984](https://gitlab.freedesktop.org/pipewire/pipewire/-/merge_requests/2984),
+but it was not in a release tag when tested. This establishes a narrow
+source-commit qualification, not a released-baseline compatibility claim.
 
 The [controlled before/after experiment](evidence/pipewire-iovec-aarch64/README.md)
-now isolates a sender defect: the unmodified baseline fails all six audio
-sessions, while the same matrix with an explicit scatter/gather patch passes
-all six bit-exactly, including release and reconnect. This validates the narrow
-patched combination, **not an unmodified PipeWire release**. TCP, password
-interoperability and the original desktop setup remain outside that success.
+remains the causal record: the unmodified 1.6.7 baseline fails all six audio
+sessions, while the same matrix with the original scatter/gather patch passes
+all six bit-exactly. Upstream merged that fix as part of `bc7d1cba`. TCP,
+password playback and confirmation in the original desktop setup remain open.
+[#65](https://github.com/metaneutrons/shairplay-rust/issues/65),
+[#72](https://github.com/metaneutrons/shairplay-rust/issues/72), and
+[draft #73](https://github.com/metaneutrons/shairplay-rust/pull/73) remain open
+until a supported fixed PipeWire baseline is selected and qualified.
 
 ## Tested Configuration
 
 | Property | Scope |
 |----------|-------|
-| Sender | Unmodified PipeWire 1.6.7, commit `3b2cb4fb037bf6033b87d3c87ee917b2f686d309` |
+| Sender | PipeWire upstream merge commit `bc7d1cba6dee390beba0785e50935275d3f1d484` (compiled as 1.7.0); the historical 1.6.7 baseline is documented separately |
 | Receiver | Classic AirPlay 1, compile-time compatibility feature plus explicit runtime opt-in |
 | Transport | IPv4 loopback UDP; manual RAOP sink configuration |
 | Sender codec | `raop.audio.codec=PCM`: uncompressed ALAC frames, `AppleLossless` SDP |
@@ -42,13 +44,20 @@ existing native Linux/macOS tests and Windows cross-check remain in place.
 
 ## Reproduce
 
-From a repository checkout with Docker available, run:
+From a repository checkout with Docker available, run the historical 1.6.7
+baseline with:
 
 ```sh
 bash scripts/pipewire/run.sh
 ```
 
-The script builds the pinned sender and runs default, compatibility-only,
+To reproduce the merged upstream source-commit qualification, run:
+
+```sh
+PIPEWIRE_VARIANT=upstream-merged bash scripts/pipewire/run.sh
+```
+
+The script builds the selected pinned sender and runs default, compatibility-only,
 AP2-only, combined AP2/compatibility, and release-profile compatibility builds.
 With AP2 compiled, the receiver is explicitly configured for AirPlay 1. A clean
 checkout is required for release evidence; exploratory dirty runs are marked as
@@ -74,8 +83,9 @@ to the same pinned source before compilation. It iterates every frame-aligned
 audio iovec while retaining one ALAC header/end tag; it adds no allocation or
 audio copy. Neither receiver code, waveform, graph configuration, test duration,
 oracle nor feature matrix changes between variants. TCP framing and password
-handling are deliberately untouched. This is a local diagnostic patch, **not an
-upstream-accepted fix or an official PipeWire release**.
+handling are deliberately untouched. This is a historical local diagnostic patch. The equivalent sender fix is
+merged upstream, but the tested upstream source commit is not an official
+PipeWire release.
 
 Both images compile a [callback regression](../../scripts/pipewire/test-raop-iovec.c)
 against the actual source, with AddressSanitizer and UndefinedBehaviorSanitizer.
@@ -98,24 +108,23 @@ establishes only the explicitly identified experimental combination; it must
 not be reported as an unmodified 1.6.7 qualification pass.
 
 The patch also passes `git apply --check` against 1.6.8
-(`b741e0c74f5436f0c925f7741140db0efd32cf4e`) and the checked development head
-(`b0b792fa72451fd9a068c1a8f877d21d4c67cd3f`). This is source applicability only;
-neither version has been live-tested here. The minimal fix and reproducible
-callback/live tests were submitted on
-2026-09-06 as [PipeWire MR !2984](https://gitlab.freedesktop.org/pipewire/pipewire/-/merge_requests/2984).
+(`b741e0c74f5436f0c925f7741140db0efd32cf4e`) and the then-checked development
+head (`b0b792fa72451fd9a068c1a8f877d21d4c67cd3f`). That historical result was
+source applicability only. The minimal fix and reproducible callback/live tests
+were submitted on 2026-09-06 as
+[PipeWire MR !2984](https://gitlab.freedesktop.org/pipewire/pipewire/-/merge_requests/2984),
+then merged as `bc7d1cba6dee390beba0785e50935275d3f1d484`.
 
-The submitted commit `28aea435ba766cddd132cfb1a0992ceb1d797d51` targets the
-development head above and includes a native Meson regression,
-`pw-test-raop-iovec`, that exercises the actual sender callback. On Linux
-aarch64 with ASan/UBSan and `b_ndebug=true`, the unmodified callback fails
-352 of 354 cases and the fix passes all 354; the existing
-`pw-test-raop-rtsp-client` also passes. This adds callback-level build/test
-evidence for that development revision, not live playback qualification.
+The merged source commit includes the native `pw-test-raop-iovec` regression
+that exercises the actual sender callback. On Linux aarch64 with ASan/UBSan and
+`b_ndebug=true`, it passes all 354 cases; the existing
+`pw-test-raop-rtsp-client` also passes. The same commit now passes the complete
+live UDP matrix in [clean aarch64 evidence](evidence/pipewire-upstream-bc7d1cba-aarch64/README.md).
+This is not evidence for a released PipeWire baseline.
 
-The MR is submitted for review, not merged or released. Upstream acceptance,
-selection and qualification of a supported fixed sender baseline, and the
-original desktop confirmation remain outstanding. #65 and draft #73 remain
-blocked; TCP and password playback are separate limitations.
+Selection and qualification of a supported fixed sender baseline, and the
+original desktop confirmation remain outstanding. #65, #72 and draft #73 stay
+open; TCP and password playback are separate limitations.
 
 Normal `cargo test` does not launch PipeWire: the live test is Linux-only and
 ignored unless explicitly requested. Its oracle/subprocess self-tests run
@@ -141,7 +150,10 @@ not a virtual-time simulation. Failures are not retried or silently tolerated.
 ## What Is Verified
 
 The checked-in [sender configuration](../../tests/pipewire/pipewire.conf.in)
-uses a dummy clock and explicit graph links, without a session manager.
+uses a dummy clock and explicit graph links, without a session manager. It loads
+`libpipewire-module-scheduler-v1` with `ifexists nofail`: PipeWire master
+requires that graph scheduler, while the historical 1.6.7 image does not ship
+it.
 `pw-cat` plays a generated 27-second WAV: one second of silence, 25 seconds
 of deterministic non-silent stereo data, then one second of silence. The
 preroll permits both graph channels to link; the postroll drains queued audio.
@@ -176,12 +188,13 @@ experimental configuration was removed; it is not a supported workaround.
 The pinned [RAOP callback](https://github.com/PipeWire/pipewire/blob/3b2cb4fb037bf6033b87d3c87ee917b2f686d309/src/modules/module-raop-sink.c#L454-L520)
 encodes only `iov[1]`. The [RTP audio producer](https://github.com/PipeWire/pipewire/blob/3b2cb4fb037bf6033b87d3c87ee917b2f686d309/src/modules/module-rtp/audio.c#L503-L575)
 can provide two audio segments at ring-buffer wraparound and advances by the
-entire packet length. Losing the second segment is now reproduced directly in
-the sender callback for every split boundary. In the controlled 25-second live
+entire packet length. Losing the second segment is reproduced directly in the
+sender callback for every split boundary. In the controlled 25-second live
 comparison, fixing only this defect changes all six failures to bit-exact
-passes. This establishes a causal sender defect for the tested configuration;
-it does not rule out unrelated timing, network or receiver defects. Some
-earlier exploratory runs also reported late timers.
+passes. PipeWire merged the fix; the merged source commit also passes the same
+strict live matrix. This establishes a causal sender defect for the tested
+configuration; it does not rule out unrelated timing, network or receiver
+defects. Some earlier exploratory runs also reported late timers.
 
 The 25-second regression exceeds the sender's 4 MiB S16 stereo ring capacity.
 Do not shorten the test, permit missing samples, retry until green, patch the
