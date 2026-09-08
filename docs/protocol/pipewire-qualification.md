@@ -209,27 +209,31 @@ observed interoperability limitation, not permission to bypass authentication.
 
 ### TCP
 
-An exploratory live TCP run reaches the RTSP sequence but delivers no decoded
-audio and fails the exact-audio oracle. It is **not qualified**. In the pinned
-[sender's `stream_send_packet`](https://github.com/PipeWire/pipewire/blob/3b2cb4fb037bf6033b87d3c87ee917b2f686d309/src/modules/module-raop-sink.c#L454-L520),
-the TCP length is ORed into `out[0]` (encoded audio), while `tcp_pkt[0]` remains
-`0x24000000`, declaring zero interleaved payload length. This is a source-verified
-defect and a plausible explanation for the live failure, not a captured-wire
-diagnosis. TCP also logs attempts to send UDP sync on an invalid descriptor.
-Do not weaken the receiver's framing checks or change upstream source in this
-qualification to manufacture a successful result.
+The TCP framing defect is now reproduced against upstream master
+`c73df14f03e30c41f6430acd82c6250dcdb168d8`. The sender writes the packet length
+into the first ALAC payload word while the interleaved prefix declares zero
+length. An extension of the native callback regression fails all 353 TCP cases
+on unmodified master and passes all 707 UDP/TCP cases with the small header fix.
 
-For investigation, the same strict test can be run with
-`QUALIFICATION_TRANSPORT=tcp bash scripts/pipewire/run.sh`; it is expected to
-fail with this sender version; its reports retain the failure. The library's
-synthetic raw L16 TCP tests do not override this
-real-sender limitation.
+The [local before/after evidence](evidence/pipewire-tcp-c73df14f-aarch64/README.md)
+records the strict matrix: the unmodified sender fails all audio configurations;
+the fixed sender passes all five configurations and six bit-exact TCP sessions,
+including release and reconnect. These are separate, explicitly patched sender
+variants (`tcp-baseline` and `tcp-fix`), selected with
+`QUALIFICATION_TRANSPORT=tcp`. The original baseline remains unchanged.
+
+A [local MR draft](pipewire-tcp-mr-draft.md) is ready for review. The branch and MR
+have not been sent upstream. Supported-release and x86_64 TCP qualification,
+password playback and original desktop confirmation remain outstanding. TCP
+also attempts UDP sync on an invalid descriptor; this framing fix does not
+change synchronization or partial-write handling.
 
 ### Version and codec boundaries
 
-The earlier source review used commit `b0b792f` from 1.7.0 development. The live
-test deliberately uses the 1.6.7 release instead. Neither evidence source
-establishes behavior of every PipeWire version. Despite its name, this version's
+The historical comparison used PipeWire 1.6.7; the merged UDP qualification
+uses `bc7d1cba`, and the local TCP comparison uses `c73df14f` plus the explicitly
+identified patch. These results do not establish behavior of every PipeWire
+version. Despite its name, this version's
 `PCM` encoder is [uncompressed ALAC](https://github.com/PipeWire/pipewire/blob/3b2cb4fb037bf6033b87d3c87ee917b2f686d309/src/modules/module-raop-sink.c#L406-L442),
 not the raw L16 codec used by the earlier simulated sender tests. Encrypted
 audio, compressed ALAC modes and other sample formats remain outside this test.

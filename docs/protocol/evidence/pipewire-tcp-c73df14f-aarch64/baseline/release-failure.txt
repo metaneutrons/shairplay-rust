@@ -1,0 +1,649 @@
+thread 'real_pipewire_auth_setup_qualification' (22) panicked at tests/pipewire.rs:138:5:
+live audio qualification failed; see sanitized JSON evidence
+{
+  "ap2_feature": false,
+  "architecture": "aarch64",
+  "compatibility_feature": true,
+  "container_image": "sha256:7e0a4ded0c204b8cf45e8ccf6a52f325b1b8239b26dbf762cebef2f0a2ce974d",
+  "debug_assertions": true,
+  "passed": false,
+  "pipewire": {
+    "archive_sha256": "9f8d2b0f8d034a3ee4c19192a33e3a36daaeedf677a764c347b55c8cd33dc854",
+    "commit": "c73df14f03e30c41f6430acd82c6250dcdb168d8",
+    "kernel": "Linux 6.8.0-100-generic",
+    "runtime_packages": "libasound2=1.2.8-1+b1\nlibc6=2.36-9+deb12u14\nlibsndfile1=1.2.0-1+deb12u1\nlibssl3=3.0.20-1~deb12u2\n",
+    "rustc": "rustc 1.98.0 (88d9e12ae 2026-08-18)",
+    "source": {
+      "callback_sha256": "37e5b56bdc9f221e5458b0fc4ebf2e7ad3f5fc7b06f4338e3113772f6c3bbea1",
+      "patch_sha256": null,
+      "regression": {
+        "cases": 707,
+        "failures": 353,
+        "runner": "upstream-meson"
+      },
+      "regression_sha256": "8a1fa84313d720e9be639e66cb0d1cad873fdb91544d224b29085f5b1efdf47a",
+      "variant": "tcp-baseline"
+    },
+    "version_output": "pipewire\nCompiled with libpipewire 1.7.0\nLinked with libpipewire 1.7.0"
+  },
+  "receiver_revision": "c9c35252abe1d5c3fee6fe02ed43105588dc01fc",
+  "scenarios": [
+    {
+      "audio": [],
+      "discovery_unchanged": true,
+      "exchanges": [
+        {
+          "exact_probe": false,
+          "normal_headers": true,
+          "request": "OPTIONS",
+          "response_bytes": 0,
+          "status": 200
+        },
+        {
+          "exact_probe": true,
+          "normal_headers": true,
+          "request": "POST /auth-setup",
+          "response_bytes": 0,
+          "status": 404
+        }
+      ],
+      "expected_probe_status": 404,
+      "password_protected": false,
+      "runtime_enabled": false,
+      "transport": "udp"
+    },
+    {
+      "audio": [],
+      "discovery_unchanged": true,
+      "exchanges": [
+        {
+          "exact_probe": false,
+          "normal_headers": true,
+          "request": "OPTIONS",
+          "response_bytes": 0,
+          "status": 200
+        },
+        {
+          "exact_probe": true,
+          "normal_headers": true,
+          "request": "POST /auth-setup",
+          "response_bytes": 0,
+          "status": 401
+        }
+      ],
+      "expected_probe_status": 401,
+      "password_protected": true,
+      "runtime_enabled": true,
+      "transport": "udp"
+    },
+    {
+      "audio": [
+        {
+          "exact_payload": false,
+          "expected_payload_frames": 1102500,
+          "failure": "no non-silent audio",
+          "format": "PCM f32 stereo 44100 Hz",
+          "received_frames": 0,
+          "stopped": true
+        },
+        {
+          "exact_payload": false,
+          "expected_payload_frames": 1102500,
+          "failure": "no non-silent audio",
+          "format": "PCM f32 stereo 44100 Hz",
+          "received_frames": 0,
+          "stopped": true
+        }
+      ],
+      "discovery_unchanged": true,
+      "exchanges": [
+        {
+          "exact_probe": false,
+          "normal_headers": true,
+          "request": "OPTIONS",
+          "response_bytes": 0,
+          "status": 200
+        },
+        {
+          "exact_probe": true,
+          "normal_headers": true,
+          "request": "POST /auth-setup",
+          "response_bytes": 0,
+          "status": 200
+        },
+        {
+          "exact_probe": false,
+          "normal_headers": true,
+          "request": "ANNOUNCE",
+          "response_bytes": 0,
+          "status": 200
+        },
+        {
+          "exact_probe": false,
+          "normal_headers": true,
+          "request": "SETUP",
+          "response_bytes": 0,
+          "status": 200
+        },
+        {
+          "exact_probe": false,
+          "normal_headers": true,
+          "request": "RECORD",
+          "response_bytes": 0,
+          "status": 200
+        },
+        {
+          "exact_probe": false,
+          "normal_headers": true,
+          "request": "SET_PARAMETER",
+          "response_bytes": 0,
+          "status": 200
+        },
+        {
+          "exact_probe": false,
+          "normal_headers": true,
+          "request": "TEARDOWN",
+          "response_bytes": 0,
+          "status": 200
+        },
+        {
+          "exact_probe": false,
+          "normal_headers": true,
+          "request": "OPTIONS",
+          "response_bytes": 0,
+          "status": 200
+        },
+        {
+          "exact_probe": true,
+          "normal_headers": true,
+          "request": "POST /auth-setup",
+          "response_bytes": 0,
+          "status": 200
+        },
+        {
+          "exact_probe": false,
+          "normal_headers": true,
+          "request": "ANNOUNCE",
+          "response_bytes": 0,
+          "status": 200
+        },
+        {
+          "exact_probe": false,
+          "normal_headers": true,
+          "request": "SETUP",
+          "response_bytes": 0,
+          "status": 200
+        },
+        {
+          "exact_probe": false,
+          "normal_headers": true,
+          "request": "RECORD",
+          "response_bytes": 0,
+          "status": 200
+        },
+        {
+          "exact_probe": false,
+          "normal_headers": true,
+          "request": "SET_PARAMETER",
+          "response_bytes": 0,
+          "status": 200
+        },
+        {
+          "exact_probe": false,
+          "normal_headers": true,
+          "request": "TEARDOWN",
+          "response_bytes": 0,
+          "status": 200
+        }
+      ],
+      "expected_probe_status": 200,
+      "password_protected": false,
+      "runtime_enabled": true,
+      "transport": "tcp"
+    }
+  ],
+  "schema_version": 2,
+  "sender_config_sha256": "316664edcbbebbfaec314ef005465f103c3358d8c35547b0aa13dca146a3ef1c",
+  "source_wav_sha256": "fbc238d205d19bebeb2474ea4b0e0b039d4817e261eb03270919b99a57b05cc7",
+  "working_tree_dirty": true
+}
+test real_pipewire_auth_setup_qualification ... FAILED
+
+failures:
+
+failures:
+    real_pipewire_auth_setup_qualification
+
+test result: FAILED. 7 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 55.33s
+
+error: test failed, to rerun pass `--test pipewire`
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+     Running tests/pipewire.rs (/target/debug/deps/pipewire-da8c4a26e6b20069)
+
+running 8 tests
+
+thread 'process::failed_commands_are_not_accepted' (18) panicked at tests/pipewire/process.rs:22:21:
+subprocess failed: exit status: 1
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test process::failed_commands_are_not_accepted ... ok
+test process::subprocess_wait_does_not_block_async_executor ... ok
+test audio::exact_audio_with_silence_passes ... ok
+
+thread 'wire::exchange_sequence_oracle_rejects_missing_reordered_or_failed_steps' (31) panicked at tests/pipewire/wire.rs:35:9:
+assertion `left == right` failed
+  left: ["OPTIONS", "POST /auth-setup", "ANNOUNCE", "SETUP", "RECORD"]
+ right: ["OPTIONS", "POST /auth-setup", "ANNOUNCE", "SETUP", "RECORD", "TEARDOWN"]
+
+thread 'wire::exchange_sequence_oracle_rejects_missing_reordered_or_failed_steps' (31) panicked at tests/pipewire/wire.rs:35:9:
+assertion `left == right` failed
+  left: ["OPTIONS", "POST /auth-setup", "SETUP", "ANNOUNCE", "RECORD", "TEARDOWN"]
+ right: ["OPTIONS", "POST /auth-setup", "ANNOUNCE", "SETUP", "RECORD", "TEARDOWN"]
+
+thread 'wire::exchange_sequence_oracle_rejects_missing_reordered_or_failed_steps' (31) panicked at tests/pipewire/wire.rs:31:13:
+assertion `left == right` failed
+  left: 400
+ right: 200
+test wire::exchange_sequence_oracle_rejects_missing_reordered_or_failed_steps ... ok
+
+thread 'wire::exchange_sequence_oracle_rejects_missing_reordered_or_failed_steps' (31) panicked at tests/pipewire/wire.rs:21:9:
+Exchange { request: "POST /auth-setup", status: 200, response_bytes: 0, normal_headers: false, exact_probe: true }
+
+thread 'wire::rejected_probe_must_not_proceed_to_announce' (32) panicked at tests/pipewire/wire.rs:47:9:
+assertion `left == right` failed
+  left: ["OPTIONS", "POST /auth-setup", "ANNOUNCE"]
+ right: ["OPTIONS", "POST /auth-setup"]
+test wire::rejected_probe_must_not_proceed_to_announce ... ok
+
+thread 'wire::rejected_probe_must_not_proceed_to_announce' (32) panicked at tests/pipewire/wire.rs:47:9:
+assertion `left == right` failed
+  left: ["OPTIONS", "POST /auth-setup", "ANNOUNCE"]
+ right: ["OPTIONS", "POST /auth-setup"]
+PipeWire scenario: enabled=false, password=false, transport=udp
+test audio::wav_contains_preroll_payload_and_postroll ... ok
+test audio::corrupted_truncated_reordered_or_missing_audio_fails ... ok
+{
+  "ap2_feature": true,
+  "architecture": "aarch64",
+  "compatibility_feature": false,
+  "container_image": "sha256:7e0a4ded0c204b8cf45e8ccf6a52f325b1b8239b26dbf762cebef2f0a2ce974d",
+  "debug_assertions": true,
+  "passed": true,
+  "pipewire": {
+    "archive_sha256": "9f8d2b0f8d034a3ee4c19192a33e3a36daaeedf677a764c347b55c8cd33dc854",
+    "commit": "c73df14f03e30c41f6430acd82c6250dcdb168d8",
+    "kernel": "Linux 6.8.0-100-generic",
+    "runtime_packages": "libasound2=1.2.8-1+b1\nlibc6=2.36-9+deb12u14\nlibsndfile1=1.2.0-1+deb12u1\nlibssl3=3.0.20-1~deb12u2\n",
+    "rustc": "rustc 1.98.0 (88d9e12ae 2026-08-18)",
+    "source": {
+      "callback_sha256": "37e5b56bdc9f221e5458b0fc4ebf2e7ad3f5fc7b06f4338e3113772f6c3bbea1",
+      "patch_sha256": null,
+      "regression": {
+        "cases": 707,
+        "failures": 353,
+        "runner": "upstream-meson"
+      },
+      "regression_sha256": "8a1fa84313d720e9be639e66cb0d1cad873fdb91544d224b29085f5b1efdf47a",
+      "variant": "tcp-baseline"
+    },
+    "version_output": "pipewire\nCompiled with libpipewire 1.7.0\nLinked with libpipewire 1.7.0"
+  },
+  "receiver_revision": "c9c35252abe1d5c3fee6fe02ed43105588dc01fc",
+  "scenarios": [
+    {
+      "audio": [],
+      "discovery_unchanged": true,
+      "exchanges": [
+        {
+          "exact_probe": false,
+          "normal_headers": true,
+          "request": "OPTIONS",
+          "response_bytes": 0,
+          "status": 200
+        },
+        {
+          "exact_probe": true,
+          "normal_headers": true,
+          "request": "POST /auth-setup",
+          "response_bytes": 0,
+          "status": 404
+        }
+      ],
+      "expected_probe_status": 404,
+      "password_protected": false,
+      "runtime_enabled": false,
+      "transport": "udp"
+    }
+  ],
+  "schema_version": 2,
+  "sender_config_sha256": "316664edcbbebbfaec314ef005465f103c3358d8c35547b0aa13dca146a3ef1c",
+  "source_wav_sha256": "fbc238d205d19bebeb2474ea4b0e0b039d4817e261eb03270919b99a57b05cc7",
+  "working_tree_dirty": true
+}
+test real_pipewire_auth_setup_qualification ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.58s
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.05s
+     Running tests/pipewire.rs (/target/debug/deps/pipewire-f58828937118d818)
+
+running 8 tests
+
+thread 'process::failed_commands_are_not_accepted' (18) panicked at tests/pipewire/process.rs:22:21:
+subprocess failed: exit status: 1
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test process::failed_commands_are_not_accepted ... ok
+test process::subprocess_wait_does_not_block_async_executor ... ok
+test audio::exact_audio_with_silence_passes ... ok
+
+thread 'wire::exchange_sequence_oracle_rejects_missing_reordered_or_failed_steps' (31) panicked at tests/pipewire/wire.rs:35:9:
+assertion `left == right` failed
+  left: ["OPTIONS", "POST /auth-setup", "ANNOUNCE", "SETUP", "RECORD"]
+ right: ["OPTIONS", "POST /auth-setup", "ANNOUNCE", "SETUP", "RECORD", "TEARDOWN"]
+
+thread 'wire::exchange_sequence_oracle_rejects_missing_reordered_or_failed_steps' (31) panicked at tests/pipewire/wire.rs:35:9:
+assertion `left == right` failed
+  left: ["OPTIONS", "POST /auth-setup", "SETUP", "ANNOUNCE", "RECORD", "TEARDOWN"]
+ right: ["OPTIONS", "POST /auth-setup", "ANNOUNCE", "SETUP", "RECORD", "TEARDOWN"]
+
+thread 'wire::exchange_sequence_oracle_rejects_missing_reordered_or_failed_steps' (31) panicked at tests/pipewire/wire.rs:31:13:
+assertion `left == right` failed
+  left: 400
+ right: 200
+
+thread 'wire::exchange_sequence_oracle_rejects_missing_reordered_or_failed_steps' (31) panicked at tests/pipewire/wire.rs:21:9:
+Exchange { request: "POST /auth-setup", status: 200, response_bytes: 0, normal_headers: false, exact_probe: true }
+test wire::exchange_sequence_oracle_rejects_missing_reordered_or_failed_steps ... ok
+
+thread 'wire::rejected_probe_must_not_proceed_to_announce' (32) panicked at tests/pipewire/wire.rs:47:9:
+assertion `left == right` failed
+  left: ["OPTIONS", "POST /auth-setup", "ANNOUNCE"]
+ right: ["OPTIONS", "POST /auth-setup"]
+
+thread 'wire::rejected_probe_must_not_proceed_to_announce' (32) panicked at tests/pipewire/wire.rs:47:9:
+assertion `left == right` failed
+  left: ["OPTIONS", "POST /auth-setup", "ANNOUNCE"]
+ right: ["OPTIONS", "POST /auth-setup"]
+test wire::rejected_probe_must_not_proceed_to_announce ... ok
+PipeWire scenario: enabled=false, password=false, transport=udp
+test audio::wav_contains_preroll_payload_and_postroll ... ok
+PipeWire scenario: enabled=true, password=true, transport=udp
+test audio::corrupted_truncated_reordered_or_missing_audio_fails ... ok
+PipeWire scenario: enabled=true, password=false, transport=tcp
+audio round 1 result: {"exact_payload":false,"expected_payload_frames":1102500,"failure":"no non-silent audio","format":"PCM f32 stereo 44100 Hz","received_frames":0,"stopped":true}
+
+thread 'real_pipewire_auth_setup_qualification' (22) panicked at tests/pipewire/wire.rs:75:27:
+incomplete RTSP message: Connection reset by peer (os error 104)
+audio round 2 result: {"exact_payload":false,"expected_payload_frames":1102500,"failure":"no non-silent audio","format":"PCM f32 stereo 44100 Hz","received_frames":0,"stopped":true}
+
+thread 'real_pipewire_auth_setup_qualification' (22) panicked at tests/pipewire.rs:138:5:
+live audio qualification failed; see sanitized JSON evidence
+{
+  "ap2_feature": true,
+  "architecture": "aarch64",
+  "compatibility_feature": true,
+  "container_image": "sha256:7e0a4ded0c204b8cf45e8ccf6a52f325b1b8239b26dbf762cebef2f0a2ce974d",
+  "debug_assertions": true,
+  "passed": false,
+  "pipewire": {
+    "archive_sha256": "9f8d2b0f8d034a3ee4c19192a33e3a36daaeedf677a764c347b55c8cd33dc854",
+    "commit": "c73df14f03e30c41f6430acd82c6250dcdb168d8",
+    "kernel": "Linux 6.8.0-100-generic",
+    "runtime_packages": "libasound2=1.2.8-1+b1\nlibc6=2.36-9+deb12u14\nlibsndfile1=1.2.0-1+deb12u1\nlibssl3=3.0.20-1~deb12u2\n",
+    "rustc": "rustc 1.98.0 (88d9e12ae 2026-08-18)",
+    "source": {
+      "callback_sha256": "37e5b56bdc9f221e5458b0fc4ebf2e7ad3f5fc7b06f4338e3113772f6c3bbea1",
+      "patch_sha256": null,
+      "regression": {
+        "cases": 707,
+        "failures": 353,
+        "runner": "upstream-meson"
+      },
+      "regression_sha256": "8a1fa84313d720e9be639e66cb0d1cad873fdb91544d224b29085f5b1efdf47a",
+      "variant": "tcp-baseline"
+    },
+    "version_output": "pipewire\nCompiled with libpipewire 1.7.0\nLinked with libpipewire 1.7.0"
+  },
+  "receiver_revision": "c9c35252abe1d5c3fee6fe02ed43105588dc01fc",
+  "scenarios": [
+    {
+      "audio": [],
+      "discovery_unchanged": true,
+      "exchanges": [
+        {
+          "exact_probe": false,
+          "normal_headers": true,
+          "request": "OPTIONS",
+          "response_bytes": 0,
+          "status": 200
+        },
+        {
+          "exact_probe": true,
+          "normal_headers": true,
+          "request": "POST /auth-setup",
+          "response_bytes": 0,
+          "status": 404
+        }
+      ],
+      "expected_probe_status": 404,
+      "password_protected": false,
+      "runtime_enabled": false,
+      "transport": "udp"
+    },
+    {
+      "audio": [],
+      "discovery_unchanged": true,
+      "exchanges": [
+        {
+          "exact_probe": false,
+          "normal_headers": true,
+          "request": "OPTIONS",
+          "response_bytes": 0,
+          "status": 200
+        },
+        {
+          "exact_probe": true,
+          "normal_headers": true,
+          "request": "POST /auth-setup",
+          "response_bytes": 0,
+          "status": 401
+        }
+      ],
+      "expected_probe_status": 401,
+      "password_protected": true,
+      "runtime_enabled": true,
+      "transport": "udp"
+    },
+    {
+      "audio": [
+        {
+          "exact_payload": false,
+          "expected_payload_frames": 1102500,
+          "failure": "no non-silent audio",
+          "format": "PCM f32 stereo 44100 Hz",
+          "received_frames": 0,
+          "stopped": true
+        },
+        {
+          "exact_payload": false,
+          "expected_payload_frames": 1102500,
+          "failure": "no non-silent audio",
+          "format": "PCM f32 stereo 44100 Hz",
+          "received_frames": 0,
+          "stopped": true
+        }
+      ],
+      "discovery_unchanged": true,
+      "exchanges": [
+        {
+          "exact_probe": false,
+          "normal_headers": true,
+          "request": "OPTIONS",
+          "response_bytes": 0,
+          "status": 200
+        },
+        {
+          "exact_probe": true,
+          "normal_headers": true,
+          "request": "POST /auth-setup",
+          "response_bytes": 0,
+          "status": 200
+        },
+        {
+          "exact_probe": false,
+          "normal_headers": true,
+          "request": "ANNOUNCE",
+          "response_bytes": 0,
+          "status": 200
+        },
+        {
+          "exact_probe": false,
+          "normal_headers": true,
+          "request": "SETUP",
+          "response_bytes": 0,
+          "status": 200
+        },
+        {
+          "exact_probe": false,
+          "normal_headers": true,
+          "request": "RECORD",
+          "response_bytes": 0,
+          "status": 200
+        },
+        {
+          "exact_probe": false,
+          "normal_headers": true,
+          "request": "SET_PARAMETER",
+          "response_bytes": 0,
+          "status": 200
+        },
+        {
+          "exact_probe": false,
+          "normal_headers": true,
+          "request": "TEARDOWN",
+          "response_bytes": 0,
+          "status": 200
+        },
+        {
+          "exact_probe": false,
+          "normal_headers": true,
+          "request": "OPTIONS",
+          "response_bytes": 0,
+          "status": 200
+        },
+        {
+          "exact_probe": true,
+          "normal_headers": true,
+          "request": "POST /auth-setup",
+          "response_bytes": 0,
+          "status": 200
+        },
+        {
+          "exact_probe": false,
+          "normal_headers": true,
+          "request": "ANNOUNCE",
+          "response_bytes": 0,
+          "status": 200
+        },
+        {
+          "exact_probe": false,
+          "normal_headers": true,
+          "request": "SETUP",
+          "response_bytes": 0,
+          "status": 200
+        },
+        {
+          "exact_probe": false,
+          "normal_headers": true,
+          "request": "RECORD",
+          "response_bytes": 0,
+          "status": 200
+        },
+        {
+          "exact_probe": false,
+          "normal_headers": true,
+          "request": "SET_PARAMETER",
+          "response_bytes": 0,
+          "status": 200
+        },
+        {
+          "exact_probe": false,
+          "normal_headers": true,
+          "request": "TEARDOWN",
+          "response_bytes": 0,
+          "status": 200
+        }
+      ],
+      "expected_probe_status": 200,
+      "password_protected": false,
+      "runtime_enabled": true,
+      "transport": "tcp"
+    }
+  ],
+  "schema_version": 2,
+  "sender_config_sha256": "316664edcbbebbfaec314ef005465f103c3358d8c35547b0aa13dca146a3ef1c",
+  "source_wav_sha256": "fbc238d205d19bebeb2474ea4b0e0b039d4817e261eb03270919b99a57b05cc7",
+  "working_tree_dirty": true
+}
+test real_pipewire_auth_setup_qualification ... FAILED
+
+failures:
+
+failures:
+    real_pipewire_auth_setup_qualification
+
+test result: FAILED. 7 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 55.36s
+
+error: test failed, to rerun pass `--test pipewire`
+    Finished `release` profile [optimized] target(s) in 0.09s
+     Running tests/pipewire.rs (/target/release/deps/pipewire-d1f1c3eb882b7833)
+
+running 8 tests
+
+thread 'process::failed_commands_are_not_accepted' (18) panicked at tests/pipewire/process.rs:22:21:
+subprocess failed: exit status: 1
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test process::failed_commands_are_not_accepted ... ok
+test audio::exact_audio_with_silence_passes ... ok
+
+thread 'wire::exchange_sequence_oracle_rejects_missing_reordered_or_failed_steps' (25) panicked at tests/pipewire/wire.rs:35:9:
+assertion `left == right` failed
+  left: ["OPTIONS", "POST /auth-setup", "ANNOUNCE", "SETUP", "RECORD"]
+ right: ["OPTIONS", "POST /auth-setup", "ANNOUNCE", "SETUP", "RECORD", "TEARDOWN"]
+
+thread 'wire::exchange_sequence_oracle_rejects_missing_reordered_or_failed_steps' (25) panicked at tests/pipewire/wire.rs:35:9:
+assertion `left == right` failed
+  left: ["OPTIONS", "POST /auth-setup", "SETUP", "ANNOUNCE", "RECORD", "TEARDOWN"]
+ right: ["OPTIONS", "POST /auth-setup", "ANNOUNCE", "SETUP", "RECORD", "TEARDOWN"]
+
+thread 'wire::exchange_sequence_oracle_rejects_missing_reordered_or_failed_steps' (25) panicked at tests/pipewire/wire.rs:31:13:
+assertion `left == right` failed
+  left: 400
+ right: 200
+
+thread 'wire::exchange_sequence_oracle_rejects_missing_reordered_or_failed_steps' (25) panicked at tests/pipewire/wire.rs:21:9:
+Exchange { request: "POST /auth-setup", status: 200, response_bytes: 0, normal_headers: false, exact_probe: true }
+
+thread 'wire::rejected_probe_must_not_proceed_to_announce' (26) panicked at tests/pipewire/wire.rs:47:9:
+assertion `left == right` failed
+  left: ["OPTIONS", "POST /auth-setup", "ANNOUNCE"]
+ right: ["OPTIONS", "POST /auth-setup"]
+
+thread 'wire::rejected_probe_must_not_proceed_to_announce' (26) panicked at tests/pipewire/wire.rs:47:9:
+assertion `left == right` failed
+  left: ["OPTIONS", "POST /auth-setup", "ANNOUNCE"]
+ right: ["OPTIONS", "POST /auth-setup"]
+test audio::wav_contains_preroll_payload_and_postroll ... ok
+test wire::exchange_sequence_oracle_rejects_missing_reordered_or_failed_steps ... ok
+test wire::rejected_probe_must_not_proceed_to_announce ... ok
+test audio::corrupted_truncated_reordered_or_missing_audio_fails ... ok
+test process::subprocess_wait_does_not_block_async_executor ... ok
+PipeWire scenario: enabled=false, password=false, transport=udp
+PipeWire scenario: enabled=true, password=true, transport=udp
+PipeWire scenario: enabled=true, password=false, transport=tcp
+
+thread 'real_pipewire_auth_setup_qualification' (22) panicked at tests/pipewire/wire.rs:75:27:
+incomplete RTSP message: Connection reset by peer (os error 104)
+audio round 1 result: {"exact_payload":false,"expected_payload_frames":1102500,"failure":"no non-silent audio","format":"PCM f32 stereo 44100 Hz","received_frames":0,"stopped":true}
+
+thread 'real_pipewire_auth_setup_qualification' (22) panicked at tests/pipewire/runtime.rs:143:10:
+PipeWire node readiness: Elapsed(())
