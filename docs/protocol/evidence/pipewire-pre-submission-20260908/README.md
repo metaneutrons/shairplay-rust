@@ -15,7 +15,8 @@ on both architectures, including 707 packet cases with zero failures.
 | x86_64 | UDP | 5 | 12 | Passed |
 | x86_64 | TCP | 5 | 12 | Passed |
 
-The unedited reports and complete run logs are under `final/`. `provenance.json`
+The unedited reports are under `final/`; complete run logs are included in the
+reproduction package. `provenance.json`
 records the clean receiver revision, exact independent and combined candidate
 commits, source/patch/test hashes, per-transport image IDs and native execution
 environments. ARM64's cached BuildKit exports have different attestation/index
@@ -37,8 +38,9 @@ will be recorded when the upstream MRs are created.
 
 The Basic scheme error was exposed by the new native OPTIONS regression; the
 independent reviewer identified the OPTIONS error-path stall. Both were fixed
-before these final live runs. `review/` records their failures and correction;
-`review.md` records the independent resolution review. Earlier combined runs
+before these final live runs. The reproduction package records their failure
+and recovery logs under `review/`; `review.md` records the independent
+resolution review. Earlier combined runs
 were superseded after the OPTIONS fix and are not included in `final/`.
 
 The packet verifier confirms all 20 reports, 68 scenarios and 48 sessions and
