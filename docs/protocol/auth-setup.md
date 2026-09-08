@@ -1,6 +1,6 @@
 # `/auth-setup` Protocol Status
 
-Last reviewed: 2026-09-07
+Last reviewed: 2026-09-08
 
 This document describes receiver-side `POST /auth-setup` support and the
 evidence available for implementing it. No public Apple endpoint specification
@@ -41,14 +41,14 @@ The advertised profiles do not intentionally invite this exchange:
 A manually configured PipeWire sender using `raop.encryption.type=auth_setup`
 calls the endpoint and aborts on a non-success response, as reported in
 [#38](https://github.com/metaneutrons/shairplay-rust/issues/38). The opt-in path
-now acknowledges its exact public probe. [The merged upstream PipeWire source commit](pipewire-qualification.md)
-passes passwordless UDP audio, teardown and reconnect under a full-payload
-comparison. This result is limited to commit
-`bc7d1cba6dee390beba0785e50935275d3f1d484` (compiled as 1.7.0), not a released
-PipeWire baseline; #65 remains open pending that selection. The `PCM` sender
-setting produces uncompressed ALAC; decoded output is f32 stereo at 44.1 kHz.
-TCP and password-protected playback are also not qualified. David's
-confirmation against the original #38 setup remains outstanding.
+now acknowledges its exact public probe. The merged upstream PipeWire source at
+`547e364b247636a4ea091afe07773ec035b7ecfc` passes the full-payload matrix for
+UDP and TCP, including passwordless and Digest-protected playback, teardown
+and reconnect. This result is an identified 1.7.0 development commit, not a
+released PipeWire baseline; #65 remains open pending that selection. The `PCM`
+sender setting produces uncompressed ALAC; decoded output is f32 stereo at
+44.1 kHz. David's confirmation against the original #38 setup remains
+outstanding.
 
 ## What Is Established
 
@@ -165,7 +165,7 @@ treated as conformant.
 | FairPlay | `/fp-setup` implemented separately | Project fact |
 | HomeKit pairing | `/pair-setup` and `/pair-verify` implemented separately | Project fact |
 | MFi certificate/signing | No provider API, certificate, or authentication-IC integration | Project fact |
-| PipeWire forced `auth_setup` | Upstream merge commit `bc7d1cba` passes strict passwordless UDP audio, teardown and reconnect; the 1.6.7 baseline loses samples; password challenge abort and TCP failure remain | [Live source-commit evidence](pipewire-qualification.md); no released-baseline qualification |
+| PipeWire forced `auth_setup` | Unmodified upstream master `547e364b` passes strict UDP/TCP, passwordless and Digest-protected audio, teardown and reconnect; the historical 1.6.7 baseline loses samples and aborts after the password challenge | [Live source-commit evidence](pipewire-qualification.md); no released-baseline qualification |
 | Apple/MFi sender interoperability | Not tested | Unknown |
 
 The draft implementation in

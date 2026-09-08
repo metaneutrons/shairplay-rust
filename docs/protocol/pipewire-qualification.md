@@ -214,10 +214,10 @@ A separate [authentication candidate](pipewire-auth-mr-draft.md), based on
 [Five clean reports](evidence/pipewire-auth-c73df14f-aarch64/README.md) record six
 protected and six passwordless bit-exact UDP sessions, including release and
 reconnect. The sender retries `/auth-setup` once with the correct Digest URI;
-missing and incorrect credentials still fail closed. The final candidate is
-submitted as [PipeWire !2988](https://gitlab.freedesktop.org/pipewire/pipewire/-/merge_requests/2988).
-It is independent of the TCP patch and does not establish a supported fixed
-release baseline.
+missing and incorrect credentials still fail closed. The final candidate was
+merged as [PipeWire !2988](https://gitlab.freedesktop.org/pipewire/pipewire/-/merge_requests/2988).
+Its upstream commits are included in the unmodified-master result below. This
+does not establish a supported fixed release baseline.
 
 ### TCP
 
@@ -234,10 +234,10 @@ including release and reconnect. These are separate, explicitly patched sender
 variants (`tcp-baseline` and `tcp-fix`), selected with
 `QUALIFICATION_TRANSPORT=tcp`. The original baseline remains unchanged.
 
-The fix is submitted as [PipeWire !2987](https://gitlab.freedesktop.org/pipewire/pipewire/-/merge_requests/2987).
-Combined TCP/password playback now passes on native Linux x86_64 and aarch64,
-as documented below. Supported-release qualification and original desktop
-confirmation remain outstanding. TCP
+The fix was merged as [PipeWire !2987](https://gitlab.freedesktop.org/pipewire/pipewire/-/merge_requests/2987).
+Combined TCP/password playback now passes against unmodified upstream master on
+native Linux x86_64 and aarch64, as documented below. Supported-release
+qualification and original desktop confirmation remain outstanding. TCP
 also attempts UDP sync on an invalid descriptor; this framing fix does not
 change synchronization or partial-write handling.
 
@@ -296,3 +296,33 @@ ALAC, unencrypted audio and IPv4 loopback, including when AP2 is compiled.
 No original desktop or supported release qualification is implied. #73 stays
 draft and #65/#72 remain open pending a supported fixed PipeWire baseline and
 the required desktop confirmation.
+
+## Unmodified upstream-master qualification — 2026-09-08
+
+PipeWire commit 547e364b247636a4ea091afe07773ec035b7ecfc was built without
+local patches after all three RAOP fixes had merged: ring-wrap bc7d1cba, TCP
+framing ddf13a8c, and the password-authentication series ending at ded91963.
+The clean native Linux aarch64 and independent native Linux x86_64 runs each
+complete five reports for each selected transport setting: **20 reports, 68
+scenarios and 48 bit-exact 25-second audio sessions**.
+
+Matching passwords exercise the bounded Digest retry for /auth-setup; missing
+and incorrect passwords receive no audio after bounded 401 responses. Default
+and AP2-only profiles retain their UDP 404 gate. Compatibility, combined and
+release profiles each complete passwordless and protected playback over the
+selected UDP or TCP transport, with TEARDOWN and reconnect. Before each live
+matrix, the unmodified sender passes its
+iovec, RTSP-client and authentication regressions under ASan/UBSan; the packet
+regression records 707 cases and zero failures.
+
+The [raw reports and reproduction commands](evidence/pipewire-upstream-master-547e364b/README.md)
+pin the source archive, receiver revision and per-architecture image identity.
+Every report records a null sender patch hash and a clean receiver worktree.
+This establishes the development-commit result, including TCP and
+password-protected playback. It is not a released PipeWire baseline and does
+not replace confirmation in David's original desktop environment.
+
+~~~sh
+PIPEWIRE_VARIANT=upstream-master QUALIFICATION_PASSWORD_PLAYBACK=1 QUALIFICATION_TRANSPORT=udp bash scripts/pipewire/run.sh
+PIPEWIRE_VARIANT=upstream-master QUALIFICATION_PASSWORD_PLAYBACK=1 QUALIFICATION_TRANSPORT=tcp bash scripts/pipewire/run.sh
+~~~

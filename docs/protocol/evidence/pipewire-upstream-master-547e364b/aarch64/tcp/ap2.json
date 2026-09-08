@@ -1,0 +1,62 @@
+{
+  "ap2_feature": true,
+  "architecture": "aarch64",
+  "compatibility_feature": false,
+  "container_image": "sha256:cf3bd8ec1046077572d83d2492cbde4b6a1983e7ce4381332de950a92fc9f0f1",
+  "debug_assertions": true,
+  "passed": true,
+  "pipewire": {
+    "archive_sha256": "0c664bfd2b68ba90d08f92ed07cbc9cb7fb1994fd237d6115b60463e0c8e749b",
+    "commit": "547e364b247636a4ea091afe07773ec035b7ecfc",
+    "kernel": "Linux 6.8.0-100-generic",
+    "runtime_packages": "libasound2=1.2.8-1+b1\nlibc6=2.36-9+deb12u14\nlibsndfile1=1.2.0-1+deb12u1\nlibssl3=3.0.20-1~deb12u2\n",
+    "rustc": "rustc 1.98.0 (88d9e12ae 2026-08-18)",
+    "source": {
+      "callback_sha256": "aeebe175f3460fe1bbe11de8ef9094dfe23f7bf65af565699156bba5359c325d",
+      "patch_sha256": null,
+      "regression": {
+        "auth_setup_digest": "passed",
+        "cases": 707,
+        "failures": 0,
+        "protocol_regression_sha256": "7299fece1290cc20a40e844a6bc4cb5f118569aabfc5e7b61548a09600c7dda2",
+        "runner": "upstream-meson"
+      },
+      "regression_sha256": "8a1fa84313d720e9be639e66cb0d1cad873fdb91544d224b29085f5b1efdf47a",
+      "variant": "upstream-master"
+    },
+    "version_output": "pipewire\nCompiled with libpipewire 1.7.0\nLinked with libpipewire 1.7.0"
+  },
+  "receiver_revision": "46b3f660f3f83dc55fab29aa11e813b1822de385",
+  "scenarios": [
+    {
+      "audio": [],
+      "digest_retry": false,
+      "discovery_unchanged": true,
+      "exchanges": [
+        {
+          "exact_probe": false,
+          "normal_headers": true,
+          "request": "OPTIONS",
+          "response_bytes": 0,
+          "status": 200
+        },
+        {
+          "exact_probe": true,
+          "normal_headers": true,
+          "request": "POST /auth-setup",
+          "response_bytes": 0,
+          "status": 404
+        }
+      ],
+      "expected_probe_status": 404,
+      "password_protected": false,
+      "runtime_enabled": false,
+      "sender_password": "none",
+      "transport": "udp"
+    }
+  ],
+  "schema_version": 2,
+  "sender_config_sha256": "316664edcbbebbfaec314ef005465f103c3358d8c35547b0aa13dca146a3ef1c",
+  "source_wav_sha256": "fbc238d205d19bebeb2474ea4b0e0b039d4817e261eb03270919b99a57b05cc7",
+  "working_tree_dirty": false
+}
