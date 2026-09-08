@@ -60,3 +60,12 @@ backpressure/short writes, MFi/encrypted playback and the original desktop setup
 are outside these runs. Select a supported fixed PipeWire baseline and rerun
 the strict matrix before claiming released compatibility. PR #73 remains draft
 and issues #65/#72 remain open until qualification and desktop confirmation.
+
+
+Both official merge-request pipelines pass with all 62 jobs successful:
+[TCP pipeline 1742474](https://gitlab.freedesktop.org/metaneutrons/pipewire/-/pipelines/1742474)
+and [auth pipeline 1742477](https://gitlab.freedesktop.org/metaneutrons/pipewire/-/pipelines/1742477).
+`publication.json` records the final open MR states, exact source heads, pipeline
+results and public attachment identity. Initial push pipelines were rejected by
+freedesktop runner gating before build/test execution; the official MR pipelines
+completed normally without changing the patches or runner permissions.
