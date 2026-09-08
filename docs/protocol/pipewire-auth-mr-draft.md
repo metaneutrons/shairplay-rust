@@ -1,5 +1,7 @@
 # raop: authenticate auth-setup after a password challenge
 
+Submitted as [PipeWire !2988](https://gitlab.freedesktop.org/pipewire/pipewire/-/merge_requests/2988) on 2026-09-08.
+
 A receiver may accept OPTIONS without authentication and challenge the following POST /auth-setup. With `raop.password` configured, the RAOP sink currently aborts at that 401 instead of authenticating, so playback never reaches ANNOUNCE.
 
 Reuse the OPTIONS challenge parser and send one authenticated retry of the same 33-byte POST. Compute Digest using the actual method and target, `POST:/auth-setup`; subsequent RTSP requests use their own method and session URI. Replace previous challenge state safely and reset the retry guard on connection cleanup. Missing credentials, malformed or unsupported challenges, a second 401, and failures to construct or send the authenticated request terminate the attempt.
@@ -26,6 +28,10 @@ meson test -C build --print-errorlogs \
   pw-test-raop-iovec pw-test-raop-rtsp-client pw-test-raop-auth
 ```
 
-The reproduction package `pipewire-raop-pre-submission-20260908.tar.gz` contains the independent patches, combined test patch, raw reports, sanitizer logs, checksum manifest and a self-contained Git bundle with the exact receiver/test checkout. Its README gives the live Docker commands; no unpublished GitHub branch is needed.
+The reproduction package below contains the independent patches, combined test patch, raw reports, sanitizer logs, checksum manifest and a self-contained Git bundle with the exact receiver/test checkout. Its README gives the live Docker commands; no unpublished GitHub branch is needed.
 
-This patch is independent of the TCP framing change. Live coverage uses password Digest, classic RAOP, uncompressed ALAC and unencrypted audio on IPv4 loopback. Basic is covered by the native protocol regression, not live shairplay playback. This does not establish MFi/encrypted playback, a supported released baseline or behavior on the original desktop.
+This patch is independent of the TCP framing change in !2987. Live coverage uses password Digest, classic RAOP, uncompressed ALAC and unencrypted audio on IPv4 loopback. Basic is covered by the native protocol regression, not live shairplay playback. This does not establish MFi/encrypted playback, a supported released baseline or behavior on the original desktop.
+
+Package SHA-256: `a190cd478a63600faabc43aa8dae19fb30c21a9e59b4e2dd0dc0830d21531cc2`.
+
+[pipewire-raop-pre-submission-20260908.tar.gz](https://gitlab.freedesktop.org/-/project/4753/uploads/b8f28728edc5f040b3ac70cad3d9e7be/pipewire-raop-pre-submission-20260908.tar.gz)

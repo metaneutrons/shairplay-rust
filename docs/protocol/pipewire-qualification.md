@@ -11,15 +11,14 @@ records all five feature/profile configurations. The six passwordless UDP
 sessions pass bit-exactly, including release and reconnect; the required 404
 and 401 probes also pass. The commit is compiled as PipeWire 1.7.0 and contains
 [PipeWire MR !2984](https://gitlab.freedesktop.org/pipewire/pipewire/-/merge_requests/2984),
-but it was not in a release tag when tested. Local TCP and password candidates
+but it was not in a release tag when tested. TCP and authentication submissions
 are documented below. This establishes a narrow
 source-commit qualification, not a released-baseline compatibility claim.
 
 The [controlled before/after experiment](evidence/pipewire-iovec-aarch64/README.md)
 remains the causal record: the unmodified 1.6.7 baseline fails all six audio
 sessions, while the same matrix with the original scatter/gather patch passes
-all six bit-exactly. Upstream merged that fix as part of `bc7d1cba`. Upstream
-submission and released-baseline qualification of the local TCP/password fixes,
+all six bit-exactly. Upstream merged that fix as part of `bc7d1cba`. Released-baseline qualification of the submitted TCP/password fixes,
 and confirmation in the original desktop setup, remain open.
 [#65](https://github.com/metaneutrons/shairplay-rust/issues/65),
 [#72](https://github.com/metaneutrons/shairplay-rust/issues/72), and
@@ -209,15 +208,16 @@ The same synthetic password is configured at both ends. PipeWire 1.6.7 receives
 does not perform the Digest retry implemented for `OPTIONS`. This is an
 observed interoperability limitation, not permission to bypass authentication.
 
-A separate [local password candidate](pipewire-auth-mr-draft.md), based on
+A separate [authentication candidate](pipewire-auth-mr-draft.md), based on
 `c73df14f`, now passes the strict matrix with
 `PIPEWIRE_VARIANT=auth-fix QUALIFICATION_PASSWORD_PLAYBACK=1`.
 [Five clean reports](evidence/pipewire-auth-c73df14f-aarch64/README.md) record six
 protected and six passwordless bit-exact UDP sessions, including release and
 reconnect. The sender retries `/auth-setup` once with the correct Digest URI;
-missing and incorrect credentials still fail closed. This candidate remains
-local and does not include the independent TCP patch or establish a supported
-fixed release baseline.
+missing and incorrect credentials still fail closed. The final candidate is
+submitted as [PipeWire !2988](https://gitlab.freedesktop.org/pipewire/pipewire/-/merge_requests/2988).
+It is independent of the TCP patch and does not establish a supported fixed
+release baseline.
 
 ### TCP
 
@@ -234,9 +234,10 @@ including release and reconnect. These are separate, explicitly patched sender
 variants (`tcp-baseline` and `tcp-fix`), selected with
 `QUALIFICATION_TRANSPORT=tcp`. The original baseline remains unchanged.
 
-A [local MR draft](pipewire-tcp-mr-draft.md) is ready for review. The branch and MR
-have not been sent upstream. Supported-release and x86_64 TCP qualification,
-password playback and original desktop confirmation remain outstanding. TCP
+The fix is submitted as [PipeWire !2987](https://gitlab.freedesktop.org/pipewire/pipewire/-/merge_requests/2987).
+Combined TCP/password playback now passes on native Linux x86_64 and aarch64,
+as documented below. Supported-release qualification and original desktop
+confirmation remain outstanding. TCP
 also attempts UDP sync on an invalid descriptor; this framing fix does not
 change synchronization or partial-write handling.
 
@@ -273,11 +274,14 @@ builds provide the selected transport’s audio sessions.
 The final [evidence and provenance](evidence/pipewire-pre-submission-20260908/README.md)
 identify the exact candidate commits, source/test hashes, clean receiver/test
 revision, per-architecture images, raw JSON and sanitizer logs. The
-[TCP MR draft](pipewire-tcp-mr-draft.md) and
-[authentication MR draft](pipewire-auth-mr-draft.md) include self-contained native
-reproduction commands. A local attachment package also contains the exact
-receiver/test checkout as a Git bundle, so live reproduction does not depend on
-unpublished GitHub branches. Nothing has been published during preparation.
+[TCP submission](pipewire-tcp-mr-draft.md) and
+[authentication submission](pipewire-auth-mr-draft.md) include self-contained native
+reproduction commands. Both independent branches were submitted for review on
+2026-09-08 after qualification and explicit publication approval. The
+[attached reproduction package](https://gitlab.freedesktop.org/-/project/4753/uploads/b8f28728edc5f040b3ac70cad3d9e7be/pipewire-raop-pre-submission-20260908.tar.gz)
+contains the exact receiver/test checkout as a Git bundle, so live reproduction
+does not depend on unpublished GitHub branches. Its public download was checked
+against SHA-256 `a190cd478a63600faabc43aa8dae19fb30c21a9e59b4e2dd0dc0830d21531cc2`.
 
 ```sh
 PIPEWIRE_VARIANT=combined-fix QUALIFICATION_PASSWORD_PLAYBACK=1 QUALIFICATION_TRANSPORT=udp bash scripts/pipewire/run.sh

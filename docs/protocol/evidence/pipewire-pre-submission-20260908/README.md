@@ -31,12 +31,15 @@ independent review record are retained alongside the reports.
 - Combined tested tree: `bc1550df93fc87e43959c3248872e3898c7cd624`.
 - Receiver/test revision: `ced748a8fbd9d5b3a8ff2c9513139d5a4d508f40`.
 
-The local reproduction package `pipewire-raop-pre-submission-20260908.tar.gz`
+The [reproduction package](https://gitlab.freedesktop.org/-/project/4753/uploads/b8f28728edc5f040b3ac70cad3d9e7be/pipewire-raop-pre-submission-20260908.tar.gz)
 contains those reports plus independent/combined patches, historical baseline
 evidence, a checksum manifest, a verification script, and an offline Git bundle
 of the exact test checkout. Its README gives native and live reproduction
-commands without relying on an unpublished GitHub branch. Publication references
-will be recorded when the upstream MRs are created.
+commands without relying on an unpublished GitHub branch. The public download
+returns HTTP 200 and matches SHA-256
+`a190cd478a63600faabc43aa8dae19fb30c21a9e59b4e2dd0dc0830d21531cc2`.
+The candidates are submitted as [TCP !2987](https://gitlab.freedesktop.org/pipewire/pipewire/-/merge_requests/2987)
+and [authentication !2988](https://gitlab.freedesktop.org/pipewire/pipewire/-/merge_requests/2988).
 
 The Basic scheme error was exposed by the new native OPTIONS regression; the
 independent reviewer identified the OPTIONS error-path stall. Both were fixed
