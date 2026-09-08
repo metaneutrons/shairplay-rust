@@ -19,7 +19,7 @@ RUN curl -fsSL "https://codeload.github.com/PipeWire/pipewire/tar.gz/${PIPEWIRE_
          iovec-fix) tests=disabled \
                     && git -C /tmp/pipewire apply --check /tmp/qualification/raop-iovec.patch \
                     && git -C /tmp/pipewire apply /tmp/qualification/raop-iovec.patch ;; \
-         upstream-merged) tests=enabled ;; \
+         upstream-merged|upstream-master) tests=enabled ;; \
          tcp-baseline) tests=enabled \
                     && git -C /tmp/pipewire apply --include=src/modules/module-raop/test-iovec.c /tmp/qualification/raop-tcp.patch ;; \
          tcp-fix) tests=enabled \

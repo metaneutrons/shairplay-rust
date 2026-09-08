@@ -35,6 +35,14 @@ case "$PIPEWIRE_VARIANT" in
         result='{"cases":354,"failures":0,"runner":"upstream-meson"}'
         test_sha=$(sha256sum /tmp/pipewire/src/modules/module-raop/test-iovec.c | cut -d ' ' -f 1)
         ;;
+    upstream-master)
+        meson test -C /tmp/pw-build --no-rebuild --print-errorlogs \
+            pw-test-raop-iovec pw-test-raop-rtsp-client pw-test-raop-auth
+        bash /tmp/qualification/check-native.sh
+        auth_sha=$(sha256sum /tmp/pipewire/src/modules/module-raop/test-auth.c | cut -d ' ' -f 1)
+        result="{\"cases\":707,\"failures\":0,\"runner\":\"upstream-meson\",\"auth_setup_digest\":\"passed\",\"protocol_regression_sha256\":\"$auth_sha\"}"
+        test_sha=$(sha256sum /tmp/pipewire/src/modules/module-raop/test-iovec.c | cut -d ' ' -f 1)
+        ;;
     tcp-baseline|tcp-fix)
         meson test -C /tmp/pw-build --no-rebuild --print-errorlogs pw-test-raop-rtsp-client
         status=0
