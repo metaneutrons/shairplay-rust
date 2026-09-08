@@ -4,7 +4,7 @@ The endpoint contract lives in [auth-setup.md](auth-setup.md). This document
 records work package [D / #65](https://github.com/metaneutrons/shairplay-rust/issues/65),
 its reproducible test and its deliberately narrow interoperability target.
 
-**Status: qualified for the merged upstream source commit; no released fixed PipeWire baseline yet.**
+**Status: merged upstream UDP source qualified; supported released-baseline qualification remains pending.**
 The 25-second regression exercises a complete sender ring-buffer wraparound.
 [Clean aarch64 evidence for PipeWire commit `bc7d1cba`](evidence/pipewire-upstream-bc7d1cba-aarch64/README.md)
 records all five feature/profile configurations. The six passwordless UDP
@@ -18,8 +18,9 @@ source-commit qualification, not a released-baseline compatibility claim.
 The [controlled before/after experiment](evidence/pipewire-iovec-aarch64/README.md)
 remains the causal record: the unmodified 1.6.7 baseline fails all six audio
 sessions, while the same matrix with the original scatter/gather patch passes
-all six bit-exactly. Upstream merged that fix as part of `bc7d1cba`. TCP,
-password playback and confirmation in the original desktop setup remain open.
+all six bit-exactly. Upstream merged that fix as part of `bc7d1cba`. Upstream
+submission and released-baseline qualification of the local TCP/password fixes,
+and confirmation in the original desktop setup, remain open.
 [#65](https://github.com/metaneutrons/shairplay-rust/issues/65),
 [#72](https://github.com/metaneutrons/shairplay-rust/issues/72), and
 [draft #73](https://github.com/metaneutrons/shairplay-rust/pull/73) remain open
@@ -125,7 +126,7 @@ This is not evidence for a released PipeWire baseline.
 
 Selection and qualification of a supported fixed sender baseline, and the
 original desktop confirmation remain outstanding. #65, #72 and draft #73 stay
-open; TCP and password playback are separate limitations.
+open; TCP and password playback require the separate local candidates below.
 
 Normal `cargo test` does not launch PipeWire: the live test is Linux-only and
 ignored unless explicitly requested. Its oracle/subprocess self-tests run
@@ -248,3 +249,44 @@ version. Despite its name, this version's
 `PCM` encoder is [uncompressed ALAC](https://github.com/PipeWire/pipewire/blob/3b2cb4fb037bf6033b87d3c87ee917b2f686d309/src/modules/module-raop-sink.c#L406-L442),
 not the raw L16 codec used by the earlier simulated sender tests. Encrypted
 audio, compressed ALAC modes and other sample formats remain outside this test.
+
+
+## Combined pre-submission qualification — 2026-09-08
+
+The separate local TCP and authentication candidates were combined on master
+`c73df14f03e30c41f6430acd82c6250dcdb168d8`. Native OPTIONS coverage exposed a
+duplicate Basic scheme and the independent review found an OPTIONS error path
+that left the sink connected without progressing. Both are corrected and
+covered by regressions in the authentication branch. The TCP branch remains
+independent.
+
+Both native Linux architectures (aarch64 and x86_64) pass all five feature/profile
+configurations over both UDP and TCP: **20 reports, 68 scenarios and 48 bit-exact
+audio sessions**, split evenly between matching-password and passwordless
+playback. Every second session reconnects; all native TEARDOWN checks pass.
+Missing/incorrect passwords produce no audio with bounded 401 responses, and
+feature/runtime gates remain 404. All three native tests pass with ASan/UBSan
+on both architectures, including 707 packet cases with zero failures.
+
+The final [evidence and provenance](evidence/pipewire-pre-submission-20260908/README.md)
+identify the exact candidate commits, source/test hashes, clean receiver/test
+revision, per-architecture images, raw JSON and sanitizer logs. The
+[TCP MR draft](pipewire-tcp-mr-draft.md) and
+[authentication MR draft](pipewire-auth-mr-draft.md) include self-contained native
+reproduction commands. A local attachment package also contains the exact
+receiver/test checkout as a Git bundle, so live reproduction does not depend on
+unpublished GitHub branches. Nothing has been published during preparation.
+
+```sh
+PIPEWIRE_VARIANT=combined-fix QUALIFICATION_PASSWORD_PLAYBACK=1 QUALIFICATION_TRANSPORT=udp bash scripts/pipewire/run.sh
+PIPEWIRE_VARIANT=combined-fix QUALIFICATION_PASSWORD_PLAYBACK=1 QUALIFICATION_TRANSPORT=tcp bash scripts/pipewire/run.sh
+```
+
+Run these commands serially per Docker daemon. `combined-fix` runs the native
+packet, RTSP-client and authentication regressions with ASan/UBSan before live
+qualification. Basic is covered by the native protocol regression; live
+password playback uses Digest. These are classic RAOP tests with uncompressed
+ALAC, unencrypted audio and IPv4 loopback, including when AP2 is compiled.
+No original desktop or supported release qualification is implied. #73 stays
+draft and #65/#72 remain open pending a supported fixed PipeWire baseline and
+the required desktop confirmation.
