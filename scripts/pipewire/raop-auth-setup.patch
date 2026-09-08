@@ -21,7 +21,7 @@ index e2a5b766e..27ca1c789 100644
        executable('pw-test-raop-rtsp-client',
          [ 'module-raop/test-rtsp-client.c',
 diff --git a/src/modules/module-raop-sink.c b/src/modules/module-raop-sink.c
-index 5c8c74dca..71358ddd5 100644
+index 5c8c74dca..721a34296 100644
 --- a/src/modules/module-raop-sink.c
 +++ b/src/modules/module-raop-sink.c
 @@ -242,6 +242,7 @@ struct impl {
@@ -188,7 +188,7 @@ index 5c8c74dca..71358ddd5 100644
  
  	if ((str = spa_dict_lookup(headers, "WWW-Authenticate")) == NULL)
  		return -EINVAL;
-@@ -1378,21 +1431,51 @@ static int rtsp_do_options_auth(struct impl *impl, const struct spa_dict *header
+@@ -1378,23 +1431,55 @@ static int rtsp_do_options_auth(struct impl *impl, const struct spa_dict *header
  	if (tokens == NULL || tokens[0] == NULL)
  		return -EINVAL;
  
@@ -238,17 +238,22 @@ index 5c8c74dca..71358ddd5 100644
  	}
 +	return res;
 +}
-+
+ 
+-	return rtsp_send(impl, "OPTIONS", NULL, NULL, rtsp_options_auth_reply);
 +static int rtsp_do_options_auth(struct impl *impl, const struct spa_dict *headers)
 +{
 +	int res;
 +
-+	if ((res = rtsp_parse_auth(impl, headers)) < 0)
-+		return res;
- 
- 	return rtsp_send(impl, "OPTIONS", NULL, NULL, rtsp_options_auth_reply);
++	res = rtsp_parse_auth(impl, headers);
++	if (res >= 0)
++		res = rtsp_send(impl, "OPTIONS", NULL, NULL, rtsp_options_auth_reply);
++	if (res < 0)
++		pw_impl_module_schedule_destroy(impl->module);
++	return res;
  }
-@@ -1451,6 +1534,7 @@ static void rtsp_connected(void *data)
+ 
+ static int rtsp_options_reply(void *data, int status, const struct spa_dict *headers, const struct pw_array *content)
+@@ -1451,6 +1536,7 @@ static void rtsp_connected(void *data)
  static void connection_cleanup(struct impl *impl)
  {
  	impl->ready = false;
@@ -256,7 +261,7 @@ index 5c8c74dca..71358ddd5 100644
  	if (impl->server_source != NULL) {
  		pw_loop_destroy_source(impl->loop, impl->server_source);
  		impl->server_source = NULL;
-@@ -1477,18 +1561,7 @@ static void connection_cleanup(struct impl *impl)
+@@ -1477,18 +1563,7 @@ static void connection_cleanup(struct impl *impl)
  	}
  	pw_timer_queue_cancel(&impl->feedback_timer);
  
@@ -278,10 +283,10 @@ index 5c8c74dca..71358ddd5 100644
  static void rtsp_disconnected(void *data)
 diff --git a/src/modules/module-raop/test-auth.c b/src/modules/module-raop/test-auth.c
 new file mode 100644
-index 000000000..158925ee1
+index 000000000..31522e5e6
 --- /dev/null
 +++ b/src/modules/module-raop/test-auth.c
-@@ -0,0 +1,398 @@
+@@ -0,0 +1,412 @@
 +/* PipeWire */
 +/* SPDX-FileCopyrightText: Copyright © 2026 Fabian Schmieder */
 +/* SPDX-License-Identifier: MIT */
@@ -652,18 +657,30 @@ index 000000000..158925ee1
 +	spa_assert_se(close(server_fd) == 0);
 +}
 +
-+static void test_invalid_challenge(const char *challenge, bool password)
++static void test_invalid_challenge(const char *challenge, bool password, bool options)
 +{
-+	struct impl sender = { .password = password ? TEST_PASSWORD : NULL };
++	struct impl sender = { .password = password ? TEST_PASSWORD : NULL, .connected = true };
++	struct pw_main_loop *main_loop = pw_main_loop_new(NULL);
 +	const struct spa_dict_item items[] = { { "WWW-Authenticate", challenge } };
 +	const struct spa_dict headers = SPA_DICT_INIT_ARRAY(items);
 +
++	spa_assert_se(main_loop != NULL);
++	sender.rtsp = pw_rtsp_client_new(pw_main_loop_get_loop(main_loop),
++			pw_properties_new(NULL, NULL), 0);
++	spa_assert_se(sender.rtsp != NULL);
++	sender.headers = pw_properties_new(NULL, NULL);
 +	destroy_count = 0;
-+	spa_assert_se(rtsp_post_auth_setup_reply(&sender, 401, &headers, NULL) <= 0);
++	if (options)
++		spa_assert_se(rtsp_options_reply(&sender, 401, &headers, NULL) < 0);
++	else
++		spa_assert_se(rtsp_post_auth_setup_reply(&sender, 401, &headers, NULL) <= 0);
 +	spa_assert_se(destroy_count == 1);
 +	free(sender.auth_method);
 +	free(sender.realm);
 +	free(sender.nonce);
++	pw_properties_free(sender.headers);
++	pw_rtsp_client_destroy(sender.rtsp);
++	pw_main_loop_destroy(main_loop);
 +}
 +
 +int main(int argc, char **argv)
@@ -673,10 +690,12 @@ index 000000000..158925ee1
 +	test_auth_setup(false, NULL);
 +	test_auth_setup(true, "Digest");
 +	test_auth_setup(true, "Basic");
-+	test_invalid_challenge(NULL, true);
-+	test_invalid_challenge("Digest realm=\"airplay\"", true);
-+	test_invalid_challenge("Bearer test-token", true);
-+	test_invalid_challenge("Digest realm=\"airplay\", nonce=\"test-nonce\"", false);
++	for (unsigned int options = 0; options < 2; options++) {
++		test_invalid_challenge(NULL, true, options);
++		test_invalid_challenge("Digest realm=\"airplay\"", true, options);
++		test_invalid_challenge("Bearer test-token", true, options);
++		test_invalid_challenge("Digest realm=\"airplay\", nonce=\"test-nonce\"", false, options);
++	}
 +	pw_deinit();
 +	return EXIT_SUCCESS;
 +}
