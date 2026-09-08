@@ -277,16 +277,29 @@ index 5c8c74dca..0ff368e1b 100644
  static void rtsp_disconnected(void *data)
 diff --git a/src/modules/module-raop/test-auth.c b/src/modules/module-raop/test-auth.c
 new file mode 100644
-index 000000000..965517c9e
+index 000000000..ee473d363
 --- /dev/null
 +++ b/src/modules/module-raop/test-auth.c
-@@ -0,0 +1,277 @@
+@@ -0,0 +1,346 @@
 +/* PipeWire */
 +/* SPDX-FileCopyrightText: Copyright © 2026 Fabian Schmieder */
 +/* SPDX-License-Identifier: MIT */
 +
 +/* Exercise the auth-setup challenge retry and its Digest request target. */
++#include "config.h"
++#include <pipewire/impl.h>
++
++/* Observe rejection without creating a module; RTSP I/O remains real. */
++static unsigned int destroy_count;
++
++static void test_schedule_destroy(struct pw_impl_module *module)
++{
++	destroy_count++;
++}
++
++#define pw_impl_module_schedule_destroy test_schedule_destroy
 +#include "../module-raop-sink.c"
++#undef pw_impl_module_schedule_destroy
 +
 +#define TEST_PASSWORD "test-password"
 +#define TEST_REALM "airplay"
@@ -363,10 +376,15 @@ index 000000000..965517c9e
 +static size_t request_size(const uint8_t *data, size_t size)
 +{
 +	ssize_t end = header_end(data, size);
++	const char *length;
++	size_t body = 0;
 +
 +	if (end < 0)
 +		return 0;
-+	return (size_t)end + 4 + sizeof(auth_setup_content);
++	length = strstr((const char *)data, "\r\nContent-Length: ");
++	if (length != NULL && length < (const char *)data + end)
++		spa_assert_se(sscanf(length, "\r\nContent-Length: %zu", &body) == 1);
++	return (size_t)end + 4 + body;
 +}
 +
 +static void read_request(struct pw_loop *loop, int fd, uint8_t *request, size_t capacity,
@@ -383,6 +401,8 @@ index 000000000..965517c9e
 +			break;
 +
 +		spa_assert_se(pw_loop_iterate(loop, 10) >= 0);
++		spa_assert_se(destroy_count == 0);
++		spa_assert_se(*size < capacity - 1);
 +		res = recv(fd, request + *size, capacity - *size - 1, 0);
 +		if (res < 0) {
 +			spa_assert_se(errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR);
@@ -473,7 +493,7 @@ index 000000000..965517c9e
 +	spa_assert_se(memcmp(request + end + 4, auth_setup_content, sizeof(auth_setup_content)) == 0);
 +}
 +
-+static void test_auth_setup_digest_retry(void)
++static void test_auth_setup_digest_retry(bool accepted)
 +{
 +	struct test_data test = { 0 };
 +	struct pw_main_loop *main_loop;
@@ -487,6 +507,7 @@ index 000000000..965517c9e
 +	size_t size;
 +	int server_fd, peer_fd = -1;
 +
++	destroy_count = 0;
 +	server_fd = create_server(&port);
 +	main_loop = pw_main_loop_new(NULL);
 +	spa_assert_se(main_loop != NULL);
@@ -534,13 +555,42 @@ index 000000000..965517c9e
 +	memset(request, 0, sizeof(request));
 +	read_request(loop, peer_fd, request, sizeof(request), &size);
 +	assert_request(request, size, authorization, 2);
-+	send_all(loop, peer_fd,
-+			"RTSP/1.0 200 OK\r\nCSeq: 2\r\nContent-Length: 0\r\n\r\n",
-+			strlen("RTSP/1.0 200 OK\r\nCSeq: 2\r\nContent-Length: 0\r\n\r\n"));
-+	spa_assert_se(pw_loop_iterate(loop, 10) >= 0);
++	if (accepted) {
++		send_all(loop, peer_fd,
++				"RTSP/1.0 200 OK\r\nCSeq: 2\r\nContent-Length: 0\r\n\r\n",
++				strlen("RTSP/1.0 200 OK\r\nCSeq: 2\r\nContent-Length: 0\r\n\r\n"));
++		spa_assert_se(pw_loop_iterate(loop, 10) >= 0);
++		spa_assert_se(destroy_count == 0);
++		memset(request, 0, sizeof(request));
++		read_request(loop, peer_fd, request, sizeof(request), &size);
++		spa_assert_se(strncmp((const char *)request, "ANNOUNCE ", 9) == 0);
++		expected_digest(authorization, sizeof(authorization), "ANNOUNCE",
++				pw_rtsp_client_get_url(client));
++		spa_assert_se(strstr((const char *)request, authorization) != NULL);
++	} else {
++		const char response[] = "RTSP/1.0 401 Unauthorized\r\nCSeq: 2\r\n"
++				"WWW-Authenticate: Digest realm=\"" TEST_REALM "\", nonce=\"" TEST_NONCE "\"\r\n"
++				"Content-Length: 0\r\n\r\n";
++		send_all(loop, peer_fd, response, sizeof(response) - 1);
++		for (unsigned int i = 0; i < 100 && destroy_count == 0; i++)
++			spa_assert_se(pw_loop_iterate(loop, 10) >= 0);
++		spa_assert_se(destroy_count == 1);
++		/* Neither a third POST nor ANNOUNCE may be queued after rejection. */
++		spa_assert_se(pw_loop_iterate(loop, 10) >= 0);
++		spa_assert_se(recv(peer_fd, request, sizeof(request), MSG_DONTWAIT) < 0);
++		spa_assert_se(errno == EAGAIN || errno == EWOULDBLOCK);
++	}
 +	spa_assert_se(test.error == 0);
 +
-+	rtsp_clear_auth(&sender);
++	free(sender.auth_method);
++	if (sender.realm) {
++		explicit_bzero(sender.realm, strlen(sender.realm));
++		free(sender.realm);
++	}
++	if (sender.nonce) {
++		explicit_bzero(sender.nonce, strlen(sender.nonce));
++		free(sender.nonce);
++	}
 +	free(sender.password);
 +	pw_properties_free(sender.props);
 +	pw_properties_free(sender.headers);
@@ -551,10 +601,29 @@ index 000000000..965517c9e
 +	spa_assert_se(close(server_fd) == 0);
 +}
 +
++static void test_invalid_challenge(const char *challenge, bool password)
++{
++	struct impl sender = { .password = password ? TEST_PASSWORD : NULL };
++	const struct spa_dict_item items[] = { { "WWW-Authenticate", challenge } };
++	const struct spa_dict headers = SPA_DICT_INIT_ARRAY(items);
++
++	destroy_count = 0;
++	spa_assert_se(rtsp_post_auth_setup_reply(&sender, 401, &headers, NULL) <= 0);
++	spa_assert_se(destroy_count == 1);
++	free(sender.auth_method);
++	free(sender.realm);
++	free(sender.nonce);
++}
++
 +int main(int argc, char **argv)
 +{
 +	pw_init(&argc, &argv);
-+	test_auth_setup_digest_retry();
++	test_auth_setup_digest_retry(true);
++	test_auth_setup_digest_retry(false);
++	test_invalid_challenge(NULL, true);
++	test_invalid_challenge("Digest realm=\"airplay\"", true);
++	test_invalid_challenge("Bearer test-token", true);
++	test_invalid_challenge("Digest realm=\"airplay\", nonce=\"test-nonce\"", false);
 +	pw_deinit();
 +	return EXIT_SUCCESS;
 +}

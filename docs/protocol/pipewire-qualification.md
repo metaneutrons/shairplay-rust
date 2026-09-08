@@ -11,7 +11,8 @@ records all five feature/profile configurations. The six passwordless UDP
 sessions pass bit-exactly, including release and reconnect; the required 404
 and 401 probes also pass. The commit is compiled as PipeWire 1.7.0 and contains
 [PipeWire MR !2984](https://gitlab.freedesktop.org/pipewire/pipewire/-/merge_requests/2984),
-but it was not in a release tag when tested. This establishes a narrow
+but it was not in a release tag when tested. Local TCP and password candidates
+are documented below. This establishes a narrow
 source-commit qualification, not a released-baseline compatibility claim.
 
 The [controlled before/after experiment](evidence/pipewire-iovec-aarch64/README.md)
@@ -206,6 +207,16 @@ The same synthetic password is configured at both ends. PipeWire 1.6.7 receives
 401 on `/auth-setup` and aborts without `ANNOUNCE` or audio. Its probe callback
 does not perform the Digest retry implemented for `OPTIONS`. This is an
 observed interoperability limitation, not permission to bypass authentication.
+
+A separate [local password candidate](pipewire-auth-mr-draft.md), based on
+`c73df14f`, now passes the strict matrix with
+`PIPEWIRE_VARIANT=auth-fix QUALIFICATION_PASSWORD_PLAYBACK=1`.
+[Five clean reports](evidence/pipewire-auth-c73df14f-aarch64/README.md) record six
+protected and six passwordless bit-exact UDP sessions, including release and
+reconnect. The sender retries `/auth-setup` once with the correct Digest URI;
+missing and incorrect credentials still fail closed. This candidate remains
+local and does not include the independent TCP patch or establish a supported
+fixed release baseline.
 
 ### TCP
 
