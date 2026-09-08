@@ -38,14 +38,40 @@ async fn receiver(enabled: bool, password: bool, capture: Arc<audio::Capture>) -
     server
 }
 
-async fn scenario(enabled: bool, password: bool, transport: &str) -> serde_json::Value {
-    eprintln!("PipeWire scenario: enabled={enabled}, password={password}, transport={transport}");
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Password {
+    None,
+    Matching,
+    #[cfg(feature = "pipewire-auth-setup-compat")]
+    Incorrect,
+    Missing,
+}
+
+impl Password {
+    fn sender(self) -> Option<&'static str> {
+        match self {
+            Self::None | Self::Missing => None,
+            Self::Matching => Some("qualification-only"),
+            #[cfg(feature = "pipewire-auth-setup-compat")]
+            Self::Incorrect => Some("qualification-incorrect"),
+        }
+    }
+}
+
+async fn scenario(
+    enabled: bool,
+    password: Password,
+    transport: &str,
+    retry_auth: bool,
+) -> serde_json::Value {
+    eprintln!("PipeWire scenario: enabled={enabled}, password={password:?}, transport={transport}");
     let capture = Arc::new(audio::Capture::default());
-    let mut receiver = receiver(enabled, password, capture.clone()).await;
+    let protected = password != Password::None;
+    let mut receiver = receiver(enabled, protected, capture.clone()).await;
     let before = receiver.service_info();
     let proxy = wire::Proxy::start(before.port).await;
-    let mut sender = runtime::Sender::start(proxy.port, transport, password).await;
-    let expected = if password {
+    let mut sender = runtime::Sender::start(proxy.port, transport, password.sender()).await;
+    let expected = if protected && !(retry_auth && password == Password::Matching) {
         401
     } else if enabled {
         200
@@ -63,7 +89,15 @@ async fn scenario(enabled: bool, password: bool, transport: &str) -> serde_json:
             proxy.wait_closed().await;
             assert!(capture.sessions.lock().unwrap().is_empty());
         }
-        wire::verify(&proxy.events()[start..], expected);
+        if retry_auth && protected {
+            wire::verify_password(
+                &proxy.events()[start..],
+                expected == 200,
+                password != Password::Missing,
+            );
+        } else {
+            wire::verify(&proxy.events()[start..], expected);
+        }
     }
     assert_eq!(receiver.service_info().raop_txt, before.raop_txt);
     assert_eq!(receiver.service_info().airplay_txt, before.airplay_txt);
@@ -71,7 +105,8 @@ async fn scenario(enabled: bool, password: bool, transport: &str) -> serde_json:
     drop(sender);
     drop(proxy);
     receiver.stop().await;
-    json!({"runtime_enabled": enabled, "password_protected": password,
+    json!({"runtime_enabled": enabled, "password_protected": protected,
+        "sender_password": format!("{password:?}").to_lowercase(), "digest_retry": retry_auth,
         "transport": transport, "expected_probe_status": expected,
         "exchanges": events, "audio": audio_reports, "discovery_unchanged": true})
 }
@@ -97,14 +132,26 @@ async fn real_pipewire_auth_setup_qualification() {
     tokio::time::timeout(Duration::from_secs(180), async {
         let version = runtime::Sender::version().await;
         let mut scenarios = Vec::new();
-        scenarios.push(scenario(false, false, "udp").await);
+        scenarios.push(scenario(false, Password::None, "udp", false).await);
         #[cfg(feature = "pipewire-auth-setup-compat")]
         {
-            scenarios.push(scenario(true, true, "udp").await);
             let transport =
                 std::env::var("QUALIFICATION_TRANSPORT").unwrap_or_else(|_| "udp".into());
             assert!(["udp", "tcp"].contains(&transport.as_str()));
-            scenarios.push(scenario(true, false, &transport).await);
+            let retry_auth = std::env::var("QUALIFICATION_PASSWORD_PLAYBACK")
+                .map(|value| {
+                    assert!(["0", "1"].contains(&value.as_str()));
+                    value == "1"
+                })
+                .unwrap_or(false);
+            if retry_auth {
+                for password in [Password::Missing, Password::Incorrect, Password::Matching] {
+                    scenarios.push(scenario(true, password, &transport, true).await);
+                }
+            } else {
+                scenarios.push(scenario(true, Password::Matching, "udp", false).await);
+            }
+            scenarios.push(scenario(true, Password::None, &transport, false).await);
         }
         write_report(version, scenarios);
     })

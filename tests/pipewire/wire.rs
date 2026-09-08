@@ -48,6 +48,40 @@ pub(super) fn verify(events: &[Exchange], expected: u16) {
     }
 }
 
+pub(super) fn verify_password(events: &[Exchange], accepted: bool, retry: bool) {
+    let mut expected = vec![("OPTIONS", 200), ("POST /auth-setup", 401)];
+    if retry {
+        expected.push(("POST /auth-setup", if accepted { 200 } else { 401 }));
+    }
+    if accepted {
+        assert!(
+            retry,
+            "password playback requires a successful authenticated retry"
+        );
+        expected.extend([
+            ("ANNOUNCE", 200),
+            ("SETUP", 200),
+            ("RECORD", 200),
+            ("TEARDOWN", 200),
+        ]);
+    }
+    let mut actual = Vec::new();
+    for event in events {
+        assert!(event.normal_headers, "{event:?}");
+        if event.request == "POST /auth-setup" {
+            assert!(event.exact_probe, "{event:?}");
+            assert_eq!(event.response_bytes, 0);
+        }
+        if event.request == "SET_PARAMETER" {
+            assert!(accepted);
+            assert_eq!(event.status, 200);
+        } else {
+            actual.push((event.request.as_str(), event.status));
+        }
+    }
+    assert_eq!(actual, expected);
+}
+
 struct Message {
     raw: Vec<u8>,
     first_line: String,
@@ -290,4 +324,51 @@ fn rejected_probe_must_not_proceed_to_announce() {
         });
         assert!(std::panic::catch_unwind(|| verify(&events, status)).is_err());
     }
+}
+
+#[test]
+fn password_oracle_requires_one_challenge_and_bounded_retry() {
+    let events = |steps: &[(&str, u16)]| -> Vec<Exchange> {
+        steps
+            .iter()
+            .map(|(request, status)| Exchange {
+                request: (*request).into(),
+                status: *status,
+                response_bytes: 0,
+                normal_headers: true,
+                exact_probe: *request == "POST /auth-setup",
+            })
+            .collect()
+    };
+    let missing = events(&[("OPTIONS", 200), ("POST /auth-setup", 401)]);
+    verify_password(&missing, false, false);
+    let wrong = events(&[
+        ("OPTIONS", 200),
+        ("POST /auth-setup", 401),
+        ("POST /auth-setup", 401),
+    ]);
+    verify_password(&wrong, false, true);
+    assert!(std::panic::catch_unwind(|| verify_password(&missing, false, true)).is_err());
+    let mut repeated = wrong.clone();
+    repeated.push(wrong[2].clone());
+    assert!(std::panic::catch_unwind(|| verify_password(&repeated, false, true)).is_err());
+    let good = events(&[
+        ("OPTIONS", 200),
+        ("POST /auth-setup", 401),
+        ("POST /auth-setup", 200),
+        ("ANNOUNCE", 200),
+        ("SETUP", 200),
+        ("RECORD", 200),
+        ("TEARDOWN", 200),
+    ]);
+    verify_password(&good, true, true);
+    assert!(std::panic::catch_unwind(|| verify_password(&good, false, true)).is_err());
+    for index in [1, 2, 6] {
+        let mut incomplete = good.clone();
+        incomplete.remove(index);
+        assert!(std::panic::catch_unwind(|| verify_password(&incomplete, true, true)).is_err());
+    }
+    let mut changed = good;
+    changed[2].exact_probe = false;
+    assert!(std::panic::catch_unwind(|| verify_password(&changed, true, true)).is_err());
 }

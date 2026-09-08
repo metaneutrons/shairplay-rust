@@ -49,6 +49,14 @@ case "$PIPEWIRE_VARIANT" in
         fi
         test_sha=$(sha256sum /tmp/pipewire/src/modules/module-raop/test-iovec.c | cut -d ' ' -f 1)
         ;;
+    auth-fix)
+        meson test -C /tmp/pw-build --no-rebuild --print-errorlogs \
+            pw-test-raop-iovec pw-test-raop-rtsp-client pw-test-raop-auth
+        auth_sha=$(sha256sum /tmp/pipewire/src/modules/module-raop/test-auth.c | cut -d ' ' -f 1)
+        result="{\"cases\":354,\"failures\":0,\"runner\":\"upstream-meson\",\"auth_setup_digest\":\"passed\",\"auth_regression_sha256\":\"$auth_sha\"}"
+        patch="\"$(sha256sum /tmp/qualification/raop-auth-setup.patch | cut -d ' ' -f 1)\""
+        test_sha=$(sha256sum /tmp/pipewire/src/modules/module-raop/test-iovec.c | cut -d ' ' -f 1)
+        ;;
     *) exit 2 ;;
 esac
 source_sha=$(sha256sum /tmp/pipewire/src/modules/module-raop-sink.c | cut -d ' ' -f 1)

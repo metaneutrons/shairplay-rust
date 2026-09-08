@@ -14,18 +14,14 @@ pub(super) struct Sender {
 }
 
 impl Sender {
-    pub(super) async fn start(port: u16, transport: &str, password: bool) -> Self {
+    pub(super) async fn start(port: u16, transport: &str, password: Option<&str>) -> Self {
         let mut sender = Self::workspace();
         let config = include_str!("pipewire.conf.in")
             .replace("@PORT@", &port.to_string())
             .replace("@TRANSPORT@", transport)
             .replace(
                 "@PASSWORD@",
-                if password {
-                    "raop.password = qualification-only"
-                } else {
-                    ""
-                },
+                &password.map_or_else(String::new, |value| format!("raop.password = {value}")),
             );
         fs::write(sender.root.path().join("pipewire.conf"), config).unwrap();
         fs::write(sender.root.path().join("source.wav"), super::audio::wav()).unwrap();

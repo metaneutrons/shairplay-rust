@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libsndfile1-dev=1.2.0-1+deb12u1 libssl-dev=3.0.20-1~deb12u2 libasound2-dev=1.2.8-1+b1 \
     && rm -rf /var/lib/apt/lists/*
 ARG PIPEWIRE_VARIANT=baseline
-COPY raop-iovec.patch raop-tcp.patch test-raop-iovec.c check-iovec.sh /tmp/qualification/
+COPY raop-iovec.patch raop-tcp.patch raop-auth-setup.patch test-raop-iovec.c check-iovec.sh /tmp/qualification/
 RUN curl -fsSL "https://codeload.github.com/PipeWire/pipewire/tar.gz/${PIPEWIRE_COMMIT}" -o /tmp/pipewire.tar.gz \
     && printf '%s  /tmp/pipewire.tar.gz\n' "$PIPEWIRE_SHA256" | sha256sum --check \
     && mkdir /tmp/pipewire \
@@ -24,6 +24,8 @@ RUN curl -fsSL "https://codeload.github.com/PipeWire/pipewire/tar.gz/${PIPEWIRE_
                     && git -C /tmp/pipewire apply --include=src/modules/module-raop/test-iovec.c /tmp/qualification/raop-tcp.patch ;; \
          tcp-fix) tests=enabled \
                     && git -C /tmp/pipewire apply /tmp/qualification/raop-tcp.patch ;; \
+         auth-fix) tests=enabled \
+                    && git -C /tmp/pipewire apply /tmp/qualification/raop-auth-setup.patch ;; \
          *) exit 2 ;; \
        esac \
     && meson setup /tmp/pw-build /tmp/pipewire --prefix=/opt/pipewire --libdir=lib \
