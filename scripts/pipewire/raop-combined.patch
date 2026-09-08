@@ -21,7 +21,7 @@ index e2a5b766e..27ca1c789 100644
        executable('pw-test-raop-rtsp-client',
          [ 'module-raop/test-rtsp-client.c',
 diff --git a/src/modules/module-raop-sink.c b/src/modules/module-raop-sink.c
-index 5c8c74dca..71358ddd5 100644
+index 5c8c74dca..6c1ca9dad 100644
 --- a/src/modules/module-raop-sink.c
 +++ b/src/modules/module-raop-sink.c
 @@ -242,6 +242,7 @@ struct impl {
@@ -32,7 +32,19 @@ index 5c8c74dca..71358ddd5 100644
  
  	bool disable_volume;
  
-@@ -741,29 +742,33 @@ static int MD5_hash(char hash[MD5_HASH_LENGTH+1], const char *fmt, ...)
+@@ -518,9 +519,8 @@ static void stream_send_packet(void *data, struct iovec *iov, size_t iovlen)
+ 		aes_encrypt(impl, dst, len);
+ 
+ 	if (impl->protocol == PROTO_TCP) {
+-		out[0] |= htonl((uint32_t) len + 12);
+-		tcp_pkt[0] = htonl(0x24000000);
+-  		out_vec[msg.msg_iovlen++] = (struct iovec) { tcp_pkt, 4 };
++		tcp_pkt[0] = htonl(0x24000000 | (len + 12));
++		out_vec[msg.msg_iovlen++] = (struct iovec) { tcp_pkt, 4 };
+ 	} else {
+ 		out_vec[2].iov_len = 0;
+ 	}
+@@ -741,29 +741,33 @@ static int MD5_hash(char hash[MD5_HASH_LENGTH+1], const char *fmt, ...)
  	return 0;
  }
  
@@ -71,7 +83,7 @@ index 5c8c74dca..71358ddd5 100644
  
  		MD5_hash(h1, "%s:%s:%s", RAOP_AUTH_USER_NAME, impl->realm, impl->password);
  		MD5_hash(h2, "%s:%s", method, url);
-@@ -785,21 +790,31 @@ static int rtsp_add_raop_auth_header(struct impl *impl, const char *method)
+@@ -785,21 +789,31 @@ static int rtsp_add_raop_auth_header(struct impl *impl, const char *method)
  
  	return 0;
  error:
@@ -110,7 +122,7 @@ index 5c8c74dca..71358ddd5 100644
  }
  
  static int rtsp_log_reply_status(void *data, int status, const struct spa_dict *headers, const struct pw_array *content)
-@@ -1290,14 +1305,30 @@ static int rtsp_do_announce(struct impl *impl)
+@@ -1290,14 +1304,30 @@ static int rtsp_do_announce(struct impl *impl)
  	return rtsp_send(impl, "ANNOUNCE", "application/sdp", sdp, rtsp_announce_reply);
  }
  
@@ -141,7 +153,7 @@ index 5c8c74dca..71358ddd5 100644
  	default:
  		pw_impl_module_schedule_destroy(impl->module);
  		return 0;
-@@ -1315,9 +1346,13 @@ static int rtsp_do_post_auth_setup(struct impl *impl)
+@@ -1315,9 +1345,13 @@ static int rtsp_do_post_auth_setup(struct impl *impl)
  		0xa9, 0x4d, 0xbd, 0x50, 0xd8, 0xaa, 0x46, 0x5b,
  		0x5d, 0x8c, 0x01, 0x2a, 0x0c, 0x7e, 0x1d, 0x4e };
  
@@ -158,7 +170,7 @@ index 5c8c74dca..71358ddd5 100644
  }
  
  static int rtsp_options_auth_reply(void *data, int status, const struct spa_dict *headers, const struct pw_array *content)
-@@ -1359,10 +1394,28 @@ static const char *find_attr(char **tokens, const char *key)
+@@ -1359,10 +1393,28 @@ static const char *find_attr(char **tokens, const char *key)
  	return NULL;
  }
  
@@ -188,7 +200,7 @@ index 5c8c74dca..71358ddd5 100644
  
  	if ((str = spa_dict_lookup(headers, "WWW-Authenticate")) == NULL)
  		return -EINVAL;
-@@ -1378,21 +1431,51 @@ static int rtsp_do_options_auth(struct impl *impl, const struct spa_dict *header
+@@ -1378,21 +1430,51 @@ static int rtsp_do_options_auth(struct impl *impl, const struct spa_dict *header
  	if (tokens == NULL || tokens[0] == NULL)
  		return -EINVAL;
  
@@ -248,7 +260,7 @@ index 5c8c74dca..71358ddd5 100644
  
  	return rtsp_send(impl, "OPTIONS", NULL, NULL, rtsp_options_auth_reply);
  }
-@@ -1451,6 +1534,7 @@ static void rtsp_connected(void *data)
+@@ -1451,6 +1533,7 @@ static void rtsp_connected(void *data)
  static void connection_cleanup(struct impl *impl)
  {
  	impl->ready = false;
@@ -256,7 +268,7 @@ index 5c8c74dca..71358ddd5 100644
  	if (impl->server_source != NULL) {
  		pw_loop_destroy_source(impl->loop, impl->server_source);
  		impl->server_source = NULL;
-@@ -1477,18 +1561,7 @@ static void connection_cleanup(struct impl *impl)
+@@ -1477,18 +1560,7 @@ static void connection_cleanup(struct impl *impl)
  	}
  	pw_timer_queue_cancel(&impl->feedback_timer);
  
@@ -680,3 +692,51 @@ index 000000000..158925ee1
 +	pw_deinit();
 +	return EXIT_SUCCESS;
 +}
+diff --git a/src/modules/module-raop/test-iovec.c b/src/modules/module-raop/test-iovec.c
+index 3fd96ae74..6b6b16fcf 100644
+--- a/src/modules/module-raop/test-iovec.c
++++ b/src/modules/module-raop/test-iovec.c
+@@ -29,7 +29,8 @@ static ssize_t packet(struct impl *sender, int receiver, const struct iovec *aud
+ static unsigned int check_splits(struct impl *sender, int receiver)
+ {
+ 	uint8_t samples[2][TEST_BYTES];
+-	uint8_t reference[TEST_BYTES + 64], actual[sizeof(reference)];
++	uint8_t reference[TEST_BYTES + 64], actual[sizeof(reference) + 4];
++	uint8_t prefix[4];
+ 	const struct iovec contiguous = { samples[0], TEST_BYTES };
+ 	unsigned int failures = 0;
+ 	ssize_t expected;
+@@ -39,6 +40,10 @@ static unsigned int check_splits(struct impl *sender, int receiver)
+ 		samples[0][i] = samples[1][i] = (uint8_t)(i * 73 + i / 256);
+ 	expected = packet(sender, receiver, &contiguous, 1, reference, sizeof(reference));
+ 	spa_assert_se(expected == 12 + TEST_BYTES + 8);
++	prefix[0] = '$';
++	prefix[1] = 0;
++	prefix[2] = (uint8_t)(expected >> 8);
++	prefix[3] = (uint8_t)expected;
+ 	for (split = 0; split <= TEST_FRAMES; split++) {
+ 		size_t first = split * 4;
+ 		const struct iovec audio[2] = {
+@@ -47,6 +52,14 @@ static unsigned int check_splits(struct impl *sender, int receiver)
+ 		ssize_t size = packet(sender, receiver, audio, 2, actual, sizeof(actual));
+ 		if (size != expected || memcmp(actual, reference, (size_t)expected) != 0)
+ 			failures++;
++
++		/* Capture TCP framing in one datagram; the RTP/ALAC bytes must be unchanged. */
++		sender->protocol = PROTO_TCP;
++		size = packet(sender, receiver, audio, 2, actual, sizeof(actual));
++		sender->protocol = PROTO_UDP;
++		if (size != expected + 4 || memcmp(actual, prefix, sizeof(prefix)) != 0 ||
++				memcmp(actual + 4, reference, (size_t)expected) != 0)
++			failures++;
+ 	}
+ 	return failures;
+ }
+@@ -65,6 +78,6 @@ int main(int argc, char **argv)
+ 	spa_assert_se(close(sockets[0]) == 0);
+ 	spa_assert_se(close(sockets[1]) == 0);
+ 	pw_deinit();
+-	printf("%u cases, %u failures\n", TEST_FRAMES + 2, failures);
++	printf("%u cases, %u failures\n", 1 + 2 * (TEST_FRAMES + 1), failures);
+ 	return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
+ }

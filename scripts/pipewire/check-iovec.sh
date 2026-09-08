@@ -49,12 +49,19 @@ case "$PIPEWIRE_VARIANT" in
         fi
         test_sha=$(sha256sum /tmp/pipewire/src/modules/module-raop/test-iovec.c | cut -d ' ' -f 1)
         ;;
-    auth-fix)
+    auth-fix|combined-fix)
         meson test -C /tmp/pw-build --no-rebuild --print-errorlogs \
             pw-test-raop-iovec pw-test-raop-rtsp-client pw-test-raop-auth
         auth_sha=$(sha256sum /tmp/pipewire/src/modules/module-raop/test-auth.c | cut -d ' ' -f 1)
-        result="{\"cases\":354,\"failures\":0,\"runner\":\"upstream-meson\",\"auth_setup_digest\":\"passed\",\"auth_regression_sha256\":\"$auth_sha\"}"
-        patch="\"$(sha256sum /tmp/qualification/raop-auth-setup.patch | cut -d ' ' -f 1)\""
+        cases=354
+        patch_file=/tmp/qualification/raop-auth-setup.patch
+        if [[ $PIPEWIRE_VARIANT == combined-fix ]]; then
+            cases=707
+            patch_file=/tmp/qualification/raop-combined.patch
+            bash /tmp/qualification/check-native.sh
+        fi
+        result="{\"cases\":$cases,\"failures\":0,\"runner\":\"upstream-meson\",\"auth_setup_digest\":\"passed\",\"protocol_regression_sha256\":\"$auth_sha\"}"
+        patch="\"$(sha256sum "$patch_file" | cut -d ' ' -f 1)\""
         test_sha=$(sha256sum /tmp/pipewire/src/modules/module-raop/test-iovec.c | cut -d ' ' -f 1)
         ;;
     *) exit 2 ;;

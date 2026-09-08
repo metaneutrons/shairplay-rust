@@ -20,7 +20,7 @@ case "$variant" in
         pipewire_sha256=b57315ef2b9fe0062469752bc12be2edac70ab88dbabf35b69be843665969fcb
         source_id=upstream-bc7d1cba
         ;;
-    tcp-baseline|tcp-fix|auth-fix)
+    tcp-baseline|tcp-fix|auth-fix|combined-fix)
         pipewire_version=1.7.0
         pipewire_commit=c73df14f03e30c41f6430acd82c6250dcdb168d8
         pipewire_sha256=9f8d2b0f8d034a3ee4c19192a33e3a36daaeedf677a764c347b55c8cd33dc854
