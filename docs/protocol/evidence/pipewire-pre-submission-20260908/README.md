@@ -1,12 +1,14 @@
 # Final combined candidate qualification — 2026-09-08
 
 Both native Linux architectures (aarch64 and x86_64) pass all five feature/profile
-configurations over both UDP and TCP: **20 reports, 68 scenarios and 48 bit-exact
+configurations for each UDP/TCP transport setting: **20 reports, 68 scenarios and 48 bit-exact
 audio sessions**, split evenly between matching-password and passwordless
 playback. Every second session reconnects; all native TEARDOWN checks pass.
 Missing/incorrect passwords produce no audio with bounded 401 responses, and
 feature/runtime gates remain 404. All three native tests pass with ASan/UBSan
-on both architectures, including 707 packet cases with zero failures.
+on both architectures, including 707 packet cases with zero failures. Default
+and AP2-only builds exercise UDP 404 gates; compatibility, combined and release
+builds provide the selected transport’s audio sessions.
 
 | Native Linux architecture | Transport | Feature/profile builds | Exact audio sessions | Result |
 |---|---|---:|---:|---|
