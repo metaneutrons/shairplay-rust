@@ -35,6 +35,20 @@ case "$PIPEWIRE_VARIANT" in
         result='{"cases":354,"failures":0,"runner":"upstream-meson"}'
         test_sha=$(sha256sum /tmp/pipewire/src/modules/module-raop/test-iovec.c | cut -d ' ' -f 1)
         ;;
+    tcp-baseline|tcp-fix)
+        meson test -C /tmp/pw-build --no-rebuild --print-errorlogs pw-test-raop-rtsp-client
+        status=0
+        result=$(/tmp/pw-build/src/modules/pw-test-raop-iovec) || status=$?
+        if [[ $PIPEWIRE_VARIANT == tcp-baseline ]]; then
+            [[ $status == 1 && $result == '707 cases, 353 failures' ]]
+            result='{"cases":707,"failures":353,"runner":"upstream-meson"}'
+        else
+            [[ $status == 0 && $result == '707 cases, 0 failures' ]]
+            result='{"cases":707,"failures":0,"runner":"upstream-meson"}'
+            patch="\"$(sha256sum /tmp/qualification/raop-tcp.patch | cut -d ' ' -f 1)\""
+        fi
+        test_sha=$(sha256sum /tmp/pipewire/src/modules/module-raop/test-iovec.c | cut -d ' ' -f 1)
+        ;;
     *) exit 2 ;;
 esac
 source_sha=$(sha256sum /tmp/pipewire/src/modules/module-raop-sink.c | cut -d ' ' -f 1)
