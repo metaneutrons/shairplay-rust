@@ -2,5 +2,9 @@
 useDefault = true
 
 [allowlist]
-description = "Published AirPort Express protocol key retained for AirPlay interoperability"
+description = "Published AirPort Express protocol key and verified PipeWire regression source checksum"
 paths = ['''^airport\.key$''']
+# SHA-256 of test-auth.c in the live-test patch at receiver revision 867a18a.
+# Match only this JSON checksum line; it is source provenance, not a credential.
+regexTarget = "line"
+regexes = ['''^\s*"auth_regression_sha256": "cc2e7d4ace88382e3d1e4aa3b34536b66fed79bf67cb824a996c21109857412f",$''']

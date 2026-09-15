@@ -1,0 +1,220 @@
+{
+  "ap2_feature": true,
+  "architecture": "aarch64",
+  "compatibility_feature": true,
+  "container_image": "sha256:4dcdce3f6e06e9877e97ab294d957e45ceba367c65a8617c403de6fb3eee1f78",
+  "debug_assertions": true,
+  "passed": false,
+  "pipewire": {
+    "archive_sha256": "c8746b3c3408becb27e40cf67a5587105f057cd540769db4c345a67bf45c86df",
+    "commit": "3b2cb4fb037bf6033b87d3c87ee917b2f686d309",
+    "kernel": "Linux 6.8.0-100-generic",
+    "runtime_packages": "libasound2=1.2.8-1+b1\nlibc6=2.36-9+deb12u14\nlibsndfile1=1.2.0-1+deb12u1\nlibssl3=3.0.20-1~deb12u2\n",
+    "rustc": "rustc 1.98.0 (88d9e12ae 2026-08-18)",
+    "source": {
+      "callback_sha256": "02e57d741513cc9ea93df16b3a45c462c294d2b63f73cc2d2ea46e920875ba14",
+      "patch_sha256": null,
+      "regression": {
+        "cases": 354,
+        "failures": 352
+      },
+      "regression_sha256": "53880cb2e93888c1f4dbd56a53e194d7b623082624b8f27903de56b179134c90",
+      "variant": "baseline"
+    },
+    "version_output": "pipewire\nCompiled with libpipewire 1.6.7\nLinked with libpipewire 1.6.7"
+  },
+  "receiver_revision": "1f757f399aacb8c14f787d063bd986c414e18436",
+  "scenarios": [
+    {
+      "audio": [],
+      "discovery_unchanged": true,
+      "exchanges": [
+        {
+          "exact_probe": false,
+          "normal_headers": true,
+          "request": "OPTIONS",
+          "response_bytes": 0,
+          "status": 200
+        },
+        {
+          "exact_probe": true,
+          "normal_headers": true,
+          "request": "POST /auth-setup",
+          "response_bytes": 0,
+          "status": 404
+        }
+      ],
+      "expected_probe_status": 404,
+      "password_protected": false,
+      "runtime_enabled": false,
+      "transport": "udp"
+    },
+    {
+      "audio": [],
+      "discovery_unchanged": true,
+      "exchanges": [
+        {
+          "exact_probe": false,
+          "normal_headers": true,
+          "request": "OPTIONS",
+          "response_bytes": 0,
+          "status": 200
+        },
+        {
+          "exact_probe": true,
+          "normal_headers": true,
+          "request": "POST /auth-setup",
+          "response_bytes": 0,
+          "status": 401
+        }
+      ],
+      "expected_probe_status": 401,
+      "password_protected": true,
+      "runtime_enabled": true,
+      "transport": "udp"
+    },
+    {
+      "audio": [
+        {
+          "exact_payload": false,
+          "expected_payload_frames": 1102500,
+          "failure": "sample 1208236: received 0.19821167, expected 0.09048462; source frame positions [604348]; received frames 1192346",
+          "format": "PCM f32 stereo 44100 Hz",
+          "received_frames": 1192346,
+          "stopped": true
+        },
+        {
+          "exact_payload": false,
+          "expected_payload_frames": 1102500,
+          "failure": "sample 900446: received -0.29940796, expected 0.16812134; source frame positions [450524]; received frames 1192627",
+          "format": "PCM f32 stereo 44100 Hz",
+          "received_frames": 1192627,
+          "stopped": true
+        }
+      ],
+      "discovery_unchanged": true,
+      "exchanges": [
+        {
+          "exact_probe": false,
+          "normal_headers": true,
+          "request": "OPTIONS",
+          "response_bytes": 0,
+          "status": 200
+        },
+        {
+          "exact_probe": true,
+          "normal_headers": true,
+          "request": "POST /auth-setup",
+          "response_bytes": 0,
+          "status": 200
+        },
+        {
+          "exact_probe": false,
+          "normal_headers": true,
+          "request": "ANNOUNCE",
+          "response_bytes": 0,
+          "status": 200
+        },
+        {
+          "exact_probe": false,
+          "normal_headers": true,
+          "request": "SETUP",
+          "response_bytes": 0,
+          "status": 200
+        },
+        {
+          "exact_probe": false,
+          "normal_headers": true,
+          "request": "RECORD",
+          "response_bytes": 0,
+          "status": 200
+        },
+        {
+          "exact_probe": false,
+          "normal_headers": true,
+          "request": "SET_PARAMETER",
+          "response_bytes": 0,
+          "status": 200
+        },
+        {
+          "exact_probe": false,
+          "normal_headers": true,
+          "request": "SET_PARAMETER",
+          "response_bytes": 0,
+          "status": 200
+        },
+        {
+          "exact_probe": false,
+          "normal_headers": true,
+          "request": "TEARDOWN",
+          "response_bytes": 0,
+          "status": 200
+        },
+        {
+          "exact_probe": false,
+          "normal_headers": true,
+          "request": "OPTIONS",
+          "response_bytes": 0,
+          "status": 200
+        },
+        {
+          "exact_probe": true,
+          "normal_headers": true,
+          "request": "POST /auth-setup",
+          "response_bytes": 0,
+          "status": 200
+        },
+        {
+          "exact_probe": false,
+          "normal_headers": true,
+          "request": "ANNOUNCE",
+          "response_bytes": 0,
+          "status": 200
+        },
+        {
+          "exact_probe": false,
+          "normal_headers": true,
+          "request": "SETUP",
+          "response_bytes": 0,
+          "status": 200
+        },
+        {
+          "exact_probe": false,
+          "normal_headers": true,
+          "request": "RECORD",
+          "response_bytes": 0,
+          "status": 200
+        },
+        {
+          "exact_probe": false,
+          "normal_headers": true,
+          "request": "SET_PARAMETER",
+          "response_bytes": 0,
+          "status": 200
+        },
+        {
+          "exact_probe": false,
+          "normal_headers": true,
+          "request": "SET_PARAMETER",
+          "response_bytes": 0,
+          "status": 200
+        },
+        {
+          "exact_probe": false,
+          "normal_headers": true,
+          "request": "TEARDOWN",
+          "response_bytes": 0,
+          "status": 200
+        }
+      ],
+      "expected_probe_status": 200,
+      "password_protected": false,
+      "runtime_enabled": true,
+      "transport": "udp"
+    }
+  ],
+  "schema_version": 2,
+  "sender_config_sha256": "934eacf1ff3ebc903edeb02c8584b5614264ea18a0558e6d5deb00b7690a2b75",
+  "source_wav_sha256": "fbc238d205d19bebeb2474ea4b0e0b039d4817e261eb03270919b99a57b05cc7",
+  "working_tree_dirty": false
+}
