@@ -98,12 +98,22 @@ pub(crate) struct RtpConfig {
     pub(crate) rtpmap: String,
     /// Optional SDP `a=fmtp` attribute. Required for ALAC and unused for L16.
     pub(crate) fmtp: Option<String>,
+    /// AAC-ELD is selected by AirPlay's `ct=8` screen-mirroring stream setup.
+    pub(crate) aac_eld: Option<AacEldConfig>,
     /// AES-CBC parameters when encryption was negotiated; `None` for plaintext RTP.
     pub(crate) encryption: Option<RtpEncryption>,
     /// If set, resample decoded audio to this rate.
     pub(crate) output_sample_rate: Option<u32>,
     /// Full socket address of the remote peer (preserves scope_id for link-local IPv6).
     pub(crate) remote_socket: std::net::SocketAddr,
+}
+
+/// Out-of-band format for a legacy AirPlay AAC-ELD RTP stream.
+#[allow(dead_code)]
+pub(crate) struct AacEldConfig {
+    pub(crate) sample_rate: u32,
+    pub(crate) channels: u8,
+    pub(crate) frame_samples: u32,
 }
 
 /// Validated AES-CBC parameters for an encrypted RTP session.
@@ -172,11 +182,30 @@ impl RaopRtp {
     /// Returns `None` if the peer-supplied codec configuration is unsupported or malformed.
     pub(crate) fn new(callbacks: Arc<dyn AudioHandler>, config: RtpConfig) -> Option<Self> {
         let fmtp = config.fmtp.as_deref().unwrap_or_default();
-        let buffer = match config.encryption {
-            Some(encryption) => {
-                RaopBuffer::new(&config.rtpmap, fmtp, &encryption.key, &encryption.iv)
+        let buffer = if let Some(aac_eld) = config.aac_eld {
+            let encryption = config.encryption?;
+            #[cfg(feature = "ap2")]
+            {
+                RaopBuffer::new_aac_eld(
+                    aac_eld.sample_rate,
+                    aac_eld.channels,
+                    aac_eld.frame_samples,
+                    &encryption.key,
+                    &encryption.iv,
+                )
             }
-            None => RaopBuffer::new_unencrypted(&config.rtpmap, fmtp),
+            #[cfg(not(feature = "ap2"))]
+            {
+                let _ = (aac_eld, encryption);
+                None
+            }
+        } else {
+            match config.encryption {
+                Some(encryption) => {
+                    RaopBuffer::new(&config.rtpmap, fmtp, &encryption.key, &encryption.iv)
+                }
+                None => RaopBuffer::new_unencrypted(&config.rtpmap, fmtp),
+            }
         }?;
         let format = buffer.format();
         Some(Self {

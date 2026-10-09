@@ -293,7 +293,6 @@ struct Handler {
     ring: Arc<Mutex<AudioRing>>,
     device_rate: u32,
     device_channels: u16,
-    use_resample: bool,
 }
 
 impl AudioHandler for Handler {
@@ -303,9 +302,9 @@ impl AudioHandler for Handler {
             format.channels, format.bits, format.sample_rate
         );
 
-        let resampler = if self.use_resample && format.sample_rate != self.device_rate {
+        let resampler = if format.sample_rate != self.device_rate {
             eprintln!(
-                "🔄 Resampling {}Hz → {}Hz (in example app)",
+                "🔄 Resampling {}Hz → {}Hz for the output device",
                 format.sample_rate, self.device_rate
             );
             ExampleResampler::new(
@@ -316,7 +315,7 @@ impl AudioHandler for Handler {
         } else {
             if format.sample_rate != self.device_rate {
                 eprintln!(
-                    "⚠️  Source {}Hz ≠ device {}Hz — use --resample to convert",
+                    "⚠️  Could not initialize resampling for {}Hz → {}Hz",
                     format.sample_rate, self.device_rate
                 );
             } else {
@@ -350,17 +349,20 @@ impl AudioSession for Session {
             samples = rs.lock().unwrap().process(&samples);
         }
 
-        // Mix down to device channels if needed
-        let final_samples: Vec<f32> = if self.source_channels > self.device_channels {
-            samples
-                .chunks_exact(self.source_channels)
-                .flat_map(|frame| &frame[..self.device_channels])
-                .copied()
-                .collect()
-        } else {
-            samples
-        };
-
+        // CPAL needs samples for every output channel; preserve stereo and pad
+        // each frame so audio remains aligned on multichannel devices.
+        let output_channels = self.device_channels.max(1);
+        let mut final_samples =
+            Vec::with_capacity(samples.len() / self.source_channels.max(1) * output_channels);
+        for frame in samples.chunks_exact(self.source_channels.max(1)) {
+            if output_channels == 1 {
+                final_samples.push(frame.iter().copied().sum::<f32>() / frame.len().max(1) as f32);
+            } else {
+                let copied = frame.len().min(output_channels);
+                final_samples.extend_from_slice(&frame[..copied]);
+                final_samples.resize(final_samples.len() + output_channels - copied, 0.0);
+            }
+        }
         self.ring.lock().unwrap().push_samples(&final_samples);
     }
 }
@@ -417,7 +419,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     #[cfg(not(feature = "ap2"))]
     let _ = &pin;
-    let use_resample = args.iter().any(|a| a == "--resample");
 
     // Detect output device and its native sample rate
     let host = cpal::default_host();
@@ -520,7 +521,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ring,
         device_rate,
         device_channels,
-        use_resample,
     });
     let mut builder = RaopServer::builder();
     builder = builder.name(name).hwaddr(mac);

@@ -63,6 +63,7 @@ num-bigint = { version = "0.5", optional = true }
 uuid = { version = "1.29.0", features = ["v4"], optional = true }
 rubato = { version = "5", optional = true }
 symphonia = { version = "0.6", optional = true, features = ["aac"] }
+rusty_aac = { version = "1.1", optional = true }
 
 # Error handling
 thiserror = "2.0.21"
@@ -97,7 +98,7 @@ pipewire-auth-setup-compat = []
 diagnostic-headers = []
 dangerous-raw-headers = ["diagnostic-headers"]
 resample = ["dep:rubato"]
-ap2 = ["resample", "dep:chacha20poly1305", "dep:hkdf", "dep:num-bigint", "dep:uuid", "dep:symphonia", "dep:libc", "dep:windows-sys"]
+ap2 = ["resample", "dep:chacha20poly1305", "dep:hkdf", "dep:num-bigint", "dep:uuid", "dep:symphonia", "dep:libc", "dep:windows-sys", "dep:rusty_aac"]
 video = ["ap2", "fairplay"]
 hls = ["video"]
 

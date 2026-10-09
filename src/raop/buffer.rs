@@ -1,8 +1,8 @@
 //! AP1 RTP packet buffer with AES-CBC decryption and codec decode to f32.
 //!
 //! Incoming RTP packets are queued by sequence number into a fixed-size circular
-//! buffer. Each packet is decrypted (AES-128-CBC) and decoded on arrival — either
-//! ALAC (`a=rtpmap:… AppleLossless`) or raw PCM (`a=rtpmap:… L16/<rate>/<ch>`).
+//! buffer. Each packet is decrypted (AES-128-CBC) and decoded on arrival — ALAC,
+//! AAC-ELD for screen mirroring, or raw PCM (`L16`).
 //! The consumer dequeues packets in order, with silence substitution for missing
 //! packets and optional retransmit requests for gaps.
 
@@ -22,6 +22,72 @@ const RAOP_BUFFER_LENGTH: usize = 32;
 /// first packet establishes the real frame size. 352 matches the classic AirPlay
 /// ALAC frame; it is only used to size silence for a missing *first* packet.
 const PCM_DEFAULT_FRAME_SAMPLES: usize = 352;
+
+/// Build the minimal AAC AudioSpecificConfig for AirPlay's AAC-ELD mirror
+/// stream. The stream SETUP supplies the rate, channels, and 480/512 frame size.
+#[cfg(feature = "ap2")]
+fn aac_eld_audio_specific_config(
+    sample_rate: u32,
+    channels: u8,
+    frame_samples: u32,
+) -> Option<Vec<u8>> {
+    fn write_bits(bits: &mut Vec<bool>, value: u32, width: usize) {
+        for shift in (0..width).rev() {
+            bits.push((value >> shift) & 1 != 0);
+        }
+    }
+
+    let frequency_index = match sample_rate {
+        96_000 => 0,
+        88_200 => 1,
+        64_000 => 2,
+        48_000 => 3,
+        44_100 => 4,
+        32_000 => 5,
+        24_000 => 6,
+        22_050 => 7,
+        16_000 => 8,
+        12_000 => 9,
+        11_025 => 10,
+        8_000 => 11,
+        7_350 => 12,
+        _ => return None,
+    };
+    let frame_length_flag = match frame_samples {
+        512 => 0,
+        480 => 1,
+        _ => return None,
+    };
+    let channel_config = match channels {
+        1 => 1,
+        2 => 2,
+        _ => return None,
+    };
+
+    let mut bits = Vec::with_capacity(32);
+    // ER AAC-ELD uses escaped AudioObjectType 39: 31 followed by 39 - 32.
+    write_bits(&mut bits, 31, 5);
+    write_bits(&mut bits, 39 - 32, 6);
+    write_bits(&mut bits, frequency_index, 4);
+    write_bits(&mut bits, channel_config, 4);
+    write_bits(&mut bits, frame_length_flag, 1);
+    write_bits(&mut bits, 0, 3); // Section/scalefactor/spectral resilience flags.
+    write_bits(&mut bits, 0, 1); // No low-delay SBR extension.
+    write_bits(&mut bits, 0, 4); // ELDEXT_TERM.
+    write_bits(&mut bits, 0, 2); // epConfig: no error protection.
+    while !bits.len().is_multiple_of(8) {
+        bits.push(false);
+    }
+
+    Some(
+        bits.chunks_exact(8)
+            .map(|byte| {
+                byte.iter()
+                    .fold(0u8, |acc, bit| (acc << 1) | u8::from(*bit))
+            })
+            .collect(),
+    )
+}
 
 type Aes128CbcDec = cbc::Decryptor<aes::Aes128>;
 
@@ -57,6 +123,14 @@ enum Codec {
     Alac {
         config: AlacConfig,
         decoder: AlacDecoder,
+    },
+    /// AAC-ELD used by legacy AirPlay screen mirroring (stream `ct=8`).
+    #[cfg(feature = "ap2")]
+    AacEld {
+        decoder: rusty_aac::AacDecoder,
+        sample_rate: u32,
+        channels: u8,
+        frame_samples: u32,
     },
     /// Raw linear PCM (`L16`): big-endian interleaved S16, no compression.
     Pcm { config: PcmConfig },
@@ -242,6 +316,52 @@ impl RaopBuffer {
         Self::build(rtpmap, fmtp, None)
     }
 
+    /// Create a legacy AAC-ELD mirroring buffer using the RTP stream's
+    /// out-of-band format fields and FairPlay AES-CBC keys.
+    #[cfg(feature = "ap2")]
+    pub(crate) fn new_aac_eld(
+        sample_rate: u32,
+        channels: u8,
+        frame_samples: u32,
+        aes_key: &[u8; RAOP_AESKEY_LEN],
+        aes_iv: &[u8; RAOP_AESIV_LEN],
+    ) -> Option<Self> {
+        let config = aac_eld_audio_specific_config(sample_rate, channels, frame_samples)?;
+        let decoder = rusty_aac::AacDecoder::with_config_bytes(&config).ok()?;
+        let frame_capacity = frame_samples as usize * channels as usize;
+        let entries = (0..RAOP_BUFFER_LENGTH)
+            .map(|_| BufferEntry {
+                available: false,
+                flags: 0,
+                entry_type: 0,
+                seqnum: 0,
+                timestamp: 0,
+                ssrc: 0,
+                audio_buffer: vec![0.0f32; frame_capacity],
+                audio_buffer_len: 0,
+            })
+            .collect();
+
+        Some(Self {
+            aes: Some(AesSession {
+                key: *aes_key,
+                iv: *aes_iv,
+            }),
+            codec: Codec::AacEld {
+                decoder,
+                sample_rate,
+                channels,
+                frame_samples,
+            },
+            is_empty: true,
+            first_seqnum: 0,
+            last_seqnum: 0,
+            entries,
+            frame_capacity,
+            silence_samples: frame_capacity,
+        })
+    }
+
     fn build(rtpmap: &str, fmtp: &str, aes: Option<AesSession>) -> Option<Self> {
         let (codec, frame_capacity, silence_samples) = match parse_codec(rtpmap)? {
             CodecConfig::Pcm(config) => {
@@ -298,6 +418,15 @@ impl RaopBuffer {
                 num_channels: config.num_channels,
                 sample_rate: config.sample_rate,
             },
+            #[cfg(feature = "ap2")]
+            Codec::AacEld {
+                sample_rate,
+                channels,
+                ..
+            } => StreamFormat {
+                num_channels: *channels,
+                sample_rate: *sample_rate,
+            },
             Codec::Pcm { config } => StreamFormat {
                 num_channels: config.num_channels,
                 sample_rate: config.sample_rate,
@@ -314,6 +443,15 @@ impl RaopBuffer {
         let datalen = data.len();
         if !(12..=RAOP_PACKET_LEN).contains(&datalen) {
             return -1;
+        }
+        // AAC-ELD sends a short startup marker in place of encoded audio. It is
+        // not encrypted and must not be passed to the codec decoder.
+        #[cfg(feature = "ap2")]
+        if matches!(&self.codec, Codec::AacEld { .. })
+            && datalen == 16
+            && data[12..] == [0x00, 0x68, 0x34, 0x00]
+        {
+            return 0;
         }
 
         // Extract sequence number from RTP header bytes 2-3 (big-endian).
@@ -389,6 +527,28 @@ impl RaopBuffer {
                     *out_sample = i16::from_le_bytes(*chunk) as f32 / 32768.0;
                     n += 1;
                 }
+                n
+            }
+            #[cfg(feature = "ap2")]
+            Codec::AacEld {
+                decoder,
+                sample_rate,
+                channels,
+                frame_samples,
+            } => {
+                let decoded = match decoder.decode(&packet_buf, None) {
+                    Ok(decoded) => decoded,
+                    Err(_) => return 0,
+                };
+                if decoded.sample_rate != *sample_rate
+                    || decoded.channels != *channels as u16
+                    || decoded.frames() != *frame_samples as usize
+                {
+                    return 0;
+                }
+                let out = &mut self.entries[idx].audio_buffer;
+                let n = decoded.samples.len().min(out.len());
+                out[..n].copy_from_slice(&decoded.samples[..n]);
                 n
             }
             Codec::Pcm { config } => {

@@ -4,7 +4,7 @@ use crate::codec::alac::AlacFormat;
 use crate::crypto::pairing_homekit::{self, PairVerifyServer, SrpServer};
 #[cfg(feature = "video")]
 use crate::error::CryptoError;
-use crate::error::{ProtocolError, ShairplayError};
+use crate::error::{CodecError, ProtocolError, ShairplayError};
 use crate::proto::http::{HttpRequest, HttpResponse};
 #[cfg(feature = "video")]
 use crate::raop::rtp::RaopRtp;
@@ -695,22 +695,47 @@ fn setup_stream_realtime(
         // Legacy ALAC — only available with video feature (UxPlay-style features).
         #[cfg(feature = "video")]
         {
-            tracing::info!(
-                stream_type = 96,
-                sample_rate = sr,
-                "Legacy ALAC (AES-CBC via ekey)"
-            );
-
-            let aes_key = conn.ekey.unwrap_or([0u8; 16]);
-            let aes_iv = conn.eiv.unwrap_or([0u8; 16]);
+            let codec_type = stream0
+                .get("ct")
+                .and_then(|v| v.as_unsigned_integer())
+                .unwrap_or(2) as u8;
+            let aac_eld = match codec_type {
+                2 => None,
+                8 => Some(crate::raop::rtp::AacEldConfig {
+                    sample_rate: sr as u32,
+                    channels: 2,
+                    frame_samples: spf as u32,
+                }),
+                other => {
+                    let error = ShairplayError::Codec(CodecError::UnsupportedFormat(format!(
+                        "legacy AirPlay audio codec type {other}"
+                    )));
+                    tracing::warn!(%error, "Unsupported legacy AirPlay audio codec");
+                    conn.shared.handler.on_error(&error);
+                    return None;
+                }
+            };
+            let (Some(aes_key), Some(aes_iv)) = (conn.ekey, conn.eiv) else {
+                let error = ShairplayError::Crypto(CryptoError::FairPlay(
+                    "legacy type 96 audio stream requires FairPlay ekey and eiv".into(),
+                ));
+                tracing::warn!(%error, "Declining legacy audio stream without encryption keys");
+                conn.shared.handler.on_error(&error);
+                return None;
+            };
             let fmtp = format!("96 {spf} 0 16 40 10 14 2 255 0 0 {sr}");
             conn.raop_rtp = RaopRtp::new(
                 conn.shared.handler.clone(),
                 crate::raop::rtp::RtpConfig {
                     remote: conn.remote_socket.ip().to_string(),
                     local_addr: local_ip_from(conn),
-                    rtpmap: "96 AppleLossless".to_string(),
+                    rtpmap: if aac_eld.is_some() {
+                        "96 AAC-ELD".to_string()
+                    } else {
+                        "96 AppleLossless".to_string()
+                    },
                     fmtp: Some(fmtp),
+                    aac_eld,
                     encryption: Some(crate::raop::rtp::RtpEncryption {
                         key: aes_key,
                         iv: aes_iv,
