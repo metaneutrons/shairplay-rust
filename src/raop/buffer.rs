@@ -23,36 +23,40 @@ const RAOP_BUFFER_LENGTH: usize = 32;
 /// ALAC frame; it is only used to size silence for a missing *first* packet.
 const PCM_DEFAULT_FRAME_SAMPLES: usize = 352;
 
-/// Build the minimal AAC AudioSpecificConfig for AirPlay's AAC-ELD mirror
-/// stream. The stream SETUP supplies the rate, channels, and 480/512 frame size.
+/// Supported MPEG-4 sampling frequencies in AudioSpecificConfig index order.
 #[cfg(feature = "ap2")]
+const AAC_SAMPLE_RATES: [u32; 13] = [
+    96_000, 88_200, 64_000, 48_000, 44_100, 32_000, 24_000, 22_050, 16_000, 12_000, 11_025, 8_000,
+    7_350,
+];
+
+#[cfg(feature = "ap2")]
+fn write_aac_bits(bits: &mut Vec<bool>, value: u32, width: usize) {
+    for shift in (0..width).rev() {
+        bits.push((value >> shift) & 1 != 0);
+    }
+}
+
+#[cfg(feature = "ap2")]
+fn pack_aac_bits(bits: &[bool]) -> Vec<u8> {
+    bits.chunks_exact(8)
+        .map(|byte| {
+            byte.iter()
+                .fold(0u8, |acc, bit| (acc << 1) | u8::from(*bit))
+        })
+        .collect()
+}
+
+#[cfg(feature = "ap2")]
+/// Build AAC-ELD configuration from the negotiated stream parameters.
 fn aac_eld_audio_specific_config(
     sample_rate: u32,
     channels: u8,
     frame_samples: u32,
 ) -> Option<Vec<u8>> {
-    fn write_bits(bits: &mut Vec<bool>, value: u32, width: usize) {
-        for shift in (0..width).rev() {
-            bits.push((value >> shift) & 1 != 0);
-        }
-    }
-
-    let frequency_index = match sample_rate {
-        96_000 => 0,
-        88_200 => 1,
-        64_000 => 2,
-        48_000 => 3,
-        44_100 => 4,
-        32_000 => 5,
-        24_000 => 6,
-        22_050 => 7,
-        16_000 => 8,
-        12_000 => 9,
-        11_025 => 10,
-        8_000 => 11,
-        7_350 => 12,
-        _ => return None,
-    };
+    let frequency_index = AAC_SAMPLE_RATES
+        .iter()
+        .position(|&rate| rate == sample_rate)? as u32;
     let frame_length_flag = match frame_samples {
         512 => 0,
         480 => 1,
@@ -66,27 +70,24 @@ fn aac_eld_audio_specific_config(
 
     let mut bits = Vec::with_capacity(32);
     // ER AAC-ELD uses escaped AudioObjectType 39: 31 followed by 39 - 32.
-    write_bits(&mut bits, 31, 5);
-    write_bits(&mut bits, 39 - 32, 6);
-    write_bits(&mut bits, frequency_index, 4);
-    write_bits(&mut bits, channel_config, 4);
-    write_bits(&mut bits, frame_length_flag, 1);
-    write_bits(&mut bits, 0, 3); // Section/scalefactor/spectral resilience flags.
-    write_bits(&mut bits, 0, 1); // No low-delay SBR extension.
-    write_bits(&mut bits, 0, 4); // ELDEXT_TERM.
-    write_bits(&mut bits, 0, 2); // epConfig: no error protection.
+    for (value, width) in [
+        (31, 5),
+        (39 - 32, 6),
+        (frequency_index, 4),
+        (channel_config, 4),
+        (frame_length_flag, 1),
+        (0, 3), // Section/scalefactor/spectral resilience flags.
+        (0, 1), // No low-delay SBR extension.
+        (0, 4), // ELDEXT_TERM.
+        (0, 2), // epConfig: no error protection.
+    ] {
+        write_aac_bits(&mut bits, value, width);
+    }
     while !bits.len().is_multiple_of(8) {
         bits.push(false);
     }
 
-    Some(
-        bits.chunks_exact(8)
-            .map(|byte| {
-                byte.iter()
-                    .fold(0u8, |acc, bit| (acc << 1) | u8::from(*bit))
-            })
-            .collect(),
-    )
+    Some(pack_aac_bits(&bits))
 }
 
 type Aes128CbcDec = cbc::Decryptor<aes::Aes128>;
