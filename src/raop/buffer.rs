@@ -39,7 +39,9 @@ fn write_aac_bits(bits: &mut Vec<bool>, value: u32, width: usize) {
 
 #[cfg(feature = "ap2")]
 fn pack_aac_bits(bits: &[bool]) -> Vec<u8> {
-    bits.chunks_exact(8)
+    bits.as_chunks::<8>()
+        .0
+        .iter()
         .map(|byte| {
             byte.iter()
                 .fold(0u8, |acc, bit| (acc << 1) | u8::from(*bit))
@@ -128,7 +130,7 @@ enum Codec {
     /// AAC-ELD used by legacy AirPlay screen mirroring (stream `ct=8`).
     #[cfg(feature = "ap2")]
     AacEld {
-        decoder: rusty_aac::AacDecoder,
+        decoder: Box<rusty_aac::AacDecoder>,
         sample_rate: u32,
         channels: u8,
         frame_samples: u32,
@@ -349,7 +351,7 @@ impl RaopBuffer {
                 iv: *aes_iv,
             }),
             codec: Codec::AacEld {
-                decoder,
+                decoder: Box::new(decoder),
                 sample_rate,
                 channels,
                 frame_samples,
