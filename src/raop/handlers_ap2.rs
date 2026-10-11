@@ -3,8 +3,8 @@
 use crate::codec::alac::AlacFormat;
 use crate::crypto::pairing_homekit::{self, PairVerifyServer, SrpServer};
 #[cfg(feature = "video")]
-use crate::error::CryptoError;
-use crate::error::{CodecError, ProtocolError, ShairplayError};
+use crate::error::{CodecError, CryptoError};
+use crate::error::{ProtocolError, ShairplayError};
 use crate::proto::http::{HttpRequest, HttpResponse};
 #[cfg(feature = "video")]
 use crate::raop::rtp::RaopRtp;
@@ -616,7 +616,7 @@ fn setup_initial(conn: &mut RaopConnection, dict: &plist::Dictionary) -> Option<
 
     resp_dict.insert(
         "timingPort".into(),
-        plist::Value::Integer((timing_port as u64).into()),
+        plist::Value::Integer(timing_port.into()),
     );
 
     Some(resp_dict)

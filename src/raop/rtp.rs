@@ -140,7 +140,7 @@ pub(crate) struct RaopRtp {
     output_sample_rate: Option<u32>,
     /// Decoded output stream format (channels + source sample rate).
     format: StreamFormat,
-    /// Shared packet buffer (decrypt + decode on queue, dequeue in order).
+    /// Shared packet buffer (decrypt on queue, decode AAC-ELD in dequeue order).
     buffer: Arc<Mutex<RaopBuffer>>,
     /// Shared mutable state for cross-task event delivery.
     state: Arc<Mutex<RtpState>>,

@@ -1,14 +1,18 @@
 //! AP1 RTP packet buffer with AES-CBC decryption and codec decode to f32.
 //!
 //! Incoming RTP packets are queued by sequence number into a fixed-size circular
-//! buffer. Each packet is decrypted (AES-128-CBC) and decoded on arrival — ALAC,
-//! AAC-ELD for screen mirroring, or raw PCM (`L16`).
+//! buffer. Each packet is decrypted (AES-128-CBC) on arrival. ALAC and raw PCM
+//! (`L16`) are decoded immediately; AAC-ELD is decoded in playback order so its
+//! synthesis history follows the stream rather than packet arrival order.
 //! The consumer dequeues packets in order, with silence substitution for missing
 //! packets and optional retransmit requests for gaps.
 
 use crate::codec::alac::{AlacConfig, AlacDecoder};
 use aes::cipher::{BlockModeDecrypt, KeyIvInit};
 use std::borrow::Cow;
+
+#[cfg(all(test, feature = "ap2"))]
+mod tests;
 
 /// AES-128 key length in bytes.
 pub const RAOP_AESKEY_LEN: usize = 16;
@@ -131,12 +135,20 @@ enum Codec {
     #[cfg(feature = "ap2")]
     AacEld {
         decoder: Box<rusty_aac::AacDecoder>,
-        sample_rate: u32,
-        channels: u8,
-        frame_samples: u32,
+        config: Box<rusty_aac::config::StreamConfig>,
     },
     /// Raw linear PCM (`L16`): big-endian interleaved S16, no compression.
     Pcm { config: PcmConfig },
+}
+
+impl Codec {
+    /// Discard synthesis history after a discontinuity, retaining the format.
+    fn reset_history(&mut self) {
+        #[cfg(feature = "ap2")]
+        if let Self::AacEld { decoder, config } = self {
+            **decoder = rusty_aac::AacDecoder::with_stream_config((**config).clone());
+        }
+    }
 }
 
 /// Validated codec parameters parsed from the SDP `rtpmap` attribute.
@@ -145,9 +157,9 @@ enum CodecConfig {
     Pcm(PcmConfig),
 }
 
-/// A single slot in the circular buffer holding one decoded audio frame.
+/// A single slot holding decoded audio or an encoded AAC-ELD access unit.
 struct BufferEntry {
-    /// Whether this slot contains a valid decoded frame.
+    /// Whether this slot contains a queued frame.
     available: bool,
     /// RTP flags byte (first byte of RTP header).
     flags: u8,
@@ -163,6 +175,9 @@ struct BufferEntry {
     audio_buffer: Vec<f32>,
     /// Actual number of valid samples in `audio_buffer`.
     audio_buffer_len: usize,
+    /// Decrypted AAC-ELD access unit, decoded only when this slot is dequeued.
+    #[cfg(feature = "ap2")]
+    encoded_buffer: Vec<u8>,
 }
 
 /// Compare two RTP sequence numbers with wrapping (handles 16-bit overflow).
@@ -272,6 +287,7 @@ fn build_decoder_info(config: &AlacConfig) -> [u8; 48] {
 ///
 /// ```text
 /// RTP packet → AES-128-CBC decrypt → ALAC or L16 decode → f32 → buffer slot
+/// RTP packet → AES-128-CBC decrypt → buffer slot → AAC-ELD decode → f32
 /// ```
 pub struct RaopBuffer {
     aes: Option<AesSession>,
@@ -330,7 +346,8 @@ impl RaopBuffer {
         aes_iv: &[u8; RAOP_AESIV_LEN],
     ) -> Option<Self> {
         let config = aac_eld_audio_specific_config(sample_rate, channels, frame_samples)?;
-        let decoder = rusty_aac::AacDecoder::with_config_bytes(&config).ok()?;
+        let config = rusty_aac::config::parse(&config).ok()?;
+        let decoder = rusty_aac::AacDecoder::with_stream_config(config.clone());
         let frame_capacity = frame_samples as usize * channels as usize;
         let entries = (0..RAOP_BUFFER_LENGTH)
             .map(|_| BufferEntry {
@@ -342,6 +359,7 @@ impl RaopBuffer {
                 ssrc: 0,
                 audio_buffer: vec![0.0f32; frame_capacity],
                 audio_buffer_len: 0,
+                encoded_buffer: Vec::new(),
             })
             .collect();
 
@@ -352,9 +370,7 @@ impl RaopBuffer {
             }),
             codec: Codec::AacEld {
                 decoder: Box::new(decoder),
-                sample_rate,
-                channels,
-                frame_samples,
+                config: Box::new(config),
             },
             is_empty: true,
             first_seqnum: 0,
@@ -399,6 +415,8 @@ impl RaopBuffer {
                 ssrc: 0,
                 audio_buffer: vec![0.0f32; frame_capacity],
                 audio_buffer_len: 0,
+                #[cfg(feature = "ap2")]
+                encoded_buffer: Vec::new(),
             })
             .collect();
 
@@ -422,13 +440,9 @@ impl RaopBuffer {
                 sample_rate: config.sample_rate,
             },
             #[cfg(feature = "ap2")]
-            Codec::AacEld {
-                sample_rate,
-                channels,
-                ..
-            } => StreamFormat {
-                num_channels: *channels,
-                sample_rate: *sample_rate,
+            Codec::AacEld { config, .. } => StreamFormat {
+                num_channels: config.channels() as u8,
+                sample_rate: config.sample_rate,
             },
             Codec::Pcm { config } => StreamFormat {
                 num_channels: config.num_channels,
@@ -438,6 +452,7 @@ impl RaopBuffer {
     }
 
     /// Queue an RTP packet: decrypt, decode (ALAC or L16), store f32 in buffer.
+    /// AAC-ELD access units are stored encoded until playback in `dequeue`.
     ///
     /// Returns 1 on success, 0 if duplicate/stale, -1 if packet is malformed.
     /// If the sequence number is far ahead of the current window, the buffer is
@@ -505,7 +520,7 @@ impl RaopBuffer {
             Cow::Borrowed(payload)
         };
 
-        // Decode into the slot's f32 buffer.
+        // Decode independent frames now; retain stateful AAC-ELD for playback.
         let capacity = self.frame_capacity;
         let num_samples = match &mut self.codec {
             Codec::Alac { decoder, .. } => {
@@ -533,26 +548,11 @@ impl RaopBuffer {
                 n
             }
             #[cfg(feature = "ap2")]
-            Codec::AacEld {
-                decoder,
-                sample_rate,
-                channels,
-                frame_samples,
-            } => {
-                let decoded = match decoder.decode(&packet_buf, None) {
-                    Ok(decoded) => decoded,
-                    Err(_) => return 0,
-                };
-                if decoded.sample_rate != *sample_rate
-                    || decoded.channels != *channels as u16
-                    || decoded.frames() != *frame_samples as usize
-                {
-                    return 0;
-                }
-                let out = &mut self.entries[idx].audio_buffer;
-                let n = decoded.samples.len().min(out.len());
-                out[..n].copy_from_slice(&decoded.samples[..n]);
-                n
+            Codec::AacEld { .. } => {
+                let encoded = &mut self.entries[idx].encoded_buffer;
+                encoded.clear();
+                encoded.extend_from_slice(&packet_buf);
+                0
             }
             Codec::Pcm { config } => {
                 // Raw L16: big-endian (network order) interleaved S16 → f32.
@@ -604,6 +604,9 @@ impl RaopBuffer {
     /// If the next frame is missing and `no_resend` is false, returns `None`
     /// to allow time for a retransmit. If `no_resend` is true (or the buffer
     /// is full), substitutes silence for the missing frame.
+    /// AAC-ELD decoding happens here. Missing or invalid access units produce
+    /// silence and reset synthesis history before the next frame; retransmits
+    /// that arrive after a skipped frame are stale and rejected by `queue`.
     pub fn dequeue(&mut self, no_resend: bool) -> Option<&[f32]> {
         let buflen = seqnum_cmp(self.last_seqnum, self.first_seqnum) as i32 + 1;
         if self.is_empty || buflen <= 0 {
@@ -618,8 +621,30 @@ impl RaopBuffer {
 
         self.first_seqnum = self.first_seqnum.wrapping_add(1);
 
-        // Substitute silence for missing frames.
+        #[cfg(feature = "ap2")]
+        if let Codec::AacEld { decoder, config } = &mut self.codec {
+            let entry = &mut self.entries[idx];
+            if entry.available {
+                match decoder.decode(&entry.encoded_buffer, None) {
+                    Ok(decoded)
+                        if decoded.sample_rate == config.sample_rate
+                            && usize::from(decoded.channels) == config.channels()
+                            && decoded.frames() == config.frame_length
+                            && decoded.samples.len() == self.frame_capacity =>
+                    {
+                        entry.audio_buffer.copy_from_slice(&decoded.samples);
+                        entry.audio_buffer_len = decoded.samples.len();
+                    }
+                    _ => entry.available = false,
+                }
+            }
+            entry.encoded_buffer.clear();
+        }
+
+        // The decoder has no loss-concealment API. Silence plus a fresh decoder
+        // avoids carrying synthesis history across a missing or invalid unit.
         if !self.entries[idx].available {
+            self.codec.reset_history();
             let size = self.silence_samples.min(self.frame_capacity);
             self.entries[idx].audio_buffer[..size].fill(0.0);
             self.entries[idx].audio_buffer_len = size;
@@ -630,14 +655,17 @@ impl RaopBuffer {
         Some(&self.entries[idx].audio_buffer[..len])
     }
 
-    /// Flush the buffer, discarding all queued frames.
+    /// Flush the buffer, discarding all queued frames and codec synthesis history.
     ///
     /// If `next_seq` is a valid 16-bit value (0..=0xFFFF), the buffer resets
     /// to expect that sequence number next. Otherwise the buffer is fully emptied.
     pub fn flush(&mut self, next_seq: i32) {
+        self.codec.reset_history();
         for entry in &mut self.entries {
             entry.available = false;
             entry.audio_buffer_len = 0;
+            #[cfg(feature = "ap2")]
+            entry.encoded_buffer.clear();
         }
         if !(0..=0xffff).contains(&next_seq) {
             self.is_empty = true;
