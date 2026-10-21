@@ -116,6 +116,8 @@ minifb = "0.29.0"
 [[example]]
 name = "player"
 required-features = []
+# Run the example's Session regression tests with `cargo test`.
+test = true
 
 [lints]
 workspace = true
