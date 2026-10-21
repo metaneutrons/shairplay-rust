@@ -306,6 +306,7 @@ pub(crate) fn handle_announce(
             local_addr: local_ip_from(conn),
             rtpmap: rtpmap.to_string(),
             fmtp: fmtp.map(str::to_owned),
+            aac_eld: None,
             encryption,
             output_sample_rate: conn.shared.output_sample_rate,
             remote_socket: conn.remote_socket,

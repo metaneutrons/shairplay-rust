@@ -3,7 +3,7 @@
 use crate::codec::alac::AlacFormat;
 use crate::crypto::pairing_homekit::{self, PairVerifyServer, SrpServer};
 #[cfg(feature = "video")]
-use crate::error::CryptoError;
+use crate::error::{CodecError, CryptoError};
 use crate::error::{ProtocolError, ShairplayError};
 use crate::proto::http::{HttpRequest, HttpResponse};
 #[cfg(feature = "video")]
@@ -371,7 +371,16 @@ pub(crate) fn handle_setup(
     );
 
     let resp_dict = if let Some(streams) = dict.get("streams").and_then(|v| v.as_array()) {
-        setup_streams(conn, streams)?
+        match setup_streams(conn, streams) {
+            Ok(resp_dict) => resp_dict,
+            Err(rejection) => {
+                if let Some((code, message)) = rejection.status() {
+                    let cseq = request.header("CSeq").unwrap_or("0");
+                    *response = super::rtsp::new_response(code, message, cseq);
+                }
+                return None;
+            }
+        }
     } else {
         setup_initial(conn, dict)?
     };
@@ -380,11 +389,84 @@ pub(crate) fn handle_setup(
 }
 
 #[cfg(feature = "ap2")]
+/// Why a stream SETUP was declined; selects the RTSP status returned to the sender.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SetupRejection {
+    /// Declined without a specific cause; the reply keeps `200 OK` and has no body.
+    Unspecified,
+    /// The sender requested parameters this receiver cannot honor.
+    BadRequest,
+    /// A local resource (socket or receive task) could not be created.
+    Internal,
+}
+
+#[cfg(feature = "ap2")]
+impl SetupRejection {
+    /// The RTSP status replacing the dispatcher's default `200 OK`, if any.
+    fn status(self) -> Option<(u16, &'static str)> {
+        match self {
+            Self::Unspecified => None,
+            Self::BadRequest => Some((400, "Bad Request")),
+            Self::Internal => Some((500, "Internal Server Error")),
+        }
+    }
+}
+
+#[cfg(feature = "ap2")]
+/// Report a declined stream SETUP to the application and select its RTSP status.
+fn decline_stream(
+    conn: &RaopConnection,
+    error: ShairplayError,
+    rejection: SetupRejection,
+) -> SetupRejection {
+    tracing::warn!(%error, ?rejection, "Declining stream SETUP");
+    conn.shared.handler.on_error(&error);
+    rejection
+}
+
+#[cfg(feature = "ap2")]
+/// Read an optional unsigned stream SETUP integer, narrowing it to `T` before use so
+/// out-of-range values are rejected instead of wrapping into a supported value.
+fn stream_uint<T: TryFrom<u64>>(
+    conn: &RaopConnection,
+    stream: &plist::Dictionary,
+    key: &str,
+    default: T,
+) -> Result<T, SetupRejection> {
+    let Some(value) = stream.get(key) else {
+        return Ok(default);
+    };
+    value
+        .as_unsigned_integer()
+        .and_then(|v| T::try_from(v).ok())
+        .ok_or_else(|| {
+            decline_stream(
+                conn,
+                ShairplayError::Protocol(ProtocolError::InvalidRtsp(format!(
+                    "stream SETUP: {key} is not an in-range unsigned integer: {value:?}"
+                ))),
+                SetupRejection::BadRequest,
+            )
+        })
+}
+
+#[cfg(feature = "ap2")]
 /// Stream SETUP (`streams` present): dispatch by stream type, then add the shared control port.
-fn setup_streams(conn: &mut RaopConnection, streams: &[plist::Value]) -> Option<plist::Dictionary> {
+fn setup_streams(
+    conn: &mut RaopConnection,
+    streams: &[plist::Value],
+) -> Result<plist::Dictionary, SetupRejection> {
+    use SetupRejection::Unspecified;
+
     // Stream SETUP — type 96 (realtime) or type 103 (buffered) or type 110 (video)
-    let stream0 = streams.first()?.as_dictionary()?;
-    let stream_type = stream0.get("type")?.as_unsigned_integer()?;
+    let stream0 = streams
+        .first()
+        .and_then(|v| v.as_dictionary())
+        .ok_or(Unspecified)?;
+    let stream_type = stream0
+        .get("type")
+        .and_then(|v| v.as_unsigned_integer())
+        .ok_or(Unspecified)?;
     let stream_keys: Vec<_> = stream0.keys().collect();
     tracing::info!(stream_type, ?stream_keys, "Stream SETUP");
 
@@ -393,10 +475,10 @@ fn setup_streams(conn: &mut RaopConnection, streams: &[plist::Value]) -> Option<
 
     match stream_type {
         96 => setup_stream_realtime(conn, stream0, &mut stream_resp)?,
-        103 => setup_stream_buffered(conn, stream0, &mut stream_resp)?,
-        130 => setup_stream_rc(conn, stream0, &mut stream_resp)?,
+        103 => setup_stream_buffered(conn, stream0, &mut stream_resp).ok_or(Unspecified)?,
+        130 => setup_stream_rc(conn, stream0, &mut stream_resp).ok_or(Unspecified)?,
         #[cfg(feature = "video")]
-        110 => setup_stream_video(conn, stream0, &mut stream_resp)?,
+        110 => setup_stream_video(conn, stream0, &mut stream_resp).ok_or(Unspecified)?,
         _ => {
             // Type 120 = Apple Music video (animated album art / music videos). Not implemented.
             tracing::warn!(stream_type, "Unknown AP2 stream type");
@@ -404,8 +486,8 @@ fn setup_streams(conn: &mut RaopConnection, streams: &[plist::Value]) -> Option<
     }
 
     // Control port (shared across streams)
-    let ctrl_sock = std::net::UdpSocket::bind(bind_addr_for(conn)).ok()?;
-    let ctrl_port = ctrl_sock.local_addr().ok()?.port();
+    let ctrl_sock = std::net::UdpSocket::bind(bind_addr_for(conn)).map_err(|_| Unspecified)?;
+    let ctrl_port = ctrl_sock.local_addr().map_err(|_| Unspecified)?.port();
     drop(ctrl_sock);
     stream_resp.insert(
         "controlPort".into(),
@@ -417,7 +499,7 @@ fn setup_streams(conn: &mut RaopConnection, streams: &[plist::Value]) -> Option<
         "streams".into(),
         plist::Value::Array(vec![plist::Value::Dictionary(stream_resp)]),
     );
-    Some(resp_dict)
+    Ok(resp_dict)
 }
 
 #[cfg(feature = "ap2")]
@@ -616,33 +698,25 @@ fn setup_initial(conn: &mut RaopConnection, dict: &plist::Dictionary) -> Option<
 
     resp_dict.insert(
         "timingPort".into(),
-        plist::Value::Integer((timing_port as u64).into()),
+        plist::Value::Integer(timing_port.into()),
     );
 
     Some(resp_dict)
 }
 
 #[cfg(feature = "ap2")]
-/// Stream type 96 — realtime ALAC (ChaCha20 per-packet), or legacy AES-CBC ALAC under `video`.
+/// Stream type 96 — realtime ALAC (ChaCha20 per-packet), or legacy AES-CBC ALAC/AAC-ELD under
+/// `video`. Declined streams select a non-success RTSP status and notify the handler.
 fn setup_stream_realtime(
     conn: &mut RaopConnection,
     stream0: &plist::Dictionary,
     stream_resp: &mut plist::Dictionary,
-) -> Option<()> {
-    let sr = stream0
-        .get("sr")
-        .and_then(|v| v.as_unsigned_integer())
-        .unwrap_or(44100);
-    let spf = stream0
-        .get("spf")
-        .and_then(|v| v.as_unsigned_integer())
-        .unwrap_or(352);
-    let audio_format = stream0
-        .get("audioFormat")
-        .and_then(|v| v.as_unsigned_integer())
-        .unwrap_or(0) as u32;
+) -> Result<(), SetupRejection> {
+    let sr: u32 = stream_uint(conn, stream0, "sr", 44100)?;
+    let spf: u32 = stream_uint(conn, stream0, "spf", 352)?;
+    let audio_format: u32 = stream_uint(conn, stream0, "audioFormat", 0)?;
     let alac_format = AlacFormat::from_audio_format(audio_format).unwrap_or(AlacFormat {
-        sample_rate: sr as u32,
+        sample_rate: sr,
         bit_depth: 16,
         channels: 2,
     });
@@ -668,13 +742,16 @@ fn setup_stream_realtime(
         let mut shk_arr = [0u8; 32];
         shk_arr.copy_from_slice(shk);
 
-        let socket = bind_udp(bind_addr_for(conn))?;
-        let audio_port = socket.local_addr().ok()?.port();
+        let socket = bind_udp(bind_addr_for(conn)).ok_or(SetupRejection::Internal)?;
+        let audio_port = socket
+            .local_addr()
+            .map_err(|_| SetupRejection::Internal)?
+            .port();
 
         let handler = conn.shared.handler.clone();
         let output_config = crate::raop::realtime_audio::OutputConfig {
             source_sample_rate: alac_format.sample_rate,
-            samples_per_frame: spf as u32,
+            samples_per_frame: spf,
             channels: alac_format.channels,
             bit_depth: alac_format.bit_depth,
             sample_rate: conn.shared.output_sample_rate,
@@ -695,22 +772,53 @@ fn setup_stream_realtime(
         // Legacy ALAC — only available with video feature (UxPlay-style features).
         #[cfg(feature = "video")]
         {
-            tracing::info!(
-                stream_type = 96,
-                sample_rate = sr,
-                "Legacy ALAC (AES-CBC via ekey)"
-            );
+            // Match the original integer so unsupported values cannot wrap into a codec.
+            let aac_eld = match stream_uint::<u64>(conn, stream0, "ct", 2)? {
+                2 => None,
+                8 => Some(crate::raop::rtp::AacEldConfig {
+                    sample_rate: sr,
+                    channels: 2,
+                    frame_samples: spf,
+                }),
+                other => {
+                    return Err(decline_stream(
+                        conn,
+                        ShairplayError::Codec(CodecError::UnsupportedFormat(format!(
+                            "legacy AirPlay audio codec type {other}"
+                        ))),
+                        SetupRejection::BadRequest,
+                    ));
+                }
+            };
+            let (Some(aes_key), Some(aes_iv)) = (conn.ekey, conn.eiv) else {
+                return Err(decline_stream(
+                    conn,
+                    ShairplayError::Crypto(CryptoError::FairPlay(
+                        "legacy type 96 audio stream requires FairPlay ekey and eiv".into(),
+                    )),
+                    SetupRejection::BadRequest,
+                ));
+            };
+            let control_port: u16 = stream_uint(conn, stream0, "controlPort", 0)?;
 
-            let aes_key = conn.ekey.unwrap_or([0u8; 16]);
-            let aes_iv = conn.eiv.unwrap_or([0u8; 16]);
+            // A new legacy stream replaces any previous receiver on this connection.
+            if let Some(mut previous) = conn.raop_rtp.take() {
+                previous.stop();
+            }
+            let codec = if aac_eld.is_some() {
+                "AAC-ELD"
+            } else {
+                "AppleLossless"
+            };
             let fmtp = format!("96 {spf} 0 16 40 10 14 2 255 0 0 {sr}");
-            conn.raop_rtp = RaopRtp::new(
+            let Some(mut rtp) = RaopRtp::new(
                 conn.shared.handler.clone(),
                 crate::raop::rtp::RtpConfig {
                     remote: conn.remote_socket.ip().to_string(),
                     local_addr: local_ip_from(conn),
-                    rtpmap: "96 AppleLossless".to_string(),
+                    rtpmap: format!("96 {codec}"),
                     fmtp: Some(fmtp),
+                    aac_eld,
                     encryption: Some(crate::raop::rtp::RtpEncryption {
                         key: aes_key,
                         iv: aes_iv,
@@ -718,29 +826,39 @@ fn setup_stream_realtime(
                     output_sample_rate: conn.shared.output_sample_rate,
                     remote_socket: conn.remote_socket,
                 },
-            );
-            if let Some(rtp) = &mut conn.raop_rtp {
-                let control_port = stream0
-                    .get("controlPort")
-                    .and_then(|v| v.as_unsigned_integer())
-                    .unwrap_or(0) as u16;
-                let (cport, _tport, dport) = rtp.start(true, control_port, 0).ok()?;
-                stream_resp.insert("dataPort".into(), plist::Value::Integer(dport.into()));
-                stream_resp.insert("controlPort".into(), plist::Value::Integer(cport.into()));
-            }
+            ) else {
+                return Err(decline_stream(
+                    conn,
+                    ShairplayError::Codec(CodecError::UnsupportedFormat(format!(
+                        "legacy {codec} stream: sr={sr} spf={spf} is not supported"
+                    ))),
+                    SetupRejection::BadRequest,
+                ));
+            };
+            let (cport, _tport, dport) = match rtp.start(true, control_port, 0) {
+                Ok(ports) => ports,
+                Err(error) => {
+                    rtp.stop();
+                    return Err(decline_stream(conn, error, SetupRejection::Internal));
+                }
+            };
+            conn.raop_rtp = Some(rtp);
+            stream_resp.insert("dataPort".into(), plist::Value::Integer(dport.into()));
+            stream_resp.insert("controlPort".into(), plist::Value::Integer(cport.into()));
         }
         #[cfg(not(feature = "video"))]
         {
             tracing::warn!("Type 96 without shk — requires video feature");
-            conn.shared
-                .handler
-                .on_error(&ShairplayError::Protocol(ProtocolError::InvalidRtsp(
+            return Err(decline_stream(
+                conn,
+                ShairplayError::Protocol(ProtocolError::InvalidRtsp(
                     "realtime (type 96) SETUP requires a shared key or the video feature".into(),
-                )));
-            return None;
+                )),
+                SetupRejection::BadRequest,
+            ));
         }
     }
-    Some(())
+    Ok(())
 }
 
 #[cfg(feature = "ap2")]
@@ -1087,3 +1205,6 @@ pub(crate) fn handle_audio_mode(
     }
     None
 }
+
+#[cfg(all(test, feature = "video"))]
+mod tests;
