@@ -254,6 +254,12 @@ buffered audio is not available — the iPhone falls back to legacy ALAC
 (type 96) which is fully supported with FairPlay key decryption and
 NTP timing.
 
+Screen-mirroring audio (legacy type 96 with `ct=8`, AAC-ELD) is decoded
+experimentally: it has been verified with live iPhone captures, but not yet
+broadly tested. A type 96 SETUP with an unsupported codec type or out-of-range
+parameters, without FairPlay keys, or whose receiver cannot be created is
+answered with a non-success RTSP status and reported via `AudioHandler::on_error`.
+
 Video decryption is implemented for the legacy feature-set path; AP2+video
 hybrid operation remains research work. See [AP2-STATUS.md](AP2-STATUS.md)
 for details.
@@ -281,22 +287,19 @@ cargo run --example player
 # AirPlay 2
 cargo run --example player --features ap2
 
-# With resampling to match output device rate (e.g. 44100→96000 Hz)
-cargo run --example player --features ap2 -- --resample
-
 # With persistent device identity (stable MAC + paired keys across restarts)
 cargo run --example player --features ap2 -- --persist state.json
 
 # Custom name and interface binding
-cargo run --example player --features ap2 -- --name "Kitchen" --bind 192.168.1.100 --persist state.json --resample
+cargo run --example player --features ap2 -- --name "Kitchen" --bind 192.168.1.100 --persist state.json
 
 # HLS video (YouTube) — requires mpv installed
-cargo run --example player --features hls -- --resample
+cargo run --example player --features hls
 ```
 
 Without `--persist`, the device gets a random MAC each run and the iPhone treats it as a new device. With `--persist`, the MAC and paired keys are saved to a JSON file.
 
-Without `--resample`, audio is delivered at the source's native rate (44100 Hz). If your output device runs at a different rate (e.g. 96000 Hz), use `--resample` to convert in the example app.
+The library delivers audio at the source's native rate (e.g. 44100 Hz). The example automatically resamples to the output device's rate (e.g. 48000 or 96000 Hz) whenever the two differ, and discards pending input, resampler history and queued output on FLUSH (e.g. a seek). The former `--resample` switch is still accepted for compatibility but has no effect.
 
 ## Architecture
 

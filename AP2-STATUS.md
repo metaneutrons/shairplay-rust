@@ -19,6 +19,7 @@
 | Metadata forwarding | — | Volume, artwork, progress, DMAP track info |
 | Event channel | — | Bidirectional encrypted TCP; `updateInfo` sent on connect. Ongoing outbound event reporting **unwired** (see Open) |
 | Realtime audio | 96 | ALAC decode, ChaCha20 decrypt, immediate delivery |
+| Screen-mirroring audio (experimental) | 96 | Legacy AES-CBC AAC-ELD (`ct=8`) decode via `rusty_aac`, `video` feature only; verified with live iPhone captures. Unsupported `ct`, out-of-range parameters, missing FairPlay keys or receiver failures return 400/500 |
 | **Video (screen mirroring)** | **110** | **AES-128-CTR decrypt, H.264 decode, working on iOS 18** |
 | Unified output | — | Always F32LE interleaved PCM to app |
 
@@ -146,14 +147,16 @@ implementation and may no longer be accurate:
   off, no pairing occurs and the raw FairPlay key is used directly.
 - "All 13+ key derivation variants failed" — **All tested with wrong FairPlay key.**
   Need to re-test with AP2 features if AP2+video is desired.
-- "Screen mirroring audio (type 96 usingScreen) has no shk" — Needs re-testing
-  with UxPlay features.
+- "Screen mirroring audio (type 96 usingScreen) has no shk" — Correct for the
+  legacy UxPlay feature set: it arrives as AES-CBC AAC-ELD (`ct=8`) keyed by the
+  FairPlay `ekey`/`eiv`, and is now decoded experimentally.
 
 ### Current Limitations
 
 - **No AP2 audio with video** — UxPlay features disable AP2 buffered audio
 - **openh264 decode errors** — Software decoder struggles at 30fps in debug mode
-- **No screen mirroring audio** — Type 96 `usingScreen` audio not yet wired up
+- **Screen mirroring audio is experimental** — Type 96 AAC-ELD (`ct=8`) is
+  decoded, but has only been verified with live iPhone captures so far
 
 ### Stream Type 120 — Video Relay (Not Implemented)
 
@@ -163,7 +166,8 @@ video relay where the app sends a video URL for the receiver to fetch directly.
 
 ### TODO
 - [ ] Test AP2+video hybrid features (can we have both AP2 audio and video?)
-- [ ] Wire up screen mirroring audio (type 96 `usingScreen`)
+- [x] Wire up screen mirroring audio (type 96 `usingScreen`, AAC-ELD `ct=8`) — experimental
+- [ ] Broader device testing of screen mirroring audio
 - [ ] Improve H.264 decode stability (release build, error recovery)
 - [ ] Re-test previous key derivation approaches with correct FairPlay key
 
