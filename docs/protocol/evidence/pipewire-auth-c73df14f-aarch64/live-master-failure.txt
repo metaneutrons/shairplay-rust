@@ -1,0 +1,4 @@
+thread 'real_pipewire_auth_setup_qualification' (505) panicked at tests/pipewire/wire.rs:82:5:
+assertion `left == right` failed
+  left: [("OPTIONS", 200), ("POST /auth-setup", 401)]
+ right: [("OPTIONS", 200), ("POST /auth-setup", 401), ("POST /auth-setup", 401)]

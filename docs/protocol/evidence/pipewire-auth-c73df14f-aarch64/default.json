@@ -1,0 +1,62 @@
+{
+  "ap2_feature": false,
+  "architecture": "aarch64",
+  "compatibility_feature": false,
+  "container_image": "sha256:b76e73d1debd25c88d3784c801b50bb81d4d867ad477bff2ee02df31aa5792d3",
+  "debug_assertions": true,
+  "passed": true,
+  "pipewire": {
+    "archive_sha256": "9f8d2b0f8d034a3ee4c19192a33e3a36daaeedf677a764c347b55c8cd33dc854",
+    "commit": "c73df14f03e30c41f6430acd82c6250dcdb168d8",
+    "kernel": "Linux 6.8.0-100-generic",
+    "runtime_packages": "libasound2=1.2.8-1+b1\nlibc6=2.36-9+deb12u14\nlibsndfile1=1.2.0-1+deb12u1\nlibssl3=3.0.20-1~deb12u2\n",
+    "rustc": "rustc 1.98.0 (88d9e12ae 2026-08-18)",
+    "source": {
+      "callback_sha256": "9b8ca2e26e7fa8fd6ef9bc7e837262107d210f483d6e036434ec04c2ec5bfb0f",
+      "patch_sha256": "de71a30ceee1c95bb9e35da1e96d20bc2136d029edf4cb1a9b155808374a2e52",
+      "regression": {
+        "auth_regression_sha256": "cc2e7d4ace88382e3d1e4aa3b34536b66fed79bf67cb824a996c21109857412f",
+        "auth_setup_digest": "passed",
+        "cases": 354,
+        "failures": 0,
+        "runner": "upstream-meson"
+      },
+      "regression_sha256": "b9c47ecb025e52f737d4eac633da30944cee7530c193f7edaca2e76a787aa12e",
+      "variant": "auth-fix"
+    },
+    "version_output": "pipewire\nCompiled with libpipewire 1.7.0\nLinked with libpipewire 1.7.0"
+  },
+  "receiver_revision": "867a18a422427e54ab4f552a1994edf3535c858e",
+  "scenarios": [
+    {
+      "audio": [],
+      "digest_retry": false,
+      "discovery_unchanged": true,
+      "exchanges": [
+        {
+          "exact_probe": false,
+          "normal_headers": true,
+          "request": "OPTIONS",
+          "response_bytes": 0,
+          "status": 200
+        },
+        {
+          "exact_probe": true,
+          "normal_headers": true,
+          "request": "POST /auth-setup",
+          "response_bytes": 0,
+          "status": 404
+        }
+      ],
+      "expected_probe_status": 404,
+      "password_protected": false,
+      "runtime_enabled": false,
+      "sender_password": "none",
+      "transport": "udp"
+    }
+  ],
+  "schema_version": 2,
+  "sender_config_sha256": "316664edcbbebbfaec314ef005465f103c3358d8c35547b0aa13dca146a3ef1c",
+  "source_wav_sha256": "fbc238d205d19bebeb2474ea4b0e0b039d4817e261eb03270919b99a57b05cc7",
+  "working_tree_dirty": false
+}

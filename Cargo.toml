@@ -92,6 +92,7 @@ hls = ["video"]
 tokio = { version = "1", features = ["test-util"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 serial_test = "3"
+tempfile = "3"
 cpal = "0.17"
 rubato = "3"
 serde = { version = "1", features = ["derive"] }

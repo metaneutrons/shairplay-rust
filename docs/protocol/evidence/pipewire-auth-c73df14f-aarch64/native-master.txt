@@ -1,0 +1,24 @@
+ninja: no work to do.
+ninja: Entering directory `/tmp/pw-build'
+[1/2] Compiling C object src/modules/pw-test-raop-auth.p/module-raop_test-auth.c.o
+[2/2] Linking target src/modules/pw-test-raop-auth
+1/1 pw-test-raop-auth FAIL            0.01s   killed by signal 6 SIGABRT
+>>> LD_LIBRARY_PATH=/tmp/pw-build/src/pipewire:/opt/pipewire/lib MALLOC_PERTURB_=14 SPA_PLUGIN_DIR=/tmp/pw-build/spa/plugins /tmp/pw-build/src/modules/pw-test-raop-auth
+――――――――――――――――――――――――――――――――――――― ✀  ―――――――――――――――――――――――――――――――――――――
+stderr:
+'destroy_count == 0' failed at ../pipewire/src/modules/module-raop/test-auth.c:121 read_request()
+――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
+
+
+Summary of Failures:
+
+1/1 pw-test-raop-auth FAIL            0.01s   killed by signal 6 SIGABRT
+
+Ok:                 0   
+Expected Fail:      0   
+Fail:               1   
+Unexpected Pass:    0   
+Skipped:            0   
+Timeout:            0   
+
+Full log written to /tmp/pw-build/meson-logs/testlog.txt

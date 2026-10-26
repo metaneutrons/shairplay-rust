@@ -1,0 +1,56 @@
+{
+  "checked_at": "2026-09-08T10:29:26.800483+00:00",
+  "merge_requests": [
+    {
+      "iid": 2987,
+      "url": "https://gitlab.freedesktop.org/pipewire/pipewire/-/merge_requests/2987",
+      "state": "opened",
+      "draft": false,
+      "source_branch": "fix/raop-tcp-framing",
+      "target_branch": "master",
+      "commit": "ddf13a8c6c15d273d3a8f3deaa9be195d2744a94",
+      "changed_files": 2,
+      "pipeline": {
+        "id": 1742474,
+        "url": "https://gitlab.freedesktop.org/metaneutrons/pipewire/-/pipelines/1742474",
+        "source": "merge_request_event",
+        "status": "success",
+        "commit": "ddf13a8c6c15d273d3a8f3deaa9be195d2744a94",
+        "jobs": {
+          "success": 62
+        }
+      }
+    },
+    {
+      "iid": 2988,
+      "url": "https://gitlab.freedesktop.org/pipewire/pipewire/-/merge_requests/2988",
+      "state": "opened",
+      "draft": false,
+      "source_branch": "fix/raop-auth-setup-digest",
+      "target_branch": "master",
+      "commit": "61446aa7c72341fec9b64dbea666395c9c4438e1",
+      "changed_files": 3,
+      "pipeline": {
+        "id": 1742477,
+        "url": "https://gitlab.freedesktop.org/metaneutrons/pipewire/-/pipelines/1742477",
+        "source": "merge_request_event",
+        "status": "success",
+        "commit": "61446aa7c72341fec9b64dbea666395c9c4438e1",
+        "jobs": {
+          "success": 62
+        }
+      }
+    }
+  ],
+  "attachment": {
+    "url": "https://gitlab.freedesktop.org/-/project/4753/uploads/b8f28728edc5f040b3ac70cad3d9e7be/pipewire-raop-pre-submission-20260908.tar.gz",
+    "sha256": "a190cd478a63600faabc43aa8dae19fb30c21a9e59b4e2dd0dc0830d21531cc2",
+    "anonymous_download_verified": true
+  },
+  "qualification_status": {
+    "shairplay_pr_73": "open draft",
+    "shairplay_issues_65_72": "open",
+    "supported_release_baseline": "pending qualification",
+    "original_desktop": "pending confirmation"
+  }
+}
