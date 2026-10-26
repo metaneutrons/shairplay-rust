@@ -24,10 +24,10 @@ fn airport_rsakey() -> Arc<RsaKey> {
 }
 
 fn random_hwaddr() -> Vec<u8> {
-    use rand::RngCore;
+    use rand::Rng;
 
     let mut hwaddr = [0u8; super::MAX_HWADDR_LEN];
-    rand::thread_rng().fill_bytes(&mut hwaddr);
+    rand::rng().fill_bytes(&mut hwaddr);
     // Locally administered, unicast MAC address.
     hwaddr[0] = (hwaddr[0] | 0x02) & !0x01;
     hwaddr.to_vec()
@@ -474,5 +474,44 @@ impl RaopServer {
             !self.shared.password.is_empty(),
             &self.ap1_advertisement,
         )
+    }
+}
+
+#[cfg(test)]
+mod primitive_tests {
+    use super::*;
+
+    #[test]
+    fn random_hwaddr_is_locally_administered_unicast_and_random() {
+        let a = random_hwaddr();
+        let b = random_hwaddr();
+        assert_eq!(a.len(), super::super::MAX_HWADDR_LEN);
+        for h in [&a, &b] {
+            assert_eq!(h[0] & 0x02, 0x02, "locally administered bit");
+            assert_eq!(h[0] & 0x01, 0x00, "unicast bit");
+        }
+        assert_ne!(a, b);
+    }
+
+    #[cfg(feature = "ap2")]
+    #[test]
+    fn pairing_id_known_answer() {
+        use sha2::{Digest, Sha256};
+        let mut h = Sha256::new();
+        h.update(b"abc");
+        let digest: String = h.finalize().iter().map(|b| format!("{b:02x}")).collect();
+        assert_eq!(
+            digest,
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+
+        assert_eq!(
+            derive_pi_from_hwaddr(&[1, 2, 3, 4, 5, 6]),
+            "7192385c-3c06-45de-95bb-9476ce1d9074"
+        );
+        assert_ne!(
+            derive_pi_from_hwaddr(&[1, 2, 3, 4, 5, 7]),
+            derive_pi_from_hwaddr(&[1, 2, 3, 4, 5, 6])
+        );
     }
 }

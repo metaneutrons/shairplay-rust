@@ -754,7 +754,7 @@ mod ap2_tests {
         let n = BigUint::parse_bytes(n_hex.as_bytes(), 16).unwrap();
         let g = BigUint::from(5u32);
         let mut a_bytes = [0u8; 32];
-        rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut a_bytes);
+        rand::Rng::fill_bytes(&mut rand::rng(), &mut a_bytes);
         let a = BigUint::from_bytes_be(&a_bytes);
         let big_a = g.modpow(&a, &n);
 
@@ -958,7 +958,7 @@ mod ap2_tests {
         let n = BigUint::parse_bytes(n_hex.as_bytes(), 16).unwrap();
         let g = BigUint::from(5u32);
         let mut a_bytes = [0u8; 32];
-        rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut a_bytes);
+        rand::Rng::fill_bytes(&mut rand::rng(), &mut a_bytes);
         let a = BigUint::from_bytes_be(&a_bytes);
         let big_a = g.modpow(&a, &n);
 

@@ -9,7 +9,6 @@ version = 2
 yanked = "deny"
 ignore = [
   { id = "RUSTSEC-2023-0071", reason = "rsa 0.9 is exposed to the Marvin timing attack; remove when a stable rsa release containing the fix is available" },
-  { id = "RUSTSEC-2024-0384", reason = "instant is pulled only by the minifb example dependency; remove when minifb no longer depends on it" },
 ]
 
 [licenses]

@@ -61,15 +61,27 @@ impl SrpServer {
     /// `None` keeps the shairport-sync-style transient profile, using the fixed
     /// transient PIN 3939. `Some(pin)` requires normal M1-M6 HomeKit pairing.
     pub(crate) fn new(pin: Option<&str>) -> Result<Self, CryptoError> {
+        // Random salt (16 bytes) and random 256-bit private value b.
+        let mut salt_bytes = [0u8; 16];
+        rand::Rng::fill_bytes(&mut rand::rng(), &mut salt_bytes);
+        let mut b_bytes = [0u8; 32];
+        rand::Rng::fill_bytes(&mut rand::rng(), &mut b_bytes);
+        Self::with_entropy(pin, salt_bytes, b_bytes)
+    }
+
+    /// SRP server setup from explicit entropy (salt and private value `b`).
+    /// Split from [`SrpServer::new`] so the verifier math has known-answer tests.
+    fn with_entropy(
+        pin: Option<&str>,
+        salt_bytes: [u8; 16],
+        b_bytes: [u8; 32],
+    ) -> Result<Self, CryptoError> {
         let allow_transient = pin.is_none();
         let pin = pin.unwrap_or(TRANSIENT_PIN);
         let n = BigUint::parse_bytes(N_3072_HEX.as_bytes(), 16)
             .ok_or_else(|| CryptoError::PairingHandshake("Failed to parse N".into()))?;
         let g = BigUint::from(G_3072);
 
-        // Generate random salt (16 bytes)
-        let mut salt_bytes = [0u8; 16];
-        rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut salt_bytes);
         let salt = BigUint::from_bytes_be(&salt_bytes);
 
         // x = H(salt || H("Pair-Setup:pin"))
@@ -82,8 +94,6 @@ impl SrpServer {
         let k = h_nn_pad(&n, &g, N_3072_LEN);
 
         // b = random 256-bit
-        let mut b_bytes = [0u8; 32];
-        rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut b_bytes);
         let b = BigUint::from_bytes_be(&b_bytes);
 
         // B = (k*v + g^b) mod N
@@ -333,9 +343,9 @@ fn encrypt_chacha(
     plaintext: &[u8],
 ) -> Result<Vec<u8>, CryptoError> {
     let cipher = ChaCha20Poly1305::new(key.into());
-    let nonce = Nonce::from_slice(nonce_bytes);
+    let nonce = Nonce::from(*nonce_bytes);
     cipher
-        .encrypt(nonce, plaintext)
+        .encrypt(&nonce, plaintext)
         .map_err(|_| CryptoError::PairingHandshake("ChaCha20 encrypt failed".into()))
 }
 
@@ -345,9 +355,9 @@ fn decrypt_chacha(
     ciphertext_with_tag: &[u8],
 ) -> Result<Vec<u8>, CryptoError> {
     let cipher = ChaCha20Poly1305::new(key.into());
-    let nonce = Nonce::from_slice(nonce_bytes);
+    let nonce = Nonce::from(*nonce_bytes);
     cipher
-        .decrypt(nonce, ciphertext_with_tag)
+        .decrypt(&nonce, ciphertext_with_tag)
         .map_err(|_| CryptoError::PairingHandshake("ChaCha20 decrypt failed".into()))
 }
 
@@ -370,7 +380,7 @@ pub fn identity_keypair(seed: &[u8; 32]) -> (SigningKey, VerifyingKey) {
 /// Generate a fresh random 32-byte Ed25519 identity seed from the OS CSPRNG.
 pub fn generate_identity_seed() -> [u8; 32] {
     let mut seed = [0u8; 32];
-    rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut seed);
+    rand::Rng::fill_bytes(&mut rand::rng(), &mut seed);
     seed
 }
 
@@ -594,7 +604,7 @@ impl PairVerifyServer {
 
         // Generate ephemeral Curve25519 keypair
         let mut eph_sk_bytes = [0u8; 32];
-        rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut eph_sk_bytes);
+        rand::Rng::fill_bytes(&mut rand::rng(), &mut eph_sk_bytes);
         let static_secret = x25519_dalek::StaticSecret::from(eph_sk_bytes);
         let eph_pk = x25519_dalek::PublicKey::from(&static_secret);
 
@@ -779,7 +789,7 @@ mod tests {
         let g = BigUint::from(G_3072);
 
         let mut a_bytes = [0u8; 32];
-        rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut a_bytes);
+        rand::Rng::fill_bytes(&mut rand::rng(), &mut a_bytes);
         let a = BigUint::from_bytes_be(&a_bytes);
         let big_a = g.modpow(&a, &n);
 
@@ -897,7 +907,7 @@ mod tests {
         let n = BigUint::parse_bytes(N_3072_HEX.as_bytes(), 16).unwrap();
         let g = BigUint::from(G_3072);
         let mut a_bytes = [0u8; 32];
-        rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut a_bytes);
+        rand::Rng::fill_bytes(&mut rand::rng(), &mut a_bytes);
         let a = BigUint::from_bytes_be(&a_bytes);
         let big_a = g.modpow(&a, &n);
         let salt_bn = BigUint::from_bytes_be(salt);
@@ -922,7 +932,7 @@ mod tests {
         assert!(server.shared_secret().is_none()); // not transient → no secret yet
 
         // --- M5: Client sends encrypted device info ---
-        let client_sk = SigningKey::generate(&mut rand::thread_rng());
+        let client_sk = SigningKey::generate(&mut rand::rng());
         let client_vk = client_sk.verifying_key();
         let client_device_id = "MockClient01";
 
@@ -1010,7 +1020,7 @@ mod tests {
 
         // Client generates ephemeral key
         let mut client_eph_sk_bytes = [0u8; 32];
-        rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut client_eph_sk_bytes);
+        rand::Rng::fill_bytes(&mut rand::rng(), &mut client_eph_sk_bytes);
         let client_secret = x25519_dalek::StaticSecret::from(client_eph_sk_bytes);
         let client_eph_pk = x25519_dalek::PublicKey::from(&client_secret);
 
@@ -1078,7 +1088,7 @@ mod tests {
         let mut server = PairVerifyServer::new("VerifyDev01", &[0x42u8; 32]);
 
         let mut client_eph_sk_bytes = [0u8; 32];
-        rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut client_eph_sk_bytes);
+        rand::Rng::fill_bytes(&mut rand::rng(), &mut client_eph_sk_bytes);
         let client_secret = x25519_dalek::StaticSecret::from(client_eph_sk_bytes);
         let client_eph_pk = x25519_dalek::PublicKey::from(&client_secret);
 
@@ -1117,5 +1127,284 @@ mod tests {
 
         assert!(matches!(result, Err(CryptoError::PairingVerify)));
         assert!(server.shared_secret().is_none());
+    }
+
+    // --- Known-answer tests pinned before the RustCrypto/dalek/rand migration ---
+    //
+    // Expected values come from independent computations: Python big-integer
+    // arithmetic and hashlib for SRP/HKDF/ChaCha20-Poly1305, OpenSSL for
+    // Ed25519/X25519, plus the RFC 8032 and RFC 7748 published vectors.
+
+    fn hex_decode(s: &str) -> Vec<u8> {
+        (0..s.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
+            .collect()
+    }
+
+    const KAT_SALT: &str = "a1b2c3d4e5f60718293a4b5c6d7e8f90";
+    const KAT_B: &str = "0123456789abcdeffedcba98765432100f1e2d3c4b5a69788796a5b4c3d2e1f0";
+    // Client private value a = f0e1d2c3b4a5968778695a4b3c2d1e0f0123456789abcdeffedcba9876543210
+    // (only its public value A below enters the server computation).
+    const KAT_BIG_B: &str = "\
+5b7f01e012bbcc51c784f8df051b3111752527891081f1f44a53dbd5a21c80d0\
+12569949f74f9380cf8d1257c63cc8d9e43ae0eaa2ec947f9f7bcc2d338e7e94\
+7a4d964eaf90ca2e75aad3daf0a491be9ed88b749459d3c63a9e690cdd28dd16\
+59836671c1a03572c4e716b1c2c39f750f11ddc67222c10a398fe2950b846774\
+98c6552630f93a2f8afd6e97d3e504c04f64ed50713dbb0b27920f15c48047ac\
+3a9c84c6ccea4a8b3896999bea4ba7093395087301c773ceb8119e76ff23b314\
+9b602f6a24269b227da3fc3a2a058453959f575a1677a5e9a418afc9eff17fc5\
+2d332c6d8301c5c2e802973e7a0ceb2dbc817aa7a512abe25b5739f965b75141\
+33b32b37bcc8297c7df47026b84af86896543dadd3c5ae5938ed1b6a693155ff\
+789fc516d9ad0b1b0d59c53fea687c0595e12438d56f7bf10a8394a87d68e58f\
+4db59b6dffe946a176e6a6f8fc728d133d4f002a7383723eda5be90fcb44d29f\
+a94c1e0ca267b6ff6939852592fdca1b33f1f78a542597f4faebc7593de6a9cf";
+    const KAT_BIG_A: &str = "\
+059fcd62d5fb921382ae0b9d25ed26d568220b3e5774af2b4ba4dee105bb7b9a\
+c59400f3de4998d953b1c1819b7bcf844d63123dcc31597311028c0b817fbf70\
+0ace82a3b398c215dbabcb5c2b40fdc0732dbc82b8a02b220380fe73205205bf\
+0d5953aba6ae08cf55295befadf80a3a477179b1332a9b76c9a5a181fa074f06\
+083a7c33a7da4ebacae1d780da0fe170c0bd5ef6abcf6c6c38bf7a63e22c3299\
+faa75a6e245171f895c1e5df48b937a8d8e09e115a8033cf24e336d0ce073e48\
+acf7a4d17b06da62d7654a3756ea02a1f4a63fc7c11ec14c122b7f5f7e75a735\
+9adba79f6e12f43403e6f9264a22aa4ffafd4d31d197fb7efad405a60d716a18\
+416b492018db80d94e909b1304e189d957d98e1ca862b7b2ec4e108bbbaf445c\
+85cbdc6966379959e53635cabce42940f2fc79e73a767f6b21c6787d74a127d1\
+f126dd202b60f0e738f46c3f9cebb86b250e64fabca09432a74e854d9d359b0b\
+7a881ec96a71d1c08ddc320336262cf17312bb102ea0df627fbfbfdfa36be923";
+    const KAT_K: &str = "08ca63c5261ea5ce20200d89748dfd66589e7f4e86c50ad4cd669c0df28f37ed6fea7c34969a868980e98068c2f6a39e8b5c3c1bb4e626e1321c5799c23dea1e";
+    const KAT_M1: &str = "ada032feb95d1defbb2826baeade5ff9b07bda83b25a622cfac98a829f43b6901ce1b381aecf186b9286f39001daf0500dddb2ae04a784a594b0de32c711e405";
+    const KAT_HAMK: &str = "e9920c0d5acd32e793fd660bce75ed2c97f3c71ca899e567825eadb4edb936a6fdbfc53ea37b77547b66f6d75540b47060376e7b1c472a5b68a8cf5f320f751a";
+
+    fn kat_server() -> SrpServer {
+        let salt: [u8; 16] = hex_decode(KAT_SALT).try_into().unwrap();
+        let b: [u8; 32] = hex_decode(KAT_B).try_into().unwrap();
+        SrpServer::with_entropy(None, salt, b).unwrap()
+    }
+
+    fn transient_m1() -> Vec<u8> {
+        let mut m1 = TlvValues::new();
+        m1.add(TlvType::State as u8, &[1]);
+        m1.add(TlvType::Method as u8, &[0]);
+        m1.add(TlvType::Flags as u8, &[PAIRING_FLAGS_TRANSIENT]);
+        m1.encode()
+    }
+
+    /// Complete SRP-6a transient handshake with fixed salt, `b` and `a`:
+    /// B (server public), M1 (client proof), K (session key) and the server
+    /// proof M2 must equal the independently computed constants.
+    #[test]
+    fn srp_transient_known_answer() {
+        let mut server = kat_server();
+        server.process_m1(&transient_m1()).unwrap();
+
+        let m2 = TlvValues::decode(&server.build_m2()).unwrap();
+        assert_eq!(hex_encode(m2.get_type(TlvType::Salt).unwrap()), KAT_SALT);
+        assert_eq!(
+            hex_encode(m2.get_type(TlvType::PublicKey).unwrap()),
+            KAT_BIG_B
+        );
+
+        let mut m3 = TlvValues::new();
+        m3.add(TlvType::State as u8, &[3]);
+        m3.add(TlvType::PublicKey as u8, &hex_decode(KAT_BIG_A));
+        m3.add(TlvType::Proof as u8, &hex_decode(KAT_M1));
+        assert!(server.process_m3(&m3.encode()).unwrap());
+
+        assert_eq!(hex_encode(server.shared_secret().unwrap()), KAT_K);
+        let m4 = TlvValues::decode(&server.build_m4().unwrap()).unwrap();
+        assert_eq!(m4.get_type(TlvType::State), Some(&[4u8][..]));
+        assert_eq!(hex_encode(m4.get_type(TlvType::Proof).unwrap()), KAT_HAMK);
+    }
+
+    /// Same client keys, one flipped proof bit: authentication must fail and
+    /// no shared secret may be exposed.
+    #[test]
+    fn srp_rejects_flipped_proof_bit() {
+        let mut server = kat_server();
+        server.process_m1(&transient_m1()).unwrap();
+        let mut proof = hex_decode(KAT_M1);
+        proof[63] ^= 0x01;
+        let mut m3 = TlvValues::new();
+        m3.add(TlvType::State as u8, &[3]);
+        m3.add(TlvType::PublicKey as u8, &hex_decode(KAT_BIG_A));
+        m3.add(TlvType::Proof as u8, &proof);
+        assert!(!server.process_m3(&m3.encode()).unwrap());
+        assert!(server.shared_secret().is_none());
+    }
+
+    /// `a = 0` style public values (A mod N == 0) are refused.
+    #[test]
+    fn srp_rejects_zero_public_value() {
+        let mut server = kat_server();
+        server.process_m1(&transient_m1()).unwrap();
+        let n = hex_decode(N_3072_HEX);
+        let mut m3 = TlvValues::new();
+        m3.add(TlvType::State as u8, &[3]);
+        m3.add(TlvType::PublicKey as u8, &n);
+        m3.add(TlvType::Proof as u8, &[0u8; 64]);
+        assert!(server.process_m3(&m3.encode()).is_err());
+    }
+
+    /// Big-number building blocks with leading-zero and size edge cases.
+    #[test]
+    fn srp_byte_conversions() {
+        assert_eq!(to_bytes_be(&BigUint::from(0u32)), vec![0]);
+        assert_eq!(to_bytes_be(&BigUint::from(0x0102u32)), vec![1, 2]);
+        assert_eq!(
+            to_bytes_be_padded(&BigUint::from(0x0102u32), 4),
+            vec![0, 0, 1, 2]
+        );
+        assert_eq!(BigUint::from_bytes_be(&[0, 0, 1, 2]), BigUint::from(258u32));
+        let n = BigUint::parse_bytes(N_3072_HEX.as_bytes(), 16).unwrap();
+        assert_eq!(n.bits(), 3072);
+        assert_eq!(to_bytes_be(&n).len(), N_3072_LEN);
+        assert_eq!(
+            hex_encode(&to_bytes_be(&n)),
+            N_3072_HEX.to_ascii_lowercase()
+        );
+        // 5^e mod N for a small exponent, checked against Python pow().
+        let g = BigUint::from(G_3072);
+        assert_eq!(
+            g.modpow(&BigUint::from(1000u32), &n) % BigUint::from(1_000_000_007u64),
+            BigUint::from(169547125u64)
+        );
+    }
+
+    /// SHA-512 as used throughout pair-setup (FIPS 180-4 "abc").
+    #[test]
+    fn sha512_fips_abc() {
+        assert_eq!(
+            hex_encode(&sha512(b"abc")),
+            "ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f"
+        );
+    }
+
+    /// Ed25519 per RFC 8032 section 7.1 (tests 1 to 3), through the same
+    /// `identity_keypair`/`Signer`/`Verifier` API used for pair-setup and verify.
+    #[test]
+    fn ed25519_rfc8032_vectors() {
+        let cases = [
+            (
+                "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60",
+                "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+                "",
+                "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b",
+            ),
+            (
+                "4ccd089b28ff96da9db6c346ec114e0f5b8a319f35aba624da8cf6ed4fb8a6fb",
+                "3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c",
+                "72",
+                "92a009a9f0d4cab8720e820b5f642540a2b27b5416503f8fb3762223ebdb69da085ac1e43e15996e458f3613d0f11d8c387b2eaeb4302aeeb00d291612bb0c00",
+            ),
+            (
+                "c5aa8df43f9f837bedb7442f31dcb7b166d38535076f094b85ce3a2e0b4458f7",
+                "fc51cd8e6218a1a38da47ed00230f0580816ed13ba3303ac5deb911548908025",
+                "af82",
+                "6291d657deec24024827e69c3abe01a30ce548a284743a445e3680d7db5ac3ac18ff9b538d16f290ae67f760984dc6594a7c15e9716ed28dc027beceea1ec40a",
+            ),
+        ];
+        for (seed, pk, msg, sig) in cases {
+            let seed: [u8; 32] = hex_decode(seed).try_into().unwrap();
+            let msg = hex_decode(msg);
+            let (sk, vk) = identity_keypair(&seed);
+            assert_eq!(hex_encode(vk.as_bytes()), pk);
+            let signature = sk.sign(&msg);
+            assert_eq!(hex_encode(&signature.to_bytes()), sig);
+            vk.verify(&msg, &signature).unwrap();
+            // Verify via a key re-imported from the wire bytes, as the handlers do.
+            let vk2 = VerifyingKey::from_bytes(&hex_decode(pk).try_into().unwrap()).unwrap();
+            vk2.verify(
+                &msg,
+                &Signature::from_bytes(&hex_decode(sig).try_into().unwrap()),
+            )
+            .unwrap();
+            // Tampered message and tampered signature are rejected.
+            let mut bad_msg = msg.clone();
+            bad_msg.push(0);
+            assert!(vk.verify(&bad_msg, &signature).is_err());
+            let mut bad_sig = signature.to_bytes();
+            bad_sig[0] ^= 1;
+            assert!(vk.verify(&msg, &Signature::from_bytes(&bad_sig)).is_err());
+        }
+    }
+
+    /// X25519 per RFC 7748 section 6.1 with the `StaticSecret` API used by pair-verify.
+    #[test]
+    fn x25519_rfc7748_vectors() {
+        let a_sk: [u8; 32] =
+            hex_decode("77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a")
+                .try_into()
+                .unwrap();
+        let b_sk: [u8; 32] =
+            hex_decode("5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb")
+                .try_into()
+                .unwrap();
+        let a = x25519_dalek::StaticSecret::from(a_sk);
+        let b = x25519_dalek::StaticSecret::from(b_sk);
+        let a_pk = x25519_dalek::PublicKey::from(&a);
+        let b_pk = x25519_dalek::PublicKey::from(&b);
+        assert_eq!(
+            hex_encode(a_pk.as_bytes()),
+            "8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a"
+        );
+        assert_eq!(
+            hex_encode(b_pk.as_bytes()),
+            "de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f"
+        );
+        let expected = "4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742";
+        assert_eq!(hex_encode(a.diffie_hellman(&b_pk).as_bytes()), expected);
+        assert_eq!(hex_encode(b.diffie_hellman(&a_pk).as_bytes()), expected);
+    }
+
+    /// Pair-verify/pair-setup AEAD framing: HKDF key plus the 4-zero-byte +
+    /// 8-byte-tag nonce and no AAD, as `PV-Msg02`/`PS-Msg05` use it.
+    #[test]
+    fn homekit_chacha_known_answer() {
+        let ikm: Vec<u8> = (0u8..64).collect();
+        let mut key = [0u8; 32];
+        hkdf_derive(&ikm, PV_ENCRYPT_SALT, PV_ENCRYPT_INFO, &mut key).unwrap();
+        assert_eq!(
+            hex_encode(&key),
+            "8f806335e1847b59c5004b131c4689e951ce9808993aed540856475e0dee353b"
+        );
+
+        let plain = b"homekit pair-verify inner TLV payload!!";
+        let ct = encrypt_chacha(&key, &make_nonce(b"PV-Msg02"), plain).unwrap();
+        assert_eq!(
+            hex_encode(&ct),
+            "790c31d9cfe8a1a68d235c61609dfe9c114fc77ec626feb0776121013182a8562ef8b556d97c3475e6f4451dc769557442ad48a9e34c41"
+        );
+        assert_eq!(
+            decrypt_chacha(&key, &make_nonce(b"PV-Msg02"), &ct).unwrap(),
+            plain
+        );
+
+        let ct = encrypt_chacha(&key, &make_nonce(b"PS-Msg05"), plain).unwrap();
+        assert_eq!(
+            hex_encode(&ct),
+            "006fb900a8e0a8086f06e953aac6320624da2fce017988deb5f2ddf1d9cf3ba11d9019d1b0f20216949f52114488619900cef99834d67c"
+        );
+        // Wrong nonce label must not decrypt.
+        assert!(decrypt_chacha(&key, &make_nonce(b"PS-Msg06"), &ct).is_err());
+    }
+
+    /// Identity seed generation draws fresh entropy on every call.
+    #[test]
+    fn identity_seed_is_random() {
+        let a = generate_identity_seed();
+        let b = generate_identity_seed();
+        assert_ne!(a, b);
+        assert_ne!(a, [0u8; 32]);
+    }
+
+    /// Fresh `SrpServer` instances use fresh salt and `b`.
+    #[test]
+    fn srp_new_uses_fresh_entropy() {
+        let s1 = SrpServer::new(None).unwrap();
+        let s2 = SrpServer::new(None).unwrap();
+        assert_ne!(s1.salt, s2.salt);
+        assert_ne!(s1.big_b, s2.big_b);
+        assert_eq!(s1.salt.len(), 16);
     }
 }

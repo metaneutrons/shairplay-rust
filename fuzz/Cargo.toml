@@ -10,7 +10,7 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 # fuzz_plist exercises the same `plist` crate API the server uses on request bodies.
-plist = "1"
+plist = "1.10.3"
 
 [dependencies.shairplay]
 path = ".."
