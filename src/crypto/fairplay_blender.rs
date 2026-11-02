@@ -8,40 +8,39 @@
 //! arithmetic. The lint exceptions below are scoped to this module.
 
 #![allow(
-    non_snake_case,
     unused_parens,
     unused_assignments,
-    reason = "register names and explicit expression grouping mirror the fixed transformation"
+    reason = "explicit expression grouping mirrors the fixed transformation"
 )]
 
-fn ror8_or_zero(input: u8, count: u32) -> u32 {
-    if count == 0 {
+fn ror8_or_zero(input: u8, amount: u32) -> u32 {
+    if amount == 0 {
         return 0;
     }
-    let c = count & 7;
+    let c = amount & 7;
     ((input as u32 >> c) & 0xff) | ((input as u32 & 0xff) << (8u32.wrapping_sub(c)))
 }
 
-fn rol8_or_zero(input: u8, count: u32) -> u32 {
-    if count == 0 {
+fn rol8_or_zero(input: u8, amount: u32) -> u32 {
+    if amount == 0 {
         return 0;
     }
-    let c = count & 7;
+    let c = amount & 7;
     (((input as u32) << c) & 0xff) | ((input as u32) >> (8u32.wrapping_sub(c)))
 }
 
-fn shl_shr_xor(input: u8, count: u32) -> u32 {
-    if count == 0 {
+fn shl_shr_xor(input: u8, amount: u32) -> u32 {
+    if amount == 0 {
         return 0;
     }
-    ((input as u32) << count) ^ ((input as u32) >> (8u32.wrapping_sub(count)))
+    ((input as u32) << amount) ^ ((input as u32) >> (8u32.wrapping_sub(amount)))
 }
 
-fn rol8(x: u8, y: u32) -> u8 {
+fn rotl8(x: u8, y: u32) -> u8 {
     (((x as u16) << (y & 7)) | ((x as u16) >> (8 - (y & 7)))) as u8
 }
 
-fn rol8x(x: u8, y: u32) -> u32 {
+fn rotl8_wide(x: u8, y: u32) -> u32 {
     ((x as u32) << (y & 7)) | ((x as u32) >> (8u32.wrapping_sub(y & 7)))
 }
 
@@ -56,17 +55,17 @@ pub(crate) fn blend(
     // Working registers are zero-initialised and then assigned in sequence. The
     // initial stores are why this module allows `unused_assignments`.
     #[rustfmt::skip]
-    let (mut tmp, mut tmp2, mut tmp3): (u32, u32, u32) = (0, 0, 0);
+    let (mut hold, mut hold2, mut hold3): (u32, u32, u32) = (0, 0, 0);
     #[rustfmt::skip]
-    let (mut A, mut B, mut C, mut D, mut E, mut F, mut G, mut H, mut J, mut K, mut M):
+    let (mut ra, mut rb, mut rc, mut rd, mut re, mut rf, mut rg, mut rh, mut rj, mut rk, mut rm):
         (u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32) = (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
     #[rustfmt::skip]
-    let (mut R, mut S, mut T, mut U, mut V, mut W, mut X, mut Y, mut Z):
+    let (mut rr, mut rs, mut rt, mut ru, mut rv, mut rw, mut rx, mut ry, mut rz):
         (u32, u32, u32, u32, u32, u32, u32, u32, u32) = (0, 0, 0, 0, 0, 0, 0, 0, 0);
 
     lane2[12] = (0x14u32.wrapping_add(
         (((lane1[64] as u32) & 92) | (((lane1[99] as u32) / 3) & 35))
-            & (lane4[(rol8x(lane4[(lane1[206] as usize) % 21], 4) as usize) % 21] as u32),
+            & (lane4[(rotl8_wide(lane4[(lane1[206] as usize) % 21], 4) as usize) % 21] as u32),
     )) as u8;
 
     lane1[4] = (((lane1[99] as u32) / 5)
@@ -88,11 +87,11 @@ pub(crate) fn blend(
 
     lane1[33] = lane1[33].wrapping_sub(((lane4[(lane1[36] as usize) % 21] as u32) & 0xf6u32) as u8);
 
-    tmp2 = (lane2[(lane1[67] as usize) % 35] as u32);
+    hold2 = (lane2[(lane1[67] as usize) % 35] as u32);
 
     lane2[12] = (0x07u32) as u8;
 
-    tmp = (lane0[(lane1[181] as usize) % 20] as u32);
+    hold = (lane0[(lane1[181] as usize) % 20] as u32);
 
     lane1[2] = lane1[2].wrapping_sub((3136u32 & 0xff) as u8);
 
@@ -122,11 +121,11 @@ pub(crate) fn blend(
 
     lane2[4] ^= ((lane1[202] as u32) / 3) as u8;
 
-    A = 92u32.wrapping_sub(lane0[(lane3[0] as usize) % 20] as u32);
+    ra = 92u32.wrapping_sub(lane0[(lane3[0] as usize) % 20] as u32);
 
-    E = (A & 0xc6u32) | (!(lane1[105] as u32) & 0xc6u32) | (A & (!(lane1[105] as u32)));
+    re = (ra & 0xc6u32) | (!(lane1[105] as u32) & 0xc6u32) | (ra & (!(lane1[105] as u32)));
 
-    lane2[1] = lane2[1].wrapping_add((E.wrapping_mul(E).wrapping_mul(E)) as u8);
+    lane2[1] = lane2[1].wrapping_add((re.wrapping_mul(re).wrapping_mul(re)) as u8);
 
     lane0[19] ^= (((224 | ((lane4[(lane1[92] as usize) % 21] as u32) & 27))
         .wrapping_mul(lane2[(lane1[41] as usize) % 35] as u32))
@@ -142,7 +141,7 @@ pub(crate) fn blend(
 
     lane1[36] = lane1[36].wrapping_add(125_u8);
 
-    lane1[124] = (rol8x(
+    lane1[124] = (rotl8_wide(
         ((((74u32 & (lane1[138] as u32)) | ((74u32 | (lane1[138] as u32)) & (lane0[15] as u32)))
             & (lane0[(lane1[43] as usize) % 20] as u32))
             | (((74u32 & (lane1[138] as u32))
@@ -157,34 +156,34 @@ pub(crate) fn blend(
         | 16)
         ^ 92) as u8;
 
-    A = (lane1[177] as u32).wrapping_add(lane4[(lane1[79] as usize) % 21] as u32);
+    ra = (lane1[177] as u32).wrapping_add(lane4[(lane1[79] as usize) % 21] as u32);
 
-    D = (((A >> 1) | ((3u32.wrapping_mul(lane1[148] as u32)) / 5)) & (lane2[1] as u32))
-        | ((A >> 1) & ((3u32.wrapping_mul(lane1[148] as u32)) / 5));
+    rd = (((ra >> 1) | ((3u32.wrapping_mul(lane1[148] as u32)) / 5)) & (lane2[1] as u32))
+        | ((ra >> 1) & ((3u32.wrapping_mul(lane1[148] as u32)) / 5));
 
-    lane3[12] = (0u32.wrapping_sub(34).wrapping_sub(D)) as u8;
+    lane3[12] = (0u32.wrapping_sub(34).wrapping_sub(rd)) as u8;
 
-    A = 8u32.wrapping_sub((lane2[22] as u32) & 7); // NOTE: (lane2[22] as u32) = 74, so A is always 6 and B^C is just ror8((lane1[33] as u32), 6);
+    ra = 8u32.wrapping_sub((lane2[22] as u32) & 7); // NOTE: (lane2[22] as u32) = 74, so ra is always 6 and rb^rc is just ror8((lane1[33] as u32), 6);
 
-    B = ((lane1[33] as u32) >> (A & 7));
+    rb = ((lane1[33] as u32) >> (ra & 7));
 
-    C = (lane1[33] as u32) << ((lane2[22] as u32) & 7);
+    rc = (lane1[33] as u32) << ((lane2[22] as u32) & 7);
 
     lane2[16] = lane2[16].wrapping_add(
         ((((lane2[(lane3[0] as usize) % 35] as u32) & 159) | (lane0[(lane3[4] as usize) % 20] as u32) | 8)
-            .wrapping_sub((B ^ C) | 128)) as u8,
+            .wrapping_sub((rb ^ rc) | 128)) as u8,
     );
 
     lane0[14] ^= (lane2[(lane3[12] as usize) % 35] as u32) as u8;
 
-    A = rol8_or_zero(
+    ra = rol8_or_zero(
         lane4[(lane0[(lane1[201] as usize) % 20] as usize) % 21],
         (((lane2[(lane1[112] as usize) % 35] as u32) << 1) & 7),
     );
 
-    D = ((lane0[(lane1[208] as usize) % 20] as u32) & 131) | ((lane0[(lane1[164] as usize) % 20] as u32) & 124);
+    rd = ((lane0[(lane1[208] as usize) % 20] as u32) & 131) | ((lane0[(lane1[164] as usize) % 20] as u32) & 124);
 
-    lane1[19] = lane1[19].wrapping_add(((A & (D / 5)) | ((A | (D / 5)) & 37)) as u8);
+    lane1[19] = lane1[19].wrapping_add(((ra & (rd / 5)) | ((ra | (rd / 5)) & 37)) as u8);
 
     lane2[8] = (ror8_or_zero(
         140,
@@ -205,11 +204,11 @@ pub(crate) fn blend(
         | (((lane2[(lane3[0] as usize) % 35] as u32) | (lane1[2] as u32)) & (lane3[12] as u32)))
         / 15) as u8;
 
-    A = (((56 | ((lane4[(lane1[2] as usize) % 21] as u32) & 68)) | (lane2[(lane3[8] as usize) % 35] as u32))
+    ra = (((56 | ((lane4[(lane1[2] as usize) % 21] as u32) & 68)) | (lane2[(lane3[8] as usize) % 35] as u32))
         & 42)
         | ((((lane4[(lane1[2] as usize) % 21] as u32) & 68) | 56) & (lane2[(lane3[8] as usize) % 35] as u32));
 
-    lane3[16] = (A.wrapping_mul(A).wrapping_add(110)) as u8;
+    lane3[16] = (ra.wrapping_mul(ra).wrapping_add(110)) as u8;
 
     lane3[20] = (202u32.wrapping_sub(lane3[16] as u32)) as u8;
 
@@ -217,40 +216,40 @@ pub(crate) fn blend(
 
     lane2[13] ^= (lane4[(lane3[0] as usize) % 21] as u32) as u8;
 
-    B = (((lane2[(lane1[179] as usize) % 35] as u32).wrapping_sub(38)) & 177) | ((lane3[12] as u32) & 177);
+    rb = (((lane2[(lane1[179] as usize) % 35] as u32).wrapping_sub(38)) & 177) | ((lane3[12] as u32) & 177);
 
-    C = ((lane2[(lane1[179] as usize) % 35] as u32).wrapping_sub(38)) & (lane3[12] as u32);
+    rc = ((lane2[(lane1[179] as usize) % 35] as u32).wrapping_sub(38)) & (lane3[12] as u32);
 
-    lane3[28] = (30u32.wrapping_add((B | C).wrapping_mul(B | C))) as u8;
+    lane3[28] = (30u32.wrapping_add((rb | rc).wrapping_mul(rb | rc))) as u8;
 
     lane3[32] = ((lane3[28] as u32).wrapping_add(62)) as u8;
 
-    A = (((lane3[20] as u32).wrapping_add((lane3[0] as u32) & 74)) | !(lane4[(lane3[0] as usize) % 21] as u32))
+    ra = (((lane3[20] as u32).wrapping_add((lane3[0] as u32) & 74)) | !(lane4[(lane3[0] as usize) % 21] as u32))
         & 121;
 
-    B = (((lane3[20] as u32).wrapping_add((lane3[0] as u32) & 74)) & !(lane4[(lane3[0] as usize) % 21] as u32));
+    rb = (((lane3[20] as u32).wrapping_add((lane3[0] as u32) & 74)) & !(lane4[(lane3[0] as usize) % 21] as u32));
 
-    tmp3 = (A | B);
+    hold3 = (ra | rb);
 
-    C = ((((A | B) ^ 0xffffffa6u32) | (lane3[0] as u32)) & 4) | (((A | B) ^ 0xffffffa6u32) & (lane3[0] as u32));
+    rc = ((((ra | rb) ^ 0xffffffa6u32) | (lane3[0] as u32)) & 4) | (((ra | rb) ^ 0xffffffa6u32) & (lane3[0] as u32));
 
-    lane1[47] = (((lane2[(lane1[89] as usize) % 35] as u32).wrapping_add(C)) ^ (lane1[47] as u32)) as u8;
+    lane1[47] = (((lane2[(lane1[89] as usize) % 35] as u32).wrapping_add(rc)) ^ (lane1[47] as u32)) as u8;
 
-    lane3[36] = ((((rol8(((tmp & 179).wrapping_add(68)) as u8, 2) as u32) & (lane0[3] as u32))
-        | (tmp2 & !(lane0[3] as u32)))
+    lane3[36] = ((((rotl8(((hold & 179).wrapping_add(68)) as u8, 2) as u32) & (lane0[3] as u32))
+        | (hold2 & !(lane0[3] as u32)))
         .wrapping_sub(15)) as u8;
 
     lane1[123] ^= 221_u8;
 
-    A = ((lane4[(lane3[0] as usize) % 21] as u32) / 3).wrapping_sub(lane2[(lane3[4] as usize) % 35] as u32);
+    ra = ((lane4[(lane3[0] as usize) % 21] as u32) / 3).wrapping_sub(lane2[(lane3[4] as usize) % 35] as u32);
 
-    C = ((((lane3[0] as u32) & 163).wrapping_add(92)) & 246) | ((lane3[0] as u32) & 92);
+    rc = ((((lane3[0] as u32) & 163).wrapping_add(92)) & 246) | ((lane3[0] as u32) & 92);
 
-    E = ((C | (lane3[24] as u32)) & 54) | (C & (lane3[24] as u32));
+    re = ((rc | (lane3[24] as u32)) & 54) | (rc & (lane3[24] as u32));
 
-    lane3[40] = (A.wrapping_sub(E)) as u8;
+    lane3[40] = (ra.wrapping_sub(re)) as u8;
 
-    lane3[44] = (tmp3 ^ 81 ^ ((((lane3[0] as u32) >> 1) & 101).wrapping_add(26))) as u8;
+    lane3[44] = (hold3 ^ 81 ^ ((((lane3[0] as u32) >> 1) & 101).wrapping_add(26))) as u8;
 
     lane3[48] = ((lane2[(lane3[4] as usize) % 35] as u32) & 27) as u8;
 
@@ -281,59 +280,59 @@ pub(crate) fn blend(
 
     lane1[22] = (((lane2[(lane1[90] as usize) % 35] as u32) & 95) | 68) as u8;
 
-    A = ((lane4[(lane3[36] as usize) % 21] as u32) & 184)
+    ra = ((lane4[(lane3[36] as usize) % 21] as u32) & 184)
         | ((lane2[(lane3[44] as usize) % 35] as u32) & !184u32);
 
-    lane2[18] = lane2[18].wrapping_add(((A.wrapping_mul(A).wrapping_mul(A)) >> 1) as u8);
+    lane2[18] = lane2[18].wrapping_add(((ra.wrapping_mul(ra).wrapping_mul(ra)) >> 1) as u8);
 
     lane2[5] = lane2[5].wrapping_sub((lane4[(lane1[92] as usize) % 21] as u32) as u8);
 
-    A = ((((lane1[41] as u32) & !24u32) | ((lane2[(lane1[183] as usize) % 35] as u32) & 24))
+    ra = ((((lane1[41] as u32) & !24u32) | ((lane2[(lane1[183] as usize) % 35] as u32) & 24))
         & ((lane3[16] as u32).wrapping_add(53)))
         | ((lane3[20] as u32) & (lane2[(lane3[20] as usize) % 35] as u32));
 
-    B = ((lane1[17] as u32) & (!(lane3[44] as u32)))
+    rb = ((lane1[17] as u32) & (!(lane3[44] as u32)))
         | ((lane0[(lane1[59] as usize) % 20] as u32) & (lane3[44] as u32));
 
-    lane2[18] ^= (A.wrapping_mul(B)) as u8;
+    lane2[18] ^= (ra.wrapping_mul(rb)) as u8;
 
-    A = ror8_or_zero(lane1[11], (lane2[(lane1[28] as usize) % 35] as u32) & 7) & 7;
+    ra = ror8_or_zero(lane1[11], (lane2[(lane1[28] as usize) % 35] as u32) & 7) & 7;
 
-    B = ((((lane0[(lane1[93] as usize) % 20] as u32) & !(lane0[14] as u32)) | ((lane0[14] as u32) & 150))
+    rb = ((((lane0[(lane1[93] as usize) % 20] as u32) & !(lane0[14] as u32)) | ((lane0[14] as u32) & 150))
         & !28u32)
         | ((lane1[7] as u32) & 28);
 
-    lane2[22] = (((((B | rol8_or_zero(((lane2[(lane3[0] as usize) % 35] as u32) as u8), A))
+    lane2[22] = (((((rb | rol8_or_zero(((lane2[(lane3[0] as usize) % 35] as u32) as u8), ra))
         & (lane2[33] as u32))
-        | (B & rol8_or_zero(((lane2[(lane3[0] as usize) % 35] as u32) as u8), A)))
+        | (rb & rol8_or_zero(((lane2[(lane3[0] as usize) % 35] as u32) as u8), ra)))
     .wrapping_add(74))
         & 0xffu32) as u8;
 
-    A = (lane4[(((lane0[(lane1[39] as usize) % 20] as u32) ^ 217) as usize) % 21] as u32); // X5;
+    ra = (lane4[(((lane0[(lane1[39] as usize) % 20] as u32) ^ 217) as usize) % 21] as u32); // X5;
 
     lane0[15] = lane0[15].wrapping_sub(
-        ((((((lane3[20] as u32) | (lane3[0] as u32)) & 214) | ((lane3[20] as u32) & (lane3[0] as u32))) & A)
+        ((((((lane3[20] as u32) | (lane3[0] as u32)) & 214) | ((lane3[20] as u32) & (lane3[0] as u32))) & ra)
             | (((((lane3[20] as u32) | (lane3[0] as u32)) & 214)
                 | ((lane3[20] as u32) & (lane3[0] as u32))
-                | A)
+                | ra)
                 & (lane3[32] as u32))) as u8,
     );
 
-    B = ((((lane2[(lane1[57] as usize) % 35] as u32) & (lane0[(lane3[64] as usize) % 20] as u32))
+    rb = ((((lane2[(lane1[57] as usize) % 35] as u32) & (lane0[(lane3[64] as usize) % 20] as u32))
         | (((lane0[(lane3[64] as usize) % 20] as u32) | (lane2[(lane1[57] as usize) % 35] as u32)) & 95)
         | ((lane3[64] as u32) & 45)
         | 82)
         & 32);
 
-    C = (((lane2[(lane1[57] as usize) % 35] as u32) & (lane0[(lane3[64] as usize) % 20] as u32))
+    rc = (((lane2[(lane1[57] as usize) % 35] as u32) & (lane0[(lane3[64] as usize) % 20] as u32))
         | (((lane2[(lane1[57] as usize) % 35] as u32) | (lane0[(lane3[64] as usize) % 20] as u32)) & 95))
         & (((lane3[64] as u32) & 45) | 82);
 
-    D = ((((lane3[0] as u32) / 3).wrapping_sub((lane3[64] as u32) | (lane1[22] as u32)))
+    rd = ((((lane3[0] as u32) / 3).wrapping_sub((lane3[64] as u32) | (lane1[22] as u32)))
         ^ ((lane3[28] as u32).wrapping_add(62))
-        ^ (B | C));
+        ^ (rb | rc));
 
-    T = lane0[((D & 0xffu32) as usize) % 20] as u32;
+    rt = lane0[((rd & 0xffu32) as usize) % 20] as u32;
 
     lane3[68] = ((lane0[(lane1[99] as usize) % 20] as u32)
         .wrapping_mul(lane0[(lane1[99] as usize) % 20] as u32)
@@ -341,35 +340,35 @@ pub(crate) fn blend(
         .wrapping_mul(lane0[(lane1[99] as usize) % 20] as u32)
         | (lane2[(lane3[64] as usize) % 35] as u32)) as u8;
 
-    U = (lane0[(lane1[50] as usize) % 20] as u32); // this is also v100;
+    ru = (lane0[(lane1[50] as usize) % 20] as u32); // this is also v100;
 
-    W = (lane2[(lane1[138] as usize) % 35] as u32);
+    rw = (lane2[(lane1[138] as usize) % 35] as u32);
 
-    X = (lane4[(lane1[39] as usize) % 21] as u32);
+    rx = (lane4[(lane1[39] as usize) % 21] as u32);
 
-    Y = (lane0[(lane1[4] as usize) % 20] as u32); // this is also v120;
+    ry = (lane0[(lane1[4] as usize) % 20] as u32); // this is also v120;
 
-    Z = (lane4[(lane1[202] as usize) % 21] as u32); // also v124;
+    rz = (lane4[(lane1[202] as usize) % 21] as u32); // also v124;
 
-    V = (lane0[(lane1[151] as usize) % 20] as u32);
+    rv = (lane0[(lane1[151] as usize) % 20] as u32);
 
-    S = (lane2[(lane1[14] as usize) % 35] as u32);
+    rs = (lane2[(lane1[14] as usize) % 35] as u32);
 
-    R = (lane0[(lane1[145] as usize) % 20] as u32);
+    rr = (lane0[(lane1[145] as usize) % 20] as u32);
 
-    A = ((lane2[(lane3[68] as usize) % 35] as u32) & (lane0[(lane1[209] as usize) % 20] as u32))
+    ra = ((lane2[(lane3[68] as usize) % 35] as u32) & (lane0[(lane1[209] as usize) % 20] as u32))
         | (((lane2[(lane3[68] as usize) % 35] as u32) | (lane0[(lane1[209] as usize) % 20] as u32)) & 24);
 
-    B = rol8_or_zero(
+    rb = rol8_or_zero(
         ((lane4[(lane1[127] as usize) % 21] as u32) as u8),
         (lane2[(lane3[68] as usize) % 35] as u32) & 7,
     );
 
-    C = (A & (lane0[10] as u32)) | (B & !(lane0[10] as u32));
+    rc = (ra & (lane0[10] as u32)) | (rb & !(lane0[10] as u32));
 
-    D = 7 ^ ((lane4[(lane2[(lane3[36] as usize) % 35] as usize) % 21] as u32) << 1);
+    rd = 7 ^ ((lane4[(lane2[(lane3[36] as usize) % 35] as usize) % 21] as u32) << 1);
 
-    lane3[72] = ((C & 71) | (D & !71u32)) as u8;
+    lane3[72] = ((rc & 71) | (rd & !71u32)) as u8;
 
     lane2[2] = lane2[2].wrapping_add(
         (((((lane0[(lane3[20] as usize) % 20] as u32) << 1) & 159)
@@ -411,106 +410,106 @@ pub(crate) fn blend(
     lane2[28] = lane2[28]
         .wrapping_sub(((((2 | ((lane1[110] as u32) & 222)) >> 1) & !223u32) | ((lane3[20] as u32) & 223)) as u8);
 
-    J = rol8_or_zero((V | Z) as u8, (U & 7)); // OK;
+    rj = rol8_or_zero((rv | rz) as u8, (ru & 7)); // OK;
 
-    A = ((lane2[16] as u32) & T) | (W & (!(lane2[16] as u32)));
+    ra = ((lane2[16] as u32) & rt) | (rw & (!(lane2[16] as u32)));
 
-    B = ((lane1[33] as u32) & 17) | (X & !17u32);
+    rb = ((lane1[33] as u32) & 17) | (rx & !17u32);
 
-    E = ((Y | ((A.wrapping_add(B)) / 5)) & 147) | (Y & ((A.wrapping_add(B)) / 5));
+    re = ((ry | ((ra.wrapping_add(rb)) / 5)) & 147) | (ry & ((ra.wrapping_add(rb)) / 5));
 
-    M = ((lane3[40] as u32)
-        & (lane4[(((lane3[8] as u32).wrapping_add(J).wrapping_add(E)) & 0xffu32) as usize % 21] as u32))
+    rm = ((lane3[40] as u32)
+        & (lane4[(((lane3[8] as u32).wrapping_add(rj).wrapping_add(re)) & 0xffu32) as usize % 21] as u32))
         | (((lane3[40] as u32)
-            | (lane4[(((lane3[8] as u32).wrapping_add(J).wrapping_add(E)) & 0xffu32) as usize % 21] as u32))
+            | (lane4[(((lane3[8] as u32).wrapping_add(rj).wrapping_add(re)) & 0xffu32) as usize % 21] as u32))
             & (lane2[23] as u32));
 
     lane0[15] = (((((lane4[(lane3[20] as usize) % 21] as u32).wrapping_sub(48)) & (!(lane1[184] as u32)))
         | (((lane4[(lane3[20] as usize) % 21] as u32).wrapping_sub(48)) & 189)
         | (189 & !(lane1[184] as u32)))
-        & (M.wrapping_mul(M).wrapping_mul(M))) as u8;
+        & (rm.wrapping_mul(rm).wrapping_mul(rm))) as u8;
 
     lane2[22] = lane2[22].wrapping_add((lane1[183] as u32) as u8);
 
     lane3[76] = (3u32.wrapping_mul(lane4[(lane1[1] as usize) % 21] as u32) ^ (lane3[0] as u32)) as u8;
 
-    A = (lane2[((((lane3[8] as u32).wrapping_add(J.wrapping_add(E))) & 0xffu32) as usize) % 35] as u32);
+    ra = (lane2[((((lane3[8] as u32).wrapping_add(rj.wrapping_add(re))) & 0xffu32) as usize) % 35] as u32);
 
-    F = ((((lane4[(lane1[178] as usize) % 21] as u32) & A)
-        | (((lane4[(lane1[178] as usize) % 21] as u32) | A) & 209))
+    rf = ((((lane4[(lane1[178] as usize) % 21] as u32) & ra)
+        | (((lane4[(lane1[178] as usize) % 21] as u32) | ra) & 209))
         .wrapping_mul(lane0[(lane1[13] as usize) % 20] as u32))
     .wrapping_mul((lane4[(lane1[26] as usize) % 21] as u32) >> 1);
 
-    G = (F.wrapping_add(0x733ffff9u32))
+    rg = (rf.wrapping_add(0x733ffff9u32))
         .wrapping_mul(198)
-        .wrapping_sub(((F.wrapping_add(0x733ffff9u32)).wrapping_mul(396).wrapping_add(212)) & 212)
+        .wrapping_sub(((rf.wrapping_add(0x733ffff9u32)).wrapping_mul(396).wrapping_add(212)) & 212)
         .wrapping_add(85);
 
     lane3[80] = ((lane3[36] as u32)
-        .wrapping_add(G ^ 148)
-        .wrapping_add((G ^ 107) << 1)
+        .wrapping_add(rg ^ 148)
+        .wrapping_add((rg ^ 107) << 1)
         .wrapping_sub(127)) as u8;
 
     lane3[84] = (((lane2[(lane3[64] as usize) % 35] as u32) & 245)
         | ((lane2[(lane3[20] as usize) % 35] as u32) & 10)) as u8;
 
-    A = (lane0[(lane3[68] as usize) % 20] as u32) | 81;
+    ra = (lane0[(lane3[68] as usize) % 20] as u32) | 81;
 
     lane2[18] = lane2[18].wrapping_sub(
-        (((A.wrapping_mul(A).wrapping_mul(A)) & !(lane0[15] as u32))
+        (((ra.wrapping_mul(ra).wrapping_mul(ra)) & !(lane0[15] as u32))
             | (((lane3[80] as u32) / 15) & (lane0[15] as u32))) as u8,
     );
 
     lane3[88] = ((lane3[8] as u32)
-        .wrapping_add(J)
-        .wrapping_add(E)
+        .wrapping_add(rj)
+        .wrapping_add(re)
         .wrapping_sub(lane0[(lane1[160] as usize) % 20] as u32)
         .wrapping_add(
             (lane4
-                [(lane0[((((lane3[8] as u32).wrapping_add(J).wrapping_add(E)) & 255) as usize) % 20] as usize) % 21]
+                [(lane0[((((lane3[8] as u32).wrapping_add(rj).wrapping_add(re)) & 255) as usize) % 20] as usize) % 21]
                 as u32
                 / 3),
         )) as u8;
 
-    B = ((R ^ (lane3[72] as u32)) & !198u32) | ((S.wrapping_mul(S)) & 198);
+    rb = ((rr ^ (lane3[72] as u32)) & !198u32) | ((rs.wrapping_mul(rs)) & 198);
 
-    F = ((lane4[(lane1[69] as usize) % 21] as u32) & (lane1[172] as u32))
+    rf = ((lane4[(lane1[69] as usize) % 21] as u32) & (lane1[172] as u32))
         | (((lane4[(lane1[69] as usize) % 21] as u32) | (lane1[172] as u32))
-            & (((lane3[12] as u32).wrapping_sub(B)).wrapping_add(77)));
+            & (((lane3[12] as u32).wrapping_sub(rb)).wrapping_add(77)));
 
     lane0[16] = (147u32
-        .wrapping_sub(((lane3[72] as u32) & ((F & 251) | 1)) | (((F & 250) | (lane3[72] as u32)) & 198)))
+        .wrapping_sub(((lane3[72] as u32) & ((rf & 251) | 1)) | (((rf & 250) | (lane3[72] as u32)) & 198)))
         as u8;
 
-    C = ((lane4[(lane1[168] as usize) % 21] as u32) & (lane0[(lane1[29] as usize) % 20] as u32) & 7)
+    rc = ((lane4[(lane1[168] as usize) % 21] as u32) & (lane0[(lane1[29] as usize) % 20] as u32) & 7)
         | (((lane4[(lane1[168] as usize) % 21] as u32) | (lane0[(lane1[29] as usize) % 20] as u32)) & 6);
 
-    F = ((lane4[(lane1[155] as usize) % 21] as u32) & (lane1[105] as u32))
+    rf = ((lane4[(lane1[155] as usize) % 21] as u32) & (lane1[105] as u32))
         | (((lane4[(lane1[155] as usize) % 21] as u32) | (lane1[105] as u32)) & 141);
 
-    lane0[3] = lane0[3].wrapping_sub(lane4[(shl_shr_xor(F as u8, C)) as usize % 21]);
+    lane0[3] = lane0[3].wrapping_sub(lane4[(shl_shr_xor(rf as u8, rc)) as usize % 21]);
 
     lane1[5] = (ror8_or_zero(lane0[12], ((lane0[(lane1[61] as usize) % 20] as u32 / 5) & 7))
         ^ (!(lane2[(lane3[84] as usize) % 35] as u32) / 5)) as u8;
 
     lane1[198] = lane1[198].wrapping_add((lane1[3] as u32) as u8);
 
-    A = (162 | (lane2[(lane3[64] as usize) % 35] as u32));
+    ra = (162 | (lane2[(lane3[64] as usize) % 35] as u32));
 
-    lane1[164] = lane1[164].wrapping_add(((A.wrapping_mul(A)) / 5) as u8);
+    lane1[164] = lane1[164].wrapping_add(((ra.wrapping_mul(ra)) / 5) as u8);
 
-    G = ror8_or_zero(139, ((lane3[80] as u32) & 7));
+    rg = ror8_or_zero(139, ((lane3[80] as u32) & 7));
 
-    C = (((lane4[(lane3[64] as usize) % 21] as u32)
+    rc = (((lane4[(lane3[64] as usize) % 21] as u32)
         .wrapping_mul(lane4[(lane3[64] as usize) % 21] as u32)
         .wrapping_mul(lane4[(lane3[64] as usize) % 21] as u32))
         & 95)
         | ((lane0[(lane3[40] as usize) % 20] as u32) & !95u32);
 
-    lane3[92] = ((G & 12)
+    lane3[92] = ((rg & 12)
         | ((lane0[(lane3[20] as usize) % 20] as u32) & 12)
-        | (G & (lane0[(lane3[20] as usize) % 20] as u32))
-        | C) as u8;
+        | (rg & (lane0[(lane3[20] as usize) % 20] as u32))
+        | rc) as u8;
 
     lane2[12] = lane2[12].wrapping_add(
         ((((lane1[103] as u32) & 32) | ((lane3[92] as u32) & ((lane1[103] as u32) | 60)) | 16) / 3) as u8,
@@ -533,12 +532,12 @@ pub(crate) fn blend(
 
     lane3[116] = (98 & ((!(lane3[64] as u32) & ((lane3[84] as u32) / 3)) << 1)) as u8;
 
-    A = ((lane1[35] as u32) & (lane2[8] as u32)) | ((lane3[40] as u32) & !(lane2[8] as u32));
+    ra = ((lane1[35] as u32) & (lane2[8] as u32)) | ((lane3[40] as u32) & !(lane2[8] as u32));
 
-    B = (A & (lane3[64] as u32)) | (((lane3[84] as u32) / 3) & !(lane3[64] as u32));
+    rb = (ra & (lane3[64] as u32)) | (((lane3[84] as u32) / 3) & !(lane3[64] as u32));
 
     lane1[143] = ((lane3[96] as u32).wrapping_sub(
-        (B & (86u32.wrapping_add(((lane1[172] as u32) & 64) >> 1)))
+        (rb & (86u32.wrapping_add(((lane1[172] as u32) & 64) >> 1)))
             | ((((((lane1[172] as u32) & 65) >> 1) ^ 86)
                 | ((!(lane3[64] as u32) & ((lane3[84] as u32) / 3))
                     | ((((lane3[40] as u32) & !(lane2[8] as u32))
@@ -549,19 +548,19 @@ pub(crate) fn blend(
 
     lane2[29] = 162_u8;
 
-    A = ((((lane4[(lane3[88] as usize) % 21] as u32) & 160)
+    ra = ((((lane4[(lane3[88] as usize) % 21] as u32) & 160)
         | ((lane0[(lane1[125] as usize) % 20] as u32) & 95))
         >> 1);
 
-    B = (lane2[(lane1[149] as usize) % 35] as u32) ^ ((lane1[43] as u32).wrapping_mul(lane1[43] as u32));
+    rb = (lane2[(lane1[149] as usize) % 35] as u32) ^ ((lane1[43] as u32).wrapping_mul(lane1[43] as u32));
 
-    lane0[15] = lane0[15].wrapping_add(((B & A) | ((A | B) & 115)) as u8);
+    lane0[15] = lane0[15].wrapping_add(((rb & ra) | ((ra | rb) & 115)) as u8);
 
     lane3[120] = ((lane3[64] as u32).wrapping_sub(lane0[(lane3[40] as usize) % 20] as u32)) as u8;
 
     lane1[95] = (lane4[(lane3[20] as usize) % 21] as u32) as u8;
 
-    A = ror8_or_zero(
+    ra = ror8_or_zero(
         lane2[(lane3[80] as usize) % 35],
         ((lane2[(lane1[17] as usize) % 35] as u32)
             .wrapping_mul(lane2[(lane1[17] as usize) % 35] as u32)
@@ -569,7 +568,7 @@ pub(crate) fn blend(
             & 7,
     );
 
-    lane0[7] = lane0[7].wrapping_sub((A.wrapping_mul(A)) as u8);
+    lane0[7] = lane0[7].wrapping_sub((ra.wrapping_mul(ra)) as u8);
 
     lane2[8] = ((lane2[8] as u32).wrapping_sub(lane1[184] as u32).wrapping_add(
         (lane4[(lane1[202] as usize) % 21] as u32)
@@ -590,31 +589,31 @@ pub(crate) fn blend(
 
     lane0[6] = (lane0[(lane1[119] as usize) % 20] as u32) as u8;
 
-    A = ((lane4[(lane1[190] as usize) % 21] as u32) & !209u32) | ((lane1[118] as u32) & 209);
+    ra = ((lane4[(lane1[190] as usize) % 21] as u32) & !209u32) | ((lane1[118] as u32) & 209);
 
-    B = (lane0[(lane3[120] as usize) % 20] as u32).wrapping_mul(lane0[(lane3[120] as usize) % 20] as u32);
+    rb = (lane0[(lane3[120] as usize) % 20] as u32).wrapping_mul(lane0[(lane3[120] as usize) % 20] as u32);
 
     lane0[12] = (((lane0[(lane3[84] as usize) % 20] as u32)
         ^ ((lane2[(lane1[71] as usize) % 35] as u32).wrapping_add(lane2[(lane1[15] as usize) % 35] as u32)))
-        & ((A & B) | ((A | B) & 27))) as u8;
+        & ((ra & rb) | ((ra | rb) & 27))) as u8;
 
-    B = ((lane1[32] as u32) & (lane2[(lane3[88] as usize) % 35] as u32))
+    rb = ((lane1[32] as u32) & (lane2[(lane3[88] as usize) % 35] as u32))
         | (((lane1[32] as u32) | (lane2[(lane3[88] as usize) % 35] as u32)) & 23);
 
-    D = ((((lane4[(lane1[57] as usize) % 21] as u32).wrapping_mul(231)) & 169) | (B & 86));
+    rd = ((((lane4[(lane1[57] as usize) % 21] as u32).wrapping_mul(231)) & 169) | (rb & 86));
 
-    F = ((((lane0[(lane1[82] as usize) % 20] as u32) & !29u32)
+    rf = ((((lane0[(lane1[82] as usize) % 20] as u32) & !29u32)
         | ((lane4[(lane3[124] as usize) % 21] as u32) & 29))
         & 190)
-        | ((lane4[((D / 5) as usize) % 21] as u32) & !190u32);
+        | ((lane4[((rd / 5) as usize) % 21] as u32) & !190u32);
 
-    H = (lane0[(lane3[40] as usize) % 20] as u32)
+    rh = (lane0[(lane3[40] as usize) % 20] as u32)
         .wrapping_mul(lane0[(lane3[40] as usize) % 20] as u32)
         .wrapping_mul(lane0[(lane3[40] as usize) % 20] as u32);
 
-    K = (H & (lane1[82] as u32)) | (H & 92) | ((lane1[82] as u32) & 92);
+    rk = (rh & (lane1[82] as u32)) | (rh & 92) | ((lane1[82] as u32) & 92);
 
-    lane3[128] = (((F & K) | ((F | K) & 192)) ^ (D / 5)) as u8;
+    lane3[128] = (((rf & rk) | ((rf | rk) & 192)) ^ (rd / 5)) as u8;
 
     lane2[25] ^= ((((lane0[(lane3[120] as usize) % 20] as u32) << 1).wrapping_mul(lane1[5] as u32))
         .wrapping_sub(
@@ -630,7 +629,7 @@ pub(crate) fn blend(
 mod tests {
     use super::blend;
 
-    /// Run the blender with deterministic input (same seed pattern as C test harness)
+    /// Run the blender with deterministic input (same seed pattern as rc test harness)
     /// and compare all four output buffers against precomputed interoperability vectors.
     fn run_blend_test(
         seed: i32,
