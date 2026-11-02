@@ -7,63 +7,23 @@
 //! After M2, the server can decrypt the 72-byte AES session key using the
 //! FairPlay key-decryption algorithm implemented in Rust.
 
-use crate::crypto::fairplay_tables::*;
+use crate::crypto::fairplay_data::*;
 use crate::error::CryptoError;
 
-// Precomputed reply messages for the four FairPlay modes.
-const REPLY_MESSAGE: [[u8; 142]; 4] = [
-    [
-        0x46, 0x50, 0x4c, 0x59, 0x03, 0x01, 0x02, 0x00, 0x00, 0x00, 0x00, 0x82, 0x02, 0x00, 0x0f,
-        0x9f, 0x3f, 0x9e, 0x0a, 0x25, 0x21, 0xdb, 0xdf, 0x31, 0x2a, 0xb2, 0xbf, 0xb2, 0x9e, 0x8d,
-        0x23, 0x2b, 0x63, 0x76, 0xa8, 0xc8, 0x18, 0x70, 0x1d, 0x22, 0xae, 0x93, 0xd8, 0x27, 0x37,
-        0xfe, 0xaf, 0x9d, 0xb4, 0xfd, 0xf4, 0x1c, 0x2d, 0xba, 0x9d, 0x1f, 0x49, 0xca, 0xaa, 0xbf,
-        0x65, 0x91, 0xac, 0x1f, 0x7b, 0xc6, 0xf7, 0xe0, 0x66, 0x3d, 0x21, 0xaf, 0xe0, 0x15, 0x65,
-        0x95, 0x3e, 0xab, 0x81, 0xf4, 0x18, 0xce, 0xed, 0x09, 0x5a, 0xdb, 0x7c, 0x3d, 0x0e, 0x25,
-        0x49, 0x09, 0xa7, 0x98, 0x31, 0xd4, 0x9c, 0x39, 0x82, 0x97, 0x34, 0x34, 0xfa, 0xcb, 0x42,
-        0xc6, 0x3a, 0x1c, 0xd9, 0x11, 0xa6, 0xfe, 0x94, 0x1a, 0x8a, 0x6d, 0x4a, 0x74, 0x3b, 0x46,
-        0xc3, 0xa7, 0x64, 0x9e, 0x44, 0xc7, 0x89, 0x55, 0xe4, 0x9d, 0x81, 0x55, 0x00, 0x95, 0x49,
-        0xc4, 0xe2, 0xf7, 0xa3, 0xf6, 0xd5, 0xba,
-    ],
-    [
-        0x46, 0x50, 0x4c, 0x59, 0x03, 0x01, 0x02, 0x00, 0x00, 0x00, 0x00, 0x82, 0x02, 0x01, 0xcf,
-        0x32, 0xa2, 0x57, 0x14, 0xb2, 0x52, 0x4f, 0x8a, 0xa0, 0xad, 0x7a, 0xf1, 0x64, 0xe3, 0x7b,
-        0xcf, 0x44, 0x24, 0xe2, 0x00, 0x04, 0x7e, 0xfc, 0x0a, 0xd6, 0x7a, 0xfc, 0xd9, 0x5d, 0xed,
-        0x1c, 0x27, 0x30, 0xbb, 0x59, 0x1b, 0x96, 0x2e, 0xd6, 0x3a, 0x9c, 0x4d, 0xed, 0x88, 0xba,
-        0x8f, 0xc7, 0x8d, 0xe6, 0x4d, 0x91, 0xcc, 0xfd, 0x5c, 0x7b, 0x56, 0xda, 0x88, 0xe3, 0x1f,
-        0x5c, 0xce, 0xaf, 0xc7, 0x43, 0x19, 0x95, 0xa0, 0x16, 0x65, 0xa5, 0x4e, 0x19, 0x39, 0xd2,
-        0x5b, 0x94, 0xdb, 0x64, 0xb9, 0xe4, 0x5d, 0x8d, 0x06, 0x3e, 0x1e, 0x6a, 0xf0, 0x7e, 0x96,
-        0x56, 0x16, 0x2b, 0x0e, 0xfa, 0x40, 0x42, 0x75, 0xea, 0x5a, 0x44, 0xd9, 0x59, 0x1c, 0x72,
-        0x56, 0xb9, 0xfb, 0xe6, 0x51, 0x38, 0x98, 0xb8, 0x02, 0x27, 0x72, 0x19, 0x88, 0x57, 0x16,
-        0x50, 0x94, 0x2a, 0xd9, 0x46, 0x68, 0x8a,
-    ],
-    [
-        0x46, 0x50, 0x4c, 0x59, 0x03, 0x01, 0x02, 0x00, 0x00, 0x00, 0x00, 0x82, 0x02, 0x02, 0xc1,
-        0x69, 0xa3, 0x52, 0xee, 0xed, 0x35, 0xb1, 0x8c, 0xdd, 0x9c, 0x58, 0xd6, 0x4f, 0x16, 0xc1,
-        0x51, 0x9a, 0x89, 0xeb, 0x53, 0x17, 0xbd, 0x0d, 0x43, 0x36, 0xcd, 0x68, 0xf6, 0x38, 0xff,
-        0x9d, 0x01, 0x6a, 0x5b, 0x52, 0xb7, 0xfa, 0x92, 0x16, 0xb2, 0xb6, 0x54, 0x82, 0xc7, 0x84,
-        0x44, 0x11, 0x81, 0x21, 0xa2, 0xc7, 0xfe, 0xd8, 0x3d, 0xb7, 0x11, 0x9e, 0x91, 0x82, 0xaa,
-        0xd7, 0xd1, 0x8c, 0x70, 0x63, 0xe2, 0xa4, 0x57, 0x55, 0x59, 0x10, 0xaf, 0x9e, 0x0e, 0xfc,
-        0x76, 0x34, 0x7d, 0x16, 0x40, 0x43, 0x80, 0x7f, 0x58, 0x1e, 0xe4, 0xfb, 0xe4, 0x2c, 0xa9,
-        0xde, 0xdc, 0x1b, 0x5e, 0xb2, 0xa3, 0xaa, 0x3d, 0x2e, 0xcd, 0x59, 0xe7, 0xee, 0xe7, 0x0b,
-        0x36, 0x29, 0xf2, 0x2a, 0xfd, 0x16, 0x1d, 0x87, 0x73, 0x53, 0xdd, 0xb9, 0x9a, 0xdc, 0x8e,
-        0x07, 0x00, 0x6e, 0x56, 0xf8, 0x50, 0xce,
-    ],
-    [
-        0x46, 0x50, 0x4c, 0x59, 0x03, 0x01, 0x02, 0x00, 0x00, 0x00, 0x00, 0x82, 0x02, 0x03, 0x90,
-        0x01, 0xe1, 0x72, 0x7e, 0x0f, 0x57, 0xf9, 0xf5, 0x88, 0x0d, 0xb1, 0x04, 0xa6, 0x25, 0x7a,
-        0x23, 0xf5, 0xcf, 0xff, 0x1a, 0xbb, 0xe1, 0xe9, 0x30, 0x45, 0x25, 0x1a, 0xfb, 0x97, 0xeb,
-        0x9f, 0xc0, 0x01, 0x1e, 0xbe, 0x0f, 0x3a, 0x81, 0xdf, 0x5b, 0x69, 0x1d, 0x76, 0xac, 0xb2,
-        0xf7, 0xa5, 0xc7, 0x08, 0xe3, 0xd3, 0x28, 0xf5, 0x6b, 0xb3, 0x9d, 0xbd, 0xe5, 0xf2, 0x9c,
-        0x8a, 0x17, 0xf4, 0x81, 0x48, 0x7e, 0x3a, 0xe8, 0x63, 0xc6, 0x78, 0x32, 0x54, 0x22, 0xe6,
-        0xf7, 0x8e, 0x16, 0x6d, 0x18, 0xaa, 0x7f, 0xd6, 0x36, 0x25, 0x8b, 0xce, 0x28, 0x72, 0x6f,
-        0x66, 0x1f, 0x73, 0x88, 0x93, 0xce, 0x44, 0x31, 0x1e, 0x4b, 0xe6, 0xc0, 0x53, 0x51, 0x93,
-        0xe5, 0xef, 0x72, 0xe8, 0x68, 0x62, 0x33, 0x72, 0x9c, 0x22, 0x7d, 0x82, 0x0c, 0x99, 0x94,
-        0x45, 0xd8, 0x92, 0x46, 0xc8, 0xc3, 0x59,
-    ],
+/// Number of handshake modes (reply messages, message keys and IVs).
+const MODES: usize = 4;
+
+/// Round constants for the key schedule.
+const INDEX_MANGLE: [u8; 11] = [
+    0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1b, 0x36, 0x6c,
 ];
 
-const FP_HEADER: [u8; 12] = [
-    0x46, 0x50, 0x4c, 0x59, 0x03, 0x01, 0x04, 0x00, 0x00, 0x00, 0x00, 0x14,
+/// Per-step rotation amounts of the MD5 variant.
+#[rustfmt::skip]
+const MD5_SHIFT: [u32; 64] = [
+    7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20,
+    4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15,
+    21,
 ];
 
 /// FairPlay handshake state machine.
@@ -95,11 +55,13 @@ impl FairPlay {
             return Err(CryptoError::FairPlay("unsupported version".into()));
         }
         let mode = request[14] as usize;
-        if mode >= 4 {
+        if mode >= MODES {
             return Err(CryptoError::FairPlay("invalid mode".into()));
         }
         self.keymsglen = 0;
-        Ok(REPLY_MESSAGE[mode])
+        let mut reply = [0u8; 142];
+        reply.copy_from_slice(&REPLIES[mode * 142..(mode + 1) * 142]);
+        Ok(reply)
     }
 
     /// Process M2 (key message). Stores the key message and returns the 32-byte reply.
@@ -108,16 +70,16 @@ impl FairPlay {
             return Err(CryptoError::FairPlay("unsupported version".into()));
         }
         // The `mode` byte (offset 12) later selects a key/IV table in
-        // `decrypt_message`; both tables have `MESSAGE_KEY.len()` (== 4) entries,
+        // `decrypt_message`; both tables have `MODES` (== 4) entries,
         // so reject an out-of-range mode here before storing the key message.
         // Mirrors the M1 mode check in `setup`.
-        if request[12] as usize >= MESSAGE_KEY.len() {
+        if request[12] as usize >= MODES {
             return Err(CryptoError::FairPlay("invalid mode".into()));
         }
         self.keymsg.copy_from_slice(request);
         self.keymsglen = 164;
         let mut res = [0u8; 32];
-        res[..12].copy_from_slice(&FP_HEADER);
+        res[..12].copy_from_slice(&HEADER);
         res[12..].copy_from_slice(&request[144..164]);
         Ok(res)
     }
@@ -140,7 +102,7 @@ fn playfair_decrypt(message3: &[u8; 164], cipher_text: &[u8; 72]) -> [u8; 16] {
     let mut sap_key = [0u8; 16];
     let mut key_schedule = [[0u32; 4]; 11];
 
-    generate_session_key(&DEFAULT_SAP, message3, &mut sap_key);
+    generate_session_key(&SAP_DEFAULT, message3, &mut sap_key);
     generate_key_schedule(&sap_key, &mut key_schedule);
     z_xor_block(chunk2, &mut block_in);
     cycle(&mut block_in, &key_schedule);
@@ -160,66 +122,66 @@ fn playfair_decrypt(message3: &[u8; 164], cipher_text: &[u8; 72]) -> [u8; 16] {
 /// XOR a 16-byte block with the Z key.
 fn z_xor_block(input: &[u8], out: &mut [u8; 16]) {
     out.iter_mut()
-        .zip(input.iter().zip(&Z_KEY))
+        .zip(input.iter().zip(&MASK_Z))
         .for_each(|(o, (&a, &b))| *o = a ^ b);
 }
 
 /// XOR a block in-place with the Z key.
 fn z_xor_inplace(block: &mut [u8; 16]) {
-    block.iter_mut().zip(&Z_KEY).for_each(|(b, &k)| *b ^= k);
+    block.iter_mut().zip(&MASK_Z).for_each(|(b, &k)| *b ^= k);
 }
 
 /// XOR a block in-place with the X key.
 fn x_xor_inplace(block: &mut [u8; 16]) {
-    block.iter_mut().zip(&X_KEY).for_each(|(b, &k)| *b ^= k);
+    block.iter_mut().zip(&MASK_X).for_each(|(b, &k)| *b ^= k);
 }
 
 /// XOR a 16-byte block with the T key.
 fn t_xor(input: &[u8], out: &mut [u8; 16]) {
     out.iter_mut()
-        .zip(input.iter().zip(&T_KEY))
+        .zip(input.iter().zip(&MASK_T))
         .for_each(|(o, (&a, &b))| *o = a ^ b);
 }
 
 fn table_index(i: usize) -> &'static [u8] {
     let offset = ((31 * i) % 0x28) << 8;
-    &TABLE_S1[offset..offset + 256]
+    &KS_PAGES[offset..offset + 256]
 }
 
 fn message_table_index(i: usize) -> &'static [u8] {
     let offset = ((97 * i) % 144) << 8;
-    &TABLE_S2[offset..offset + 256]
+    &MSG_PAGES[offset..offset + 256]
 }
 
 fn permute_table_2(i: usize) -> &'static [u8] {
     let offset = ((71 * i) % 144) << 8;
-    &TABLE_S4[offset..offset + 256]
+    &PERM_PAGES[offset..offset + 256]
 }
 
 fn permute_block_1(block: &mut [u8; 16]) {
-    block[0] = TABLE_S3[block[0] as usize];
-    block[4] = TABLE_S3[0x400 + block[4] as usize];
-    block[8] = TABLE_S3[0x800 + block[8] as usize];
-    block[12] = TABLE_S3[0xc00 + block[12] as usize];
+    block[0] = PERM_FWD[block[0] as usize];
+    block[4] = PERM_FWD[0x400 + block[4] as usize];
+    block[8] = PERM_FWD[0x800 + block[8] as usize];
+    block[12] = PERM_FWD[0xc00 + block[12] as usize];
 
     let tmp = block[13];
-    block[13] = TABLE_S3[0x100 + block[9] as usize];
-    block[9] = TABLE_S3[0xd00 + block[5] as usize];
-    block[5] = TABLE_S3[0x900 + block[1] as usize];
-    block[1] = TABLE_S3[0x500 + tmp as usize];
+    block[13] = PERM_FWD[0x100 + block[9] as usize];
+    block[9] = PERM_FWD[0xd00 + block[5] as usize];
+    block[5] = PERM_FWD[0x900 + block[1] as usize];
+    block[1] = PERM_FWD[0x500 + tmp as usize];
 
     let tmp = block[2];
-    block[2] = TABLE_S3[0xa00 + block[10] as usize];
-    block[10] = TABLE_S3[0x200 + tmp as usize];
+    block[2] = PERM_FWD[0xa00 + block[10] as usize];
+    block[10] = PERM_FWD[0x200 + tmp as usize];
     let tmp = block[6];
-    block[6] = TABLE_S3[0xe00 + block[14] as usize];
-    block[14] = TABLE_S3[0x600 + tmp as usize];
+    block[6] = PERM_FWD[0xe00 + block[14] as usize];
+    block[14] = PERM_FWD[0x600 + tmp as usize];
 
     let tmp = block[3];
-    block[3] = TABLE_S3[0xf00 + block[7] as usize];
-    block[7] = TABLE_S3[0x300 + block[11] as usize];
-    block[11] = TABLE_S3[0x700 + block[15] as usize];
-    block[15] = TABLE_S3[0xb00 + tmp as usize];
+    block[3] = PERM_FWD[0xf00 + block[7] as usize];
+    block[7] = PERM_FWD[0x300 + block[11] as usize];
+    block[11] = PERM_FWD[0x700 + block[15] as usize];
+    block[15] = PERM_FWD[0xb00 + tmp as usize];
 }
 
 fn permute_block_2(block: &mut [u8; 16], round: usize) {
@@ -308,33 +270,33 @@ fn cycle(block: &mut [u8; 16], key_schedule: &[[u32; 4]; 11]) {
     for round in 0..9 {
         let ks = &key_schedule[9 - round];
         let key0 = ks[0].to_le_bytes();
-        let ptr1 = TABLE_S5[(block[3] ^ key0[3]) as usize];
-        let ptr2 = TABLE_S6[(block[2] ^ key0[2]) as usize];
-        let ptr3 = TABLE_S8[(block[0] ^ key0[0]) as usize];
-        let ptr4 = TABLE_S7[(block[1] ^ key0[1]) as usize];
+        let ptr1 = MIX_0[(block[3] ^ key0[3]) as usize];
+        let ptr2 = MIX_1[(block[2] ^ key0[2]) as usize];
+        let ptr3 = MIX_3[(block[0] ^ key0[0]) as usize];
+        let ptr4 = MIX_2[(block[1] ^ key0[1]) as usize];
         let ab = ptr1 ^ ptr2 ^ ptr3 ^ ptr4;
         write_u32_le(block, 0, ab);
 
         let key1 = ks[1].to_le_bytes();
-        let ptr2 = TABLE_S5[(block[7] ^ key1[3]) as usize];
-        let ptr1 = TABLE_S6[(block[6] ^ key1[2]) as usize];
-        let ptr4 = TABLE_S7[(block[5] ^ key1[1]) as usize];
-        let ptr3 = TABLE_S8[(block[4] ^ key1[0]) as usize];
+        let ptr2 = MIX_0[(block[7] ^ key1[3]) as usize];
+        let ptr1 = MIX_1[(block[6] ^ key1[2]) as usize];
+        let ptr4 = MIX_2[(block[5] ^ key1[1]) as usize];
+        let ptr3 = MIX_3[(block[4] ^ key1[0]) as usize];
         let ab = ptr1 ^ ptr2 ^ ptr3 ^ ptr4;
         write_u32_le(block, 4, ab);
 
         let key2 = ks[2].to_le_bytes();
-        let v2 = TABLE_S5[(block[11] ^ key2[3]) as usize]
-            ^ TABLE_S6[(block[10] ^ key2[2]) as usize]
-            ^ TABLE_S7[(block[9] ^ key2[1]) as usize]
-            ^ TABLE_S8[(block[8] ^ key2[0]) as usize];
+        let v2 = MIX_0[(block[11] ^ key2[3]) as usize]
+            ^ MIX_1[(block[10] ^ key2[2]) as usize]
+            ^ MIX_2[(block[9] ^ key2[1]) as usize]
+            ^ MIX_3[(block[8] ^ key2[0]) as usize];
         write_u32_le(block, 8, v2);
 
         let key3 = ks[3].to_le_bytes();
-        let v3 = TABLE_S5[(block[15] ^ key3[3]) as usize]
-            ^ TABLE_S6[(block[14] ^ key3[2]) as usize]
-            ^ TABLE_S7[(block[13] ^ key3[1]) as usize]
-            ^ TABLE_S8[(block[12] ^ key3[0]) as usize];
+        let v3 = MIX_0[(block[15] ^ key3[3]) as usize]
+            ^ MIX_1[(block[14] ^ key3[2]) as usize]
+            ^ MIX_2[(block[13] ^ key3[1]) as usize]
+            ^ MIX_3[(block[12] ^ key3[0]) as usize];
         write_u32_le(block, 12, v3);
 
         permute_block_2(block, 8 - round);
@@ -584,7 +546,7 @@ fn decrypt_message(message_in: &[u8], decrypted_message: &mut [u8; 128]) {
         // 9 rounds of permutation
         for j_round in 0..9 {
             let base = 0x80 - 0x10 * j_round;
-            let mk = &MESSAGE_KEY[mode];
+            let mk = &MSG_KEYS[mode * 144..(mode + 1) * 144];
 
             buffer[0x0] = message_table_index(base)[buffer[0x0] as usize] ^ mk[base];
             buffer[0x4] = message_table_index(base + 0x4)[buffer[0x4] as usize] ^ mk[base + 0x4];
@@ -611,57 +573,57 @@ fn decrypt_message(message_in: &[u8], decrypted_message: &mut [u8; 128]) {
             buffer[0xf] = message_table_index(base + 0xf)[tmp as usize] ^ mk[base + 0xf];
 
             // T-table mixing
-            let b0 = TABLE_S9[buffer[0x0] as usize]
-                ^ TABLE_S9[0x100 + buffer[0x1] as usize]
-                ^ TABLE_S9[0x200 + buffer[0x2] as usize]
-                ^ TABLE_S9[0x300 + buffer[0x3] as usize];
-            let b1 = TABLE_S9[buffer[0x4] as usize]
-                ^ TABLE_S9[0x100 + buffer[0x5] as usize]
-                ^ TABLE_S9[0x200 + buffer[0x6] as usize]
-                ^ TABLE_S9[0x300 + buffer[0x7] as usize];
-            let b2 = TABLE_S9[buffer[0x8] as usize]
-                ^ TABLE_S9[0x100 + buffer[0x9] as usize]
-                ^ TABLE_S9[0x200 + buffer[0xa] as usize]
-                ^ TABLE_S9[0x300 + buffer[0xb] as usize];
-            let b3 = TABLE_S9[buffer[0xc] as usize]
-                ^ TABLE_S9[0x100 + buffer[0xd] as usize]
-                ^ TABLE_S9[0x200 + buffer[0xe] as usize]
-                ^ TABLE_S9[0x300 + buffer[0xf] as usize];
+            let b0 = MIX_MSG[buffer[0x0] as usize]
+                ^ MIX_MSG[0x100 + buffer[0x1] as usize]
+                ^ MIX_MSG[0x200 + buffer[0x2] as usize]
+                ^ MIX_MSG[0x300 + buffer[0x3] as usize];
+            let b1 = MIX_MSG[buffer[0x4] as usize]
+                ^ MIX_MSG[0x100 + buffer[0x5] as usize]
+                ^ MIX_MSG[0x200 + buffer[0x6] as usize]
+                ^ MIX_MSG[0x300 + buffer[0x7] as usize];
+            let b2 = MIX_MSG[buffer[0x8] as usize]
+                ^ MIX_MSG[0x100 + buffer[0x9] as usize]
+                ^ MIX_MSG[0x200 + buffer[0xa] as usize]
+                ^ MIX_MSG[0x300 + buffer[0xb] as usize];
+            let b3 = MIX_MSG[buffer[0xc] as usize]
+                ^ MIX_MSG[0x100 + buffer[0xd] as usize]
+                ^ MIX_MSG[0x200 + buffer[0xe] as usize]
+                ^ MIX_MSG[0x300 + buffer[0xf] as usize];
             write_u32_le(&mut buffer, 0, b0);
             write_u32_le(&mut buffer, 4, b1);
             write_u32_le(&mut buffer, 8, b2);
             write_u32_le(&mut buffer, 12, b3);
         }
 
-        // Final permutation with TABLE_S10
+        // Final permutation with PERM_OUT
         let b = &mut buffer;
-        b[0x0] = TABLE_S10[b[0x0] as usize];
-        b[0x4] = TABLE_S10[(0x4 << 8) + b[0x4] as usize];
-        b[0x8] = TABLE_S10[(0x8 << 8) + b[0x8] as usize];
-        b[0xc] = TABLE_S10[(0xc << 8) + b[0xc] as usize];
+        b[0x0] = PERM_OUT[b[0x0] as usize];
+        b[0x4] = PERM_OUT[(0x4 << 8) + b[0x4] as usize];
+        b[0x8] = PERM_OUT[(0x8 << 8) + b[0x8] as usize];
+        b[0xc] = PERM_OUT[(0xc << 8) + b[0xc] as usize];
         let tmp = b[0x0d];
-        b[0xd] = TABLE_S10[(0xd << 8) + b[0x9] as usize];
-        b[0x9] = TABLE_S10[(0x9 << 8) + b[0x5] as usize];
-        b[0x5] = TABLE_S10[(0x5 << 8) + b[0x1] as usize];
-        b[0x1] = TABLE_S10[(0x1 << 8) + tmp as usize];
+        b[0xd] = PERM_OUT[(0xd << 8) + b[0x9] as usize];
+        b[0x9] = PERM_OUT[(0x9 << 8) + b[0x5] as usize];
+        b[0x5] = PERM_OUT[(0x5 << 8) + b[0x1] as usize];
+        b[0x1] = PERM_OUT[(0x1 << 8) + tmp as usize];
         let tmp = b[0x02];
-        b[0x2] = TABLE_S10[(0x2 << 8) + b[0xa] as usize];
-        b[0xa] = TABLE_S10[(0xa << 8) + tmp as usize];
+        b[0x2] = PERM_OUT[(0x2 << 8) + b[0xa] as usize];
+        b[0xa] = PERM_OUT[(0xa << 8) + tmp as usize];
         let tmp = b[0x06];
-        b[0x6] = TABLE_S10[(0x6 << 8) + b[0xe] as usize];
-        b[0xe] = TABLE_S10[(0xe << 8) + tmp as usize];
+        b[0x6] = PERM_OUT[(0x6 << 8) + b[0xe] as usize];
+        b[0xe] = PERM_OUT[(0xe << 8) + tmp as usize];
         let tmp = b[0x3];
-        b[0x3] = TABLE_S10[(0x3 << 8) + b[0x7] as usize];
-        b[0x7] = TABLE_S10[(0x7 << 8) + b[0xb] as usize];
-        b[0xb] = TABLE_S10[(0xb << 8) + b[0xf] as usize];
-        b[0xf] = TABLE_S10[(0xf << 8) + tmp as usize];
+        b[0x3] = PERM_OUT[(0x3 << 8) + b[0x7] as usize];
+        b[0x7] = PERM_OUT[(0x7 << 8) + b[0xb] as usize];
+        b[0xb] = PERM_OUT[(0xb << 8) + b[0xf] as usize];
+        b[0xf] = PERM_OUT[(0xf << 8) + tmp as usize];
 
         // XOR with previous block or IV
         if mode == 2 || mode == 1 || mode == 0 {
             let iv = if i > 0 {
                 &message_in[0x10 * i..0x10 * i + 16]
             } else {
-                &MESSAGE_IV[mode]
+                &MSG_IVS[mode * 16..(mode + 1) * 16]
             };
             for j in 0..16 {
                 decrypted_message[0x10 * i + j] = buffer[j] ^ iv[j];
@@ -670,7 +632,7 @@ fn decrypt_message(message_in: &[u8], decrypted_message: &mut [u8; 128]) {
             let iv = if i < 7 {
                 &message_in[0x70 - 0x10 * i..0x70 - 0x10 * i + 16]
             } else {
-                &MESSAGE_IV[mode]
+                &MSG_IVS[mode * 16..(mode + 1) * 16]
             };
             for j in 0..16 {
                 decrypted_message[0x70 - 0x10 * i + j] = buffer[j] ^ iv[j];
@@ -684,12 +646,12 @@ fn generate_session_key(old_sap: &[u8], message_in: &[u8], session_key: &mut [u8
     decrypt_message(message_in, &mut decrypted_message);
 
     let mut new_sap = [0u8; 320];
-    new_sap[0x000..0x011].copy_from_slice(&STATIC_SOURCE_1);
+    new_sap[0x000..0x011].copy_from_slice(&STATIC_A);
     new_sap[0x011..0x091].copy_from_slice(&decrypted_message);
     new_sap[0x091..0x111].copy_from_slice(&old_sap[0x80..0x100]);
-    new_sap[0x111..0x140].copy_from_slice(&STATIC_SOURCE_2);
+    new_sap[0x111..0x140].copy_from_slice(&STATIC_B);
 
-    session_key.copy_from_slice(&INITIAL_SESSION_KEY);
+    session_key.copy_from_slice(&SESSION_INIT);
 
     for round in 0..5 {
         let base = &new_sap[round * 64..(round + 1) * 64];
@@ -847,7 +809,7 @@ mod playfair_tests {
         msg[4] = 0x03;
         msg[12] = 0x01;
         let mut sk = [0u8; 16];
-        generate_session_key(&DEFAULT_SAP, &msg, &mut sk);
+        generate_session_key(&SAP_DEFAULT, &msg, &mut sk);
         assert_eq!(to_hex(&sk), "4c8323c42e6b9b50fa961f0039cc90f3");
     }
 

@@ -4,9 +4,9 @@ pub mod aes;
 #[cfg(feature = "fairplay")]
 pub mod fairplay;
 #[cfg(feature = "fairplay")]
-mod fairplay_garble;
+mod fairplay_data;
 #[cfg(feature = "fairplay")]
-mod fairplay_tables;
+mod fairplay_garble;
 pub mod pairing;
 pub mod rsa;
 
