@@ -4,6 +4,7 @@ use super::MAX_NONCE_LEN;
 use super::handlers_ap1 as handlers;
 use super::rtsp;
 use super::types::*;
+#[cfg(feature = "fairplay")]
 use crate::crypto::fairplay::FairPlay;
 use crate::crypto::pairing::Pairing;
 use crate::crypto::rsa::RsaKey;
@@ -87,6 +88,7 @@ fn new_raop_connection(
 ) -> handlers::RaopConnection {
     handlers::RaopConnection {
         raop_rtp: None,
+        #[cfg(feature = "fairplay")]
         fairplay: FairPlay::new(),
         pairing: shared.pairing.create_session(),
         local_addr: socket_ip_bytes(local),

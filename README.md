@@ -144,7 +144,7 @@ use shairplay::{Ap1Codec, Ap1Encryption, RaopServer};
 
 let builder = RaopServer::builder()
     .advertise_codecs([Ap1Codec::Alac, Ap1Codec::Pcm])
-    .advertise_encryption([Ap1Encryption::Rsa, Ap1Encryption::FairPlay]);
+    .advertise_encryption([Ap1Encryption::Rsa, Ap1Encryption::FairPlay]); // FairPlay needs the `fairplay` feature
 ```
 
 The order supplied by the application is preserved. Empty and duplicate lists
@@ -167,8 +167,9 @@ limits and requirements for conformant receiver authentication.
 | `diagnostic-headers` | none | Opt-in, redacted RTSP request and response header diagnostics |
 | `dangerous-raw-headers` | (implies `diagnostic-headers`) | Raw header values for explicit use in debug-assertion builds |
 | `resample` | rubato | Sample rate conversion + channel mixdown |
+| `fairplay` | none | FairPlay handshake and key decryption (`/fp-setup`, `a=fpaeskey`, `Ap1Encryption::FairPlay`). Derived from the GPL-3.0 playfair library, see [License](#license) |
 | `ap2` | chacha20poly1305, hkdf, symphonia, … (implies `resample`) | Full AirPlay 2 audio |
-| `video` | (implies `ap2`) | Legacy feature set for screen mirroring (`0x527FFEE6`) |
+| `video` | (implies `ap2` and `fairplay`) | Legacy feature set for screen mirroring (`0x527FFEE6`) |
 | `hls` | (implies `video`) | HLS video playback (YouTube, etc.) — receiver relays URL to app |
 
 ### Experimental PipeWire Probe Compatibility
@@ -236,7 +237,7 @@ Full pipeline: SRP-6a pairing → encrypted RTSP → FairPlay → PTP timing →
 - **Type 103 (buffered)** — AAC over TCP with timed playout buffer. Used for music.
 - **Type 96 (realtime)** — ALAC over UDP with immediate delivery. Used for Siri, phone calls, system sounds.
 
-Scope: the AP2 profile implements FairPlay and HomeKit pairing, but not licensed
+Scope: the AP2 profile implements HomeKit pairing and, with the `fairplay` feature, FairPlay, but not licensed
 MFi-SAP receiver authentication through `/auth-setup`. The profile does not
 advertise `et=4` or the MFi feature bits; see the
 [`/auth-setup` protocol status](docs/protocol/auth-setup.md).
@@ -359,7 +360,18 @@ This project builds on the work of many contributors to the AirPlay open-source 
 
 ## License
 
-LGPL-3.0-or-later
+LGPL-3.0-or-later.
+
+**Exception: the `fairplay` feature.** The FairPlay implementation
+(`src/crypto/fairplay.rs`, `fairplay_garble.rs`, `fairplay_tables.rs`) is a
+Rust port of the playfair library that the upstream
+[shairplay](https://github.com/juhovh/shairplay) C project ships under the
+GPL-3.0 and only builds on request (`--with-playfair`). It is therefore
+compiled only when you enable the `fairplay` feature, which `video` and `hls`
+imply. The default build does not contain this code. If you enable it, make
+sure your distribution complies with the GPL-3.0 for the resulting work.
+Whether the upstream playfair code is itself freely redistributable has not
+been established, see the open licensing question in the issue tracker.
 
 ## Disclaimer
 

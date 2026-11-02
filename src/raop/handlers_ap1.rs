@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+#[cfg(feature = "fairplay")]
 use crate::crypto::fairplay::FairPlay;
 use crate::crypto::pairing::PairingSession;
 use crate::error::{CodecError, ShairplayError};
@@ -15,6 +16,7 @@ use crate::crypto::pairing_homekit::{PairVerifyServer, SrpServer};
 /// Per-connection state for RTSP handler dispatch. Equivalent to raop_conn_t.
 pub(crate) struct RaopConnection {
     pub(crate) raop_rtp: Option<RaopRtp>,
+    #[cfg(feature = "fairplay")]
     pub(crate) fairplay: FairPlay,
     pub(crate) pairing: PairingSession,
     pub(crate) local_addr: Vec<u8>,
@@ -138,6 +140,7 @@ pub(crate) fn handle_pair_verify(
 }
 
 /// FairPlay DRM handshake (fp-setup M1/M2).
+#[cfg(feature = "fairplay")]
 pub(crate) fn handle_fp_setup(
     conn: &mut RaopConnection,
     request: &HttpRequest,
@@ -172,6 +175,41 @@ pub(crate) fn handle_fp_setup(
         }
         _ => None,
     }
+}
+
+/// Recover the AES session key from an `a=fpaeskey` SDP attribute.
+#[cfg(feature = "fairplay")]
+fn decrypt_fpaeskey(conn: &mut RaopConnection, fp_key_str: &str) -> Option<Vec<u8>> {
+    match conn.shared.rsakey.decode(fp_key_str) {
+        Ok(fp_data) if fp_data.len() == 72 => {
+            let input: &[u8; 72] = fp_data.as_slice().try_into().ok()?;
+            match conn.fairplay.decrypt(input) {
+                Ok(key) => Some(key.to_vec()),
+                Err(e) => {
+                    tracing::warn!("ANNOUNCE fpaeskey decrypt failed: {e}");
+                    conn.shared.handler.on_error(&ShairplayError::Crypto(e));
+                    None
+                }
+            }
+        }
+        Ok(fp_data) => {
+            tracing::warn!(len = fp_data.len(), "ANNOUNCE fpaeskey has invalid length");
+            None
+        }
+        Err(e) => {
+            tracing::warn!("ANNOUNCE fpaeskey decode failed: {e}");
+            conn.shared.handler.on_error(&ShairplayError::Crypto(e));
+            None
+        }
+    }
+}
+
+/// Without the `fairplay` feature no FairPlay key can be recovered, so a sender
+/// that negotiated it is refused like any other undecryptable stream.
+#[cfg(not(feature = "fairplay"))]
+fn decrypt_fpaeskey(_conn: &mut RaopConnection, _fp_key_str: &str) -> Option<Vec<u8>> {
+    tracing::warn!("ANNOUNCE fpaeskey rejected: built without the `fairplay` feature");
+    None
 }
 
 /// RTSP OPTIONS: return supported methods.
@@ -239,28 +277,7 @@ pub(crate) fn handle_announce(
             }
         }
     } else if let Some(fp_key_str) = fairplay_key {
-        match conn.shared.rsakey.decode(fp_key_str) {
-            Ok(fp_data) if fp_data.len() == 72 => {
-                let input: &[u8; 72] = fp_data.as_slice().try_into().ok()?;
-                match conn.fairplay.decrypt(input) {
-                    Ok(key) => Some(key.to_vec()),
-                    Err(e) => {
-                        tracing::warn!("ANNOUNCE fpaeskey decrypt failed: {e}");
-                        conn.shared.handler.on_error(&ShairplayError::Crypto(e));
-                        None
-                    }
-                }
-            }
-            Ok(fp_data) => {
-                tracing::warn!(len = fp_data.len(), "ANNOUNCE fpaeskey has invalid length");
-                None
-            }
-            Err(e) => {
-                tracing::warn!("ANNOUNCE fpaeskey decode failed: {e}");
-                conn.shared.handler.on_error(&ShairplayError::Crypto(e));
-                None
-            }
-        }
+        decrypt_fpaeskey(conn, fp_key_str)
     } else {
         None
     };
@@ -470,7 +487,8 @@ pub(crate) fn handle_set_parameter(
 // Verifies that handler-facing error notification (`AudioHandler::on_error`) is
 // actually wired to a representative failure path. Gated to AP1-only builds so the
 // `RaopShared`/`RaopConnection` literals below need only the base (non-AP2) fields.
-#[cfg(all(test, not(feature = "ap2")))]
+// Requires the `fairplay` feature because the path under test is `/fp-setup`.
+#[cfg(all(test, not(feature = "ap2"), feature = "fairplay"))]
 mod tests {
     use super::*;
     use crate::crypto::pairing::Pairing;

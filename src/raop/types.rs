@@ -63,6 +63,9 @@ pub enum Ap1Encryption {
     /// RSA session-key exchange (`et=1`, `a=rsaaeskey`).
     Rsa,
     /// FairPlay DRM (`et=3`, `POST /fp-setup` + `a=fpaeskey`).
+    ///
+    /// Requires the `fairplay` feature, which is GPLv3-derived.
+    #[cfg(feature = "fairplay")]
     FairPlay,
 }
 
@@ -72,6 +75,7 @@ impl Ap1Encryption {
         match self {
             Ap1Encryption::None => "0",
             Ap1Encryption::Rsa => "1",
+            #[cfg(feature = "fairplay")]
             Ap1Encryption::FairPlay => "3",
         }
     }

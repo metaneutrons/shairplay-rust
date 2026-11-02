@@ -74,6 +74,10 @@ jobs:
         with:
           tool: cargo-nextest
       - run: cargo nextest run --workspace --all-features --locked
+      - name: Verify default build without the GPL-derived FairPlay code
+        run: cargo nextest run --workspace --no-default-features --locked
+      - name: Verify FairPlay feature on its own
+        run: cargo nextest run --workspace --no-default-features --features fairplay --locked
       - name: Verify auth-setup baseline without optional features
         run: cargo nextest run --workspace --no-default-features --locked --test integration -E 'test(auth_setup::)'
       - name: Verify standalone PipeWire compatibility

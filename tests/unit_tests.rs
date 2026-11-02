@@ -1,6 +1,7 @@
 //! Unit tests with test vectors generated from the original C implementation.
 
 use shairplay::crypto::aes::AesCtr;
+#[cfg(feature = "fairplay")]
 use shairplay::crypto::fairplay::FairPlay;
 use shairplay::crypto::pairing::Pairing;
 use shairplay::net::mdns::AirPlayServiceInfo;
@@ -263,6 +264,7 @@ fn pairing_derive_key_deterministic() {
 // FairPlay — setup/handshake protocol
 // ============================================================
 #[test]
+#[cfg(feature = "fairplay")]
 fn fairplay_setup_modes() {
     let mut fp = FairPlay::new();
     for mode in 0..4u8 {
@@ -276,6 +278,7 @@ fn fairplay_setup_modes() {
 }
 
 #[test]
+#[cfg(feature = "fairplay")]
 fn fairplay_handshake_response() {
     let mut fp = FairPlay::new();
     let mut req = [0u8; 164];
@@ -289,6 +292,7 @@ fn fairplay_handshake_response() {
 }
 
 #[test]
+#[cfg(feature = "fairplay")]
 fn fairplay_reject_bad_version() {
     let mut fp = FairPlay::new();
     let mut req = [0u8; 16];
