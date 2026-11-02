@@ -61,7 +61,7 @@ Test: `decrypt(rsaaeskey_b64)` == the 16 known bytes.
 
 ### 3. FairPlay key recovery — `FairPlay::decrypt` / `playfair_decrypt` 📱 / 🔧 (highest value)
 The whole DRM is currently pinned only to the port's own output on **fabricated** inputs. One real
-`(keymsg_164B, ekey_72B) → aes_key_16B` triple anchors the entire pipeline (modified_md5, garble,
+`(keymsg_164B, ekey_72B) → aes_key_16B` triple anchors the entire pipeline (modified_md5, blender,
 cycle, session-key, S-box tables).
 
 - **📱 easiest, given your setup:** add `trace!` of the M2 `keymsg` (in `FairPlay::handshake`), the

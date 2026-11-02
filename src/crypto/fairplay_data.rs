@@ -40,3 +40,7 @@ pub(crate) static MSG_KEYS: [u8; 576] = *include_bytes!("fairplay_data/msg_keys.
 pub(crate) static MSG_IVS: [u8; 64] = *include_bytes!("fairplay_data/msg_ivs.bin");
 pub(crate) static REPLIES: [u8; 568] = *include_bytes!("fairplay_data/replies.bin");
 pub(crate) static HEADER: [u8; 12] = *include_bytes!("fairplay_data/header.bin");
+pub(crate) static BLEND_SEED_0: [u8; 20] = *include_bytes!("fairplay_data/blend_seed_0.bin");
+pub(crate) static BLEND_SEED_2: [u8; 35] = *include_bytes!("fairplay_data/blend_seed_2.bin");
+pub(crate) static BLEND_AUX: [u8; 21] = *include_bytes!("fairplay_data/blend_aux.bin");
+pub(crate) static OUT_TAPS: [u8; 11] = *include_bytes!("fairplay_data/out_taps.bin");

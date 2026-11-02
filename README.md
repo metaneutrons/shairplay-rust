@@ -363,15 +363,19 @@ This project builds on the work of many contributors to the AirPlay open-source 
 LGPL-3.0-or-later.
 
 **Exception: the `fairplay` feature.** The FairPlay implementation
-(`src/crypto/fairplay.rs`, `fairplay_garble.rs`, `fairplay_tables.rs`) is a
-Rust port of the playfair library that the upstream
+(`src/crypto/fairplay*.rs` and the data files in `src/crypto/fairplay_data/`)
+reimplements the key exchange of the playfair library, which the upstream
 [shairplay](https://github.com/juhovh/shairplay) C project ships under the
-GPL-3.0 and only builds on request (`--with-playfair`). It is therefore
-compiled only when you enable the `fairplay` feature, which `video` and `hls`
-imply. The default build does not contain this code. If you enable it, make
-sure your distribution complies with the GPL-3.0 for the resulting work.
-Whether the upstream playfair code is itself freely redistributable has not
-been established, see the open licensing question in the issue tracker.
+GPL-3.0 and only builds on request (`--with-playfair`). The Rust code was
+written after reading that library, so it is not a clean-room implementation.
+It is tested against golden vectors produced by the C reference
+(`tests/data/fairplay_golden.txt`). The constant tables are plain data taken
+from the reference and kept as binary files. The code is compiled only when you
+enable the `fairplay` feature, which `video` and `hls` imply. The default build
+does not contain it. If you enable it, make sure your distribution complies with
+the GPL-3.0 for the resulting work. Whether the upstream playfair code is itself
+freely redistributable has not been established, see the open licensing question
+in the issue tracker.
 
 ## Disclaimer
 

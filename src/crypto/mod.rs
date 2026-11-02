@@ -4,9 +4,13 @@ pub mod aes;
 #[cfg(feature = "fairplay")]
 pub mod fairplay;
 #[cfg(feature = "fairplay")]
+mod fairplay_blender;
+#[cfg(feature = "fairplay")]
+mod fairplay_cipher;
+#[cfg(feature = "fairplay")]
 mod fairplay_data;
 #[cfg(feature = "fairplay")]
-mod fairplay_garble;
+mod fairplay_digest;
 #[cfg(all(test, feature = "fairplay"))]
 mod fairplay_golden;
 pub mod pairing;
