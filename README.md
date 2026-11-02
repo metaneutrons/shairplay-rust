@@ -332,7 +332,7 @@ src/
 
 ## Test Coverage
 
-The test suite includes 17 C-verified pairing vectors from [pair_ap](https://github.com/ejurgensen/pair_ap) and 10 C-verified FairPlay vectors generated from the original [shairplay](https://github.com/juhovh/shairplay) C source:
+The test suite includes 17 C-verified pairing vectors from [pair_ap](https://github.com/ejurgensen/pair_ap) and 256 golden FairPlay vectors produced by running the C reference of [shairplay](https://github.com/juhovh/shairplay) (`tests/data/fairplay_golden.txt`), plus vectors for the individual steps:
 
 ```plain
 cargo test                    # AP1 tests
