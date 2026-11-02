@@ -7,6 +7,8 @@ pub mod fairplay;
 mod fairplay_data;
 #[cfg(feature = "fairplay")]
 mod fairplay_garble;
+#[cfg(all(test, feature = "fairplay"))]
+mod fairplay_golden;
 pub mod pairing;
 pub mod rsa;
 
