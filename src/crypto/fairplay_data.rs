@@ -1,5 +1,8 @@
 //! Constant data for the FairPlay key exchange, kept as binary files next to this module.
 //!
+//! The tables, keys and messages are plain constants whose values the protocol fixes.
+//! See `docs/fairplay-provenance.md` for where they come from.
+//!
 //! Each file is a plain byte image. Tables of 32-bit words are stored little endian.
 
 /// Read `N` little-endian 32-bit words from a byte image of `4 * N` bytes.

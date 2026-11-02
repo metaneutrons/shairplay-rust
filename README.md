@@ -35,6 +35,13 @@ cargo add shairplay --features ap2
 cargo add shairplay --features video
 ```
 
+The `fairplay` feature is on by default. If you need to leave the FairPlay code out
+because of its provenance uncertainty, see [docs/fairplay-provenance.md](docs/fairplay-provenance.md):
+
+```bash
+cargo add shairplay --no-default-features
+```
+
 ## Features
 
 |  | Feature | Details |
@@ -144,7 +151,7 @@ use shairplay::{Ap1Codec, Ap1Encryption, RaopServer};
 
 let builder = RaopServer::builder()
     .advertise_codecs([Ap1Codec::Alac, Ap1Codec::Pcm])
-    .advertise_encryption([Ap1Encryption::Rsa, Ap1Encryption::FairPlay]); // FairPlay needs the `fairplay` feature
+    .advertise_encryption([Ap1Encryption::Rsa, Ap1Encryption::FairPlay]); // FairPlay needs the `fairplay` feature (on by default)
 ```
 
 The order supplied by the application is preserved. Empty and duplicate lists
@@ -162,12 +169,12 @@ limits and requirements for conformant receiver authentication.
 
 | Flag | Dependencies | Description |
 |------|-------------|-------------|
-| *(default)* | — | AirPlay 1 only |
+| *(default)* | `fairplay` | AirPlay 1 with FairPlay |
 | `pipewire-auth-setup-compat` | none | Experimental PipeWire probe acknowledgement; explicit runtime opt-in required |
 | `diagnostic-headers` | none | Opt-in, redacted RTSP request and response header diagnostics |
 | `dangerous-raw-headers` | (implies `diagnostic-headers`) | Raw header values for explicit use in debug-assertion builds |
 | `resample` | rubato | Sample rate conversion + channel mixdown |
-| `fairplay` | none | FairPlay handshake and key decryption (`/fp-setup`, `a=fpaeskey`, `Ap1Encryption::FairPlay`). Derived from the GPL-3.0 playfair library, see [License](#license) |
+| `fairplay` | none (on by default) | FairPlay handshake and key decryption (`/fp-setup`, `a=fpaeskey`, `Ap1Encryption::FairPlay`). Provenance uncertainty, see [docs/fairplay-provenance.md](docs/fairplay-provenance.md) |
 | `ap2` | chacha20poly1305, hkdf, symphonia, … (implies `resample`) | Full AirPlay 2 audio |
 | `video` | (implies `ap2` and `fairplay`) | Legacy feature set for screen mirroring (`0x527FFEE6`) |
 | `hls` | (implies `video`) | HLS video playback (YouTube, etc.) — receiver relays URL to app |
@@ -350,6 +357,7 @@ platform, dependency-policy, and coverage matrix.
 This project builds on the work of many contributors to the AirPlay open-source ecosystem:
 
 - **[shairplay](https://github.com/juhovh/shairplay)** — Original C library this project is a complete rewrite of
+- **[playfair](https://github.com/EstebanKubata/playfair)** — FairPlay library by EstebanKubata, shipped by shairplay under the GPL-3.0. The FairPlay code here was written with knowledge of it and verified against its output, see [docs/fairplay-provenance.md](docs/fairplay-provenance.md)
 - **[shairport-sync](https://github.com/mikebrady/shairport-sync)** — AirPlay 2 C reference implementation by Mike Brady
 - **[pair_ap](https://github.com/ejurgensen/pair_ap)** — HomeKit pairing reference (SRP-6a, TLV, HKDF) by Scott Ickle / ejurgensen. 17 C-verified test vectors generated from this codebase
 - **[AirPlay 2 Internals](https://emanuelecozzi.net/docs/airplay2/)** — Protocol documentation by Emanuele Cozzi
@@ -362,20 +370,17 @@ This project builds on the work of many contributors to the AirPlay open-source 
 
 LGPL-3.0-or-later.
 
-**Exception: the `fairplay` feature.** The FairPlay implementation
-(`src/crypto/fairplay*.rs` and the data files in `src/crypto/fairplay_data/`)
-reimplements the key exchange of the playfair library, which the upstream
-[shairplay](https://github.com/juhovh/shairplay) C project ships under the
-GPL-3.0 and only builds on request (`--with-playfair`). The Rust code was
-written after reading that library, so it is not a clean-room implementation.
-It is tested against golden vectors produced by the C reference
-(`tests/data/fairplay_golden.txt`). The constant tables are plain data taken
-from the reference and kept as binary files. The code is compiled only when you
-enable the `fairplay` feature, which `video` and `hls` imply. The default build
-does not contain it. If you enable it, make sure your distribution complies with
-the GPL-3.0 for the resulting work. Whether the upstream playfair code is itself
-freely redistributable has not been established, see the open licensing question
-in the issue tracker.
+**FairPlay.** The FairPlay key exchange (feature `fairplay`, enabled by default)
+has a provenance uncertainty that we describe openly in
+[docs/fairplay-provenance.md](docs/fairplay-provenance.md). In short: earlier
+releases (up to 0.10.0) were a port of the GPL-3.0 `playfair` library. The current
+code is a rewrite with a different structure, tested against golden vectors from
+the C reference. It still contains the constant tables and reproduces the forced
+algorithm, because interoperability leaves no alternative. We take the position
+that constants have no copyright and that the algorithm is a forced sequence, and
+we publish it under the LGPL. This is not a clean-room implementation, and no
+legal question is ever fully certain. If you cannot accept the residual
+uncertainty, build with `default-features = false`.
 
 ## Disclaimer
 

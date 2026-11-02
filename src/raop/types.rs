@@ -64,7 +64,8 @@ pub enum Ap1Encryption {
     Rsa,
     /// FairPlay DRM (`et=3`, `POST /fp-setup` + `a=fpaeskey`).
     ///
-    /// Requires the `fairplay` feature, which is GPLv3-derived.
+    /// Requires the `fairplay` feature, which is enabled by default. See
+    /// `docs/fairplay-provenance.md` for its provenance.
     #[cfg(feature = "fairplay")]
     FairPlay,
 }

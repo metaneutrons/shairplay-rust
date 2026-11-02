@@ -79,11 +79,11 @@ mdns-sd = "0.21"
 gethostname = "1"
 
 [features]
-default = []
-# Opt-in. Compiles the FairPlay handshake and key decryption (`POST /fp-setup`,
-# `a=fpaeskey`, AP2 video keys), a Rust port of the GPLv3 playfair library
-# (`src/crypto/fairplay*.rs`). Enabling it makes the combined work subject to
-# the GPLv3, not only the LGPL. See the FairPlay section of the README.
+default = ["fairplay"]
+# FairPlay handshake and key decryption (`POST /fp-setup`, `a=fpaeskey`, AP2 video
+# keys). Enabled by default. The code is a rewrite of a reference that upstream ships
+# under the GPL-3.0, so its provenance carries some uncertainty. See
+# docs/fairplay-provenance.md. Build with `default-features = false` to leave it out.
 fairplay = []
 pipewire-auth-setup-compat = []
 diagnostic-headers = []

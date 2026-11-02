@@ -107,6 +107,8 @@ Step 2: key    = SHA-512("AirPlayStreamKey{id}" || aeskey)[0..16]   → 16 bytes
 Where `{id}` is the `streamConnectionID` from the type 110 SETUP, formatted
 as unsigned decimal (`PRIu64`).
 
+> Note: the sections below are historical. They describe earlier versions of the FairPlay code, which were a port of the C `playfair` library. The current code is a rewrite. See [docs/fairplay-provenance.md](docs/fairplay-provenance.md).
+
 ### Critical Bug Found: Truncated FairPlay Tables
 
 The Rust port of `playfair_decrypt` had **6 truncated lookup tables** from the

@@ -7,6 +7,8 @@
 //! After M2, the server can unwrap the 72-byte AES session key with the key derived
 //! from the M2 message.
 //!
+//! Provenance and licensing: see `docs/fairplay-provenance.md`.
+//!
 //! The building blocks live in sibling modules: the block ciphers in
 //! `fairplay_cipher`, the two digests in `fairplay_digest`, the blender in
 //! `fairplay_blender` and the constant tables as binary files in `fairplay_data/`.
