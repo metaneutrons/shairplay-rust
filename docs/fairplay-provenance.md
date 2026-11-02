@@ -1,8 +1,8 @@
 # FairPlay: provenance and licensing
 
-This page describes where the FairPlay code in this crate comes from, what we
+This page describes where the FairPlay code in this crate comes from, what I
 believe about its legal status, and what remains uncertain. It is not legal
-advice. We would rather state the uncertainty than hide it.
+advice. I would rather state the uncertainty than hide it.
 
 ## What the code does
 
@@ -25,36 +25,36 @@ The code lives in `src/crypto/fairplay*.rs` and in the binary data files under
   (`tests/data/fairplay_golden.txt`) and against the intermediate vectors of the
   individual steps.
 - **This is not a clean-room implementation.** The author had read the reference
-  before writing the new code. We do not claim independent creation.
+  before writing the new code. I do not claim independent creation.
 
 ## Where the original comes from
 
 The C code originates from the `playfair` library by EstebanKubata (2015), which the
 upstream [shairplay](https://github.com/juhovh/shairplay) project ships under the
-GPL-3.0 and builds only on request (`--with-playfair`). What we could establish:
+GPL-3.0 and builds only on request (`--with-playfair`). What I could establish:
 
 - The repository contains the GPL-3.0 text, without a named copyright holder, and
   the source files carry no per-file notice.
 - Nothing states which Apple binary or document the knowledge came from or how it
   was obtained. Projects that bundle it, for example RPiPlay, describe its legal
   status as unclear.
-- We found no permissively licensed alternative implementation of the same
+- I found no permissively licensed alternative implementation of the same
   handshake.
 
-## Our position
+## My position
 
 1. **The constants are not protectable.** The tables, keys and reply messages are
    plain data. They have no creative design, their values are fixed by what the
-   protocol requires, and so we see no copyright in them. They are kept as binary
+   protocol requires, and so I see no copyright in them. They are kept as binary
    files and loaded at build time.
 2. **The algorithm is a mathematically and functionally forced sequence.** To
    interoperate, a receiver must compute exactly what the sender expects. Ideas,
    principles and algorithms are not protected by software copyright. In
-   particular, the routine we call the blender is a fixed sequence of operations
+   particular, the routine I call the blender is a fixed sequence of operations
    whose steps and order are dictated by compatibility. It is reproduced because
    there is no other way to compute the same result, not because it was copied for
    its expression.
-3. **Therefore we publish the crate under the LGPL-3.0-or-later,** including this
+3. **Therefore I publish the crate under the LGPL-3.0-or-later,** including this
    code.
 
 Residual uncertainty remains, as it does in most legal questions:
@@ -84,5 +84,5 @@ That configuration has not been tested against an iPhone.
 
 Do not copy code from `playfair`, `shairplay`, `RPiPlay`, `UxPlay` or other
 implementations into the FairPlay files. Changes there should be derived from the
-behaviour verified by the golden vectors. Tell us if you have information about the
+behaviour verified by the golden vectors. Tell me if you have information about the
 provenance of the original.

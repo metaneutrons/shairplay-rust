@@ -371,14 +371,14 @@ This project builds on the work of many contributors to the AirPlay open-source 
 LGPL-3.0-or-later.
 
 **FairPlay.** The FairPlay key exchange (feature `fairplay`, enabled by default)
-has a provenance uncertainty that we describe openly in
+has a provenance uncertainty that I describe openly in
 [docs/fairplay-provenance.md](docs/fairplay-provenance.md). In short: earlier
 releases (up to 0.10.0) were a port of the GPL-3.0 `playfair` library. The current
 code is a rewrite with a different structure, tested against golden vectors from
 the C reference. It still contains the constant tables and reproduces the forced
-algorithm, because interoperability leaves no alternative. We take the position
+algorithm, because interoperability leaves no alternative. I take the position
 that constants have no copyright and that the algorithm is a forced sequence, and
-we publish it under the LGPL. This is not a clean-room implementation, and no
+I publish it under the LGPL. This is not a clean-room implementation, and no
 legal question is ever fully certain. If you cannot accept the residual
 uncertainty, build with `default-features = false`.
 
