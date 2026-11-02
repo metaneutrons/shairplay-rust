@@ -177,4 +177,38 @@ mod tests {
         msg[12] = 0xff; // out-of-range mode
         assert!(fp.handshake(&msg).is_err());
     }
+
+    #[test]
+    fn setup_returns_a_reply_for_every_mode() {
+        let mut fp = FairPlay::new();
+        for mode in 0..4u8 {
+            let mut req = [0u8; 16];
+            req[4] = 0x03; // version
+            req[14] = mode;
+            let res = fp.setup(&req).unwrap();
+            assert_eq!(res.len(), 142);
+            assert_eq!(&res[..4], b"FPLY");
+        }
+    }
+
+    #[test]
+    fn handshake_echoes_the_trailing_bytes() {
+        let mut fp = FairPlay::new();
+        let mut req = [0u8; 164];
+        req[4] = 0x03;
+        for (i, b) in req.iter_mut().enumerate().skip(144) {
+            *b = i as u8;
+        }
+        let res = fp.handshake(&req).unwrap();
+        assert_eq!(&res[..4], b"FPLY");
+        assert_eq!(&res[12..32], &req[144..164]);
+    }
+
+    #[test]
+    fn setup_rejects_a_bad_version() {
+        let mut fp = FairPlay::new();
+        let mut req = [0u8; 16];
+        req[4] = 0x02;
+        assert!(fp.setup(&req).is_err());
+    }
 }

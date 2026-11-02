@@ -2,7 +2,7 @@
 
 pub mod aes;
 #[cfg(feature = "fairplay")]
-pub mod fairplay;
+pub(crate) mod fairplay;
 #[cfg(feature = "fairplay")]
 mod fairplay_blender;
 #[cfg(feature = "fairplay")]
