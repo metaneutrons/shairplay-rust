@@ -10,7 +10,7 @@
 | Paired-state statusFlags | — | Advertises `sf` = 0x004 transient / 0x204 PIN-unpaired / 0x604 PIN-paired, gated by `has_any_pairing()` so paired controllers reconnect via pair-verify |
 | Session handoff | — | A new audio SETUP stops the previous session (`set_active_audio`), so playback never lingers after a disconnect/switch |
 | Encrypted RTSP transport | — | ChaCha20-Poly1305, HKDF-SHA512 key derivation |
-| FairPlay handshake | — | Full fp-setup M1/M2 |
+| FairPlay handshake | — | Full fp-setup M1/M2 (feature `fairplay`, on by default) |
 | PTP timing | — | ⚠ Listener now runs (binds + drains 319/320 to kill the connect stall); offsets still **not wired** to playout — see [Open / Unwired](#open--unwired--scaffolding-present-not-connected) |
 | Buffered audio | 103 | AAC decode (symphonia), per-packet ChaCha20 decrypt |
 | Multichannel | 103 | 5.1/7.1 AAC → stereo mixdown (ITU-R BS.775) |
@@ -24,7 +24,7 @@
 
 ## MFi `/auth-setup` — Not Implemented
 
-The AP2 profile implements FairPlay (`/fp-setup`) and HomeKit pairing
+The AP2 profile implements FairPlay (`/fp-setup`, with the `fairplay` feature) and HomeKit pairing
 (`/pair-setup`, `/pair-verify`), but not MFi-SAP receiver authentication. It
 advertises `et=0,3,5`; `et=5` is FairPlay SAP 2.5, while the commonly documented
 MFi-SAP value `et=4` is absent. Feature bits 26 and 51 are also not set.
@@ -99,13 +99,27 @@ With this feature set:
 Two-step process (no ECDH hash when bit 27 is off):
 
 ```
-Step 1: aeskey = playfair_decrypt(keymsg_164, ekey_72)              → 16 bytes
+Step 1: aeskey = FairPlay unwrap(keymsg_164, ekey_72)               → 16 bytes
 Step 2: key    = SHA-512("AirPlayStreamKey{id}" || aeskey)[0..16]   → 16 bytes
         iv     = SHA-512("AirPlayStreamIV{id}"  || aeskey)[0..16]   → 16 bytes
 ```
 
 Where `{id}` is the `streamConnectionID` from the type 110 SETUP, formatted
 as unsigned decimal (`PRIu64`).
+
+### Current FairPlay Status
+
+FairPlay (feature `fairplay`, on by default) is implemented in safe Rust. The code is
+a rewrite of the earlier port, with a different structure. The constant tables are
+binary data files in `src/crypto/fairplay_data/`. It is checked against 256 golden
+vectors produced by running the C reference on pseudo-random inputs
+(`tests/data/fairplay_golden.txt`) and against vectors for the individual steps. It
+has not been checked against a recorded real iPhone session, see `tests/CAPTURE.md`.
+For provenance and licensing see [docs/fairplay-provenance.md](docs/fairplay-provenance.md).
+
+> Note: "Critical Bug Found" and "Previous Research" below are historical. They
+> describe earlier versions of the FairPlay code, which were a port of the C `playfair`
+> library. The current code is a rewrite.
 
 ### Critical Bug Found: Truncated FairPlay Tables
 
@@ -129,11 +143,6 @@ Tables regenerated from original C source (`playfair/omg_hax.c`).
 "tested approach" that failed was tested with a broken `playfair_decrypt`.
 The previous conclusion that "iOS 18 doesn't send ekey" was wrong — it does
 send ekey, but only with UxPlay's feature set (no AP2 bits).
-
-### Current FairPlay Status
-
-FairPlay decryption is implemented in safe Rust. The generated lookup tables are
-checked in as Rust constants and are covered by test vectors.
 
 ### Previous Research — Needs Re-verification
 
@@ -232,7 +241,7 @@ See previous sections for full remote control research (unchanged).
 - Anchor time calculation, channel mixdown, SSRC mapping
 - Full M1→M4 SRP integration test over real TCP
 - Video cipher streaming AES-CTR partial block tests
-- FairPlay cross-validation test against C `playfair_decrypt` output
+- FairPlay golden vectors: 256 inputs run through the C reference (`tests/data/fairplay_golden.txt`), plus vectors for the individual steps
 
 ## References
 

@@ -41,7 +41,7 @@ server.start().await?;
 # Architecture
 
 - [`raop`] — RAOP/AirPlay server, RTSP handlers, RTP streaming, audio buffering
-- [`crypto`] — RSA, Ed25519/Curve25519 pairing, AES-CTR, FairPlay DRM, ChaCha20-Poly1305
+- [`crypto`] — RSA, Ed25519/Curve25519 pairing, AES-CTR, FairPlay DRM (feature `fairplay`, on by default, see docs/fairplay-provenance.md), ChaCha20-Poly1305
 - `codec` — Audio decoders (ALAC, AAC) and resampling (internal)
 - [`proto`] — SDP, HTTP/RTSP, binary plist, HTTP Digest auth
 - [`net`] — Async TCP server (tokio), mDNS service registration, PTP timing

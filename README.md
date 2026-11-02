@@ -12,13 +12,15 @@
 
 A complete AirPlay audio and video receiver as a Rust library. Supports both classic AirPlay (AP1) and AirPlay 2 (AP2) with buffered audio, encrypted transport, HomeKit pairing, and screen mirroring. `#![forbid(unsafe_code)]`.
 
-**This is a clean-room Rust implementation — not a wrapper or FFI binding.** Every protocol handler, codec, and cryptographic primitive has been reimplemented from scratch in safe Rust. No C code from shairplay, shairport-sync, or any other project is linked or called.
+**This is a pure Rust implementation — not a wrapper or FFI binding.** Every protocol handler, codec, and cryptographic primitive is implemented in safe Rust. No C code from shairplay, shairport-sync, or any other project is linked or called.
 
 </div>
 
 ---
 
 > ⚠️ **Pre-1.0 notice:** This crate is under active development. Minor version bumps (e.g. 0.1 → 0.2) may include breaking API changes. Pin your dependency to a specific minor version (`shairplay = "0.2"`) and review the [CHANGELOG](CHANGELOG.md) before upgrading.
+
+> ⚖️ **FairPlay notice:** The FairPlay code (feature `fairplay`, on by default) has a provenance uncertainty: earlier releases were a port of a GPL-3.0 library, and the current rewrite is not a clean-room implementation. Details and how to opt out: [docs/fairplay-provenance.md](docs/fairplay-provenance.md).
 
 ## Installation
 
@@ -33,6 +35,13 @@ Enable only the protocol capabilities required by the application:
 ```bash
 cargo add shairplay --features ap2
 cargo add shairplay --features video
+```
+
+The `fairplay` feature is on by default. If you need to leave the FairPlay code out
+because of its provenance uncertainty, see [docs/fairplay-provenance.md](docs/fairplay-provenance.md):
+
+```bash
+cargo add shairplay --no-default-features
 ```
 
 ## Features
@@ -144,7 +153,7 @@ use shairplay::{Ap1Codec, Ap1Encryption, RaopServer};
 
 let builder = RaopServer::builder()
     .advertise_codecs([Ap1Codec::Alac, Ap1Codec::Pcm])
-    .advertise_encryption([Ap1Encryption::Rsa, Ap1Encryption::FairPlay]);
+    .advertise_encryption([Ap1Encryption::Rsa, Ap1Encryption::FairPlay]); // FairPlay needs the `fairplay` feature (on by default)
 ```
 
 The order supplied by the application is preserved. Empty and duplicate lists
@@ -162,13 +171,14 @@ limits and requirements for conformant receiver authentication.
 
 | Flag | Dependencies | Description |
 |------|-------------|-------------|
-| *(default)* | — | AirPlay 1 only |
+| *(default)* | `fairplay` | AirPlay 1 with FairPlay |
 | `pipewire-auth-setup-compat` | none | Experimental PipeWire probe acknowledgement; explicit runtime opt-in required |
 | `diagnostic-headers` | none | Opt-in, redacted RTSP request and response header diagnostics |
 | `dangerous-raw-headers` | (implies `diagnostic-headers`) | Raw header values for explicit use in debug-assertion builds |
 | `resample` | rubato | Sample rate conversion + channel mixdown |
+| `fairplay` | none (on by default) | FairPlay handshake and key decryption (`/fp-setup`, `a=fpaeskey`, `Ap1Encryption::FairPlay`). Provenance uncertainty, see [docs/fairplay-provenance.md](docs/fairplay-provenance.md) |
 | `ap2` | chacha20poly1305, hkdf, symphonia, … (implies `resample`) | Full AirPlay 2 audio |
-| `video` | (implies `ap2`) | Legacy feature set for screen mirroring (`0x527FFEE6`) |
+| `video` | (implies `ap2` and `fairplay`) | Legacy feature set for screen mirroring (`0x527FFEE6`) |
 | `hls` | (implies `video`) | HLS video playback (YouTube, etc.) — receiver relays URL to app |
 
 ### Experimental PipeWire Probe Compatibility
@@ -236,7 +246,7 @@ Full pipeline: SRP-6a pairing → encrypted RTSP → FairPlay → PTP timing →
 - **Type 103 (buffered)** — AAC over TCP with timed playout buffer. Used for music.
 - **Type 96 (realtime)** — ALAC over UDP with immediate delivery. Used for Siri, phone calls, system sounds.
 
-Scope: the AP2 profile implements FairPlay and HomeKit pairing, but not licensed
+Scope: the AP2 profile implements HomeKit pairing and, with the `fairplay` feature, FairPlay, but not licensed
 MFi-SAP receiver authentication through `/auth-setup`. The profile does not
 advertise `et=4` or the MFi feature bits; see the
 [`/auth-setup` protocol status](docs/protocol/auth-setup.md).
@@ -324,7 +334,7 @@ src/
 
 ## Test Coverage
 
-The test suite includes 17 C-verified pairing vectors from [pair_ap](https://github.com/ejurgensen/pair_ap) and 10 C-verified FairPlay vectors generated from the original [shairplay](https://github.com/juhovh/shairplay) C source:
+The test suite includes 17 C-verified pairing vectors from [pair_ap](https://github.com/ejurgensen/pair_ap) and 256 golden FairPlay vectors produced by running the C reference of [shairplay](https://github.com/juhovh/shairplay) (`tests/data/fairplay_golden.txt`), plus vectors for the individual steps:
 
 ```plain
 cargo test                    # AP1 tests
@@ -349,6 +359,7 @@ platform, dependency-policy, and coverage matrix.
 This project builds on the work of many contributors to the AirPlay open-source ecosystem:
 
 - **[shairplay](https://github.com/juhovh/shairplay)** — Original C library this project is a complete rewrite of
+- **[playfair](https://github.com/EstebanKubata/playfair)** — FairPlay library by EstebanKubata, shipped by shairplay under the GPL-3.0. The FairPlay code here was written with knowledge of it and verified against its output, see [docs/fairplay-provenance.md](docs/fairplay-provenance.md)
 - **[shairport-sync](https://github.com/mikebrady/shairport-sync)** — AirPlay 2 C reference implementation by Mike Brady
 - **[pair_ap](https://github.com/ejurgensen/pair_ap)** — HomeKit pairing reference (SRP-6a, TLV, HKDF) by Scott Ickle / ejurgensen. 17 C-verified test vectors generated from this codebase
 - **[AirPlay 2 Internals](https://emanuelecozzi.net/docs/airplay2/)** — Protocol documentation by Emanuele Cozzi
@@ -359,7 +370,19 @@ This project builds on the work of many contributors to the AirPlay open-source 
 
 ## License
 
-LGPL-3.0-or-later
+LGPL-3.0-or-later.
+
+**FairPlay.** The FairPlay key exchange (feature `fairplay`, enabled by default)
+has a provenance uncertainty that I describe openly in
+[docs/fairplay-provenance.md](docs/fairplay-provenance.md). In short: earlier
+releases (up to 0.10.0) were a port of the GPL-3.0 `playfair` library. The current
+code is a rewrite with a different structure, tested against golden vectors from
+the C reference. It still contains the constant tables and reproduces the forced
+algorithm, because interoperability leaves no alternative. I take the position
+that constants have no copyright and that the algorithm is a forced sequence, and
+I publish it under the LGPL. This is not a clean-room implementation, and no
+legal question is ever fully certain. If you cannot accept the residual
+uncertainty, build with `default-features = false`.
 
 ## Disclaimer
 

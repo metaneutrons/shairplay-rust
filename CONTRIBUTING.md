@@ -88,3 +88,6 @@ Commit prefixes and their effect on versioning:
 ## License
 
 By contributing, you agree that your contributions will be licensed under LGPL-3.0-or-later.
+
+For the FairPlay files (`src/crypto/fairplay*.rs`, `src/crypto/fairplay_data/`) do not copy code from
+`playfair`, `shairplay`, `RPiPlay`, `UxPlay` or similar projects. See [docs/fairplay-provenance.md](docs/fairplay-provenance.md).

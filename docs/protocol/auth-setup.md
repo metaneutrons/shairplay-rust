@@ -154,9 +154,9 @@ treated as conformant.
 | Area | Current behavior | Evidence |
 |------|------------------|----------|
 | RTSP routing | Experimental exact-probe route behind compile-time and runtime gates in classic mode; otherwise `404`. Digest remains required when configured | Project fact |
-| AP1 discovery | Defaults to `et=0`; API exposes `0`, `1`, `3` only | Project fact |
+| AP1 discovery | Defaults to `et=0`; API exposes `0`, `1`, `3` only (`3` needs the `fairplay` feature) | Project fact |
 | AP2 discovery | Fixed `et=0,3,5`; feature bits 26 and 51 are clear | Project fact |
-| FairPlay | `/fp-setup` implemented separately | Project fact |
+| FairPlay | `/fp-setup` implemented separately, behind the `fairplay` feature (on by default) | Project fact |
 | HomeKit pairing | `/pair-setup` and `/pair-verify` implemented separately | Project fact |
 | MFi certificate/signing | No provider API, certificate, or authentication-IC integration | Project fact |
 | PipeWire forced `auth_setup` | Opt-in acknowledgement satisfies the source-observed status check; real-sender playback and password-protected interoperability remain unqualified | Project/source-verified; live result unknown |

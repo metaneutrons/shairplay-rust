@@ -233,7 +233,8 @@ impl RaopServerBuilder {
     /// this only affects discovery and negotiation. The supplied order is
     /// preserved. The interoperability-focused default advertises unencrypted
     /// transport only (`et=0`); pass [`Ap1Encryption::Rsa`] and/or
-    /// [`Ap1Encryption::FairPlay`] to opt into encrypted AP1 transport. Empty or
+    /// `Ap1Encryption::FairPlay` (feature `fairplay`) to opt into encrypted AP1
+    /// transport. Empty or
     /// duplicate lists are rejected by [`build`](Self::build).
     ///
     /// When the `ap2` feature is enabled, also select

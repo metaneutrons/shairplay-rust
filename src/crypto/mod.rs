@@ -1,9 +1,18 @@
 //! Cryptographic primitives for AirPlay authentication and encryption.
 
 pub mod aes;
-pub mod fairplay;
-mod fairplay_garble;
-mod fairplay_tables;
+#[cfg(feature = "fairplay")]
+pub(crate) mod fairplay;
+#[cfg(feature = "fairplay")]
+mod fairplay_blender;
+#[cfg(feature = "fairplay")]
+mod fairplay_cipher;
+#[cfg(feature = "fairplay")]
+mod fairplay_data;
+#[cfg(feature = "fairplay")]
+mod fairplay_digest;
+#[cfg(all(test, feature = "fairplay"))]
+mod fairplay_golden;
 pub mod pairing;
 pub mod rsa;
 

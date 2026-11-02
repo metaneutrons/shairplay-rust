@@ -162,17 +162,24 @@ fn ap1_advertisement_defaults_and_custom_order_are_stable() {
     assert_eq!(raop_txt(&default.service_info(), "cn"), "0,1");
     assert_eq!(raop_txt(&default.service_info(), "et"), "0");
 
-    let custom = ap1_builder("CustomAdvertisement")
-        .advertise_codecs([Ap1Codec::Alac, Ap1Codec::Pcm])
-        .advertise_encryption([
+    #[cfg(feature = "fairplay")]
+    let (encryption, expected_et) = (
+        vec![
             Ap1Encryption::FairPlay,
             Ap1Encryption::None,
             Ap1Encryption::Rsa,
-        ])
+        ],
+        "3,0,1",
+    );
+    #[cfg(not(feature = "fairplay"))]
+    let (encryption, expected_et) = (vec![Ap1Encryption::None, Ap1Encryption::Rsa], "0,1");
+    let custom = ap1_builder("CustomAdvertisement")
+        .advertise_codecs([Ap1Codec::Alac, Ap1Codec::Pcm])
+        .advertise_encryption(encryption)
         .build(empty_handler())
         .unwrap();
     assert_eq!(raop_txt(&custom.service_info(), "cn"), "1,0");
-    assert_eq!(raop_txt(&custom.service_info(), "et"), "3,0,1");
+    assert_eq!(raop_txt(&custom.service_info(), "et"), expected_et);
 }
 
 #[test]
@@ -478,6 +485,7 @@ async fn pair_setup_returns_public_key() {
     server.stop().await;
 }
 
+#[cfg(feature = "fairplay")]
 #[tokio::test]
 #[serial]
 async fn fp_setup_returns_142_bytes() {
