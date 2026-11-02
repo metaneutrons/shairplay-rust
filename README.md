@@ -12,13 +12,15 @@
 
 A complete AirPlay audio and video receiver as a Rust library. Supports both classic AirPlay (AP1) and AirPlay 2 (AP2) with buffered audio, encrypted transport, HomeKit pairing, and screen mirroring. `#![forbid(unsafe_code)]`.
 
-**This is a clean-room Rust implementation — not a wrapper or FFI binding.** Every protocol handler, codec, and cryptographic primitive has been reimplemented from scratch in safe Rust. No C code from shairplay, shairport-sync, or any other project is linked or called.
+**This is a pure Rust implementation — not a wrapper or FFI binding.** Every protocol handler, codec, and cryptographic primitive is implemented in safe Rust. No C code from shairplay, shairport-sync, or any other project is linked or called.
 
 </div>
 
 ---
 
 > ⚠️ **Pre-1.0 notice:** This crate is under active development. Minor version bumps (e.g. 0.1 → 0.2) may include breaking API changes. Pin your dependency to a specific minor version (`shairplay = "0.2"`) and review the [CHANGELOG](CHANGELOG.md) before upgrading.
+
+> ⚖️ **FairPlay notice:** The FairPlay code (feature `fairplay`, on by default) has a provenance uncertainty: earlier releases were a port of a GPL-3.0 library, and the current rewrite is not a clean-room implementation. Details and how to opt out: [docs/fairplay-provenance.md](docs/fairplay-provenance.md).
 
 ## Installation
 
