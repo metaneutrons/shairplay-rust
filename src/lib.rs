@@ -72,6 +72,7 @@ pub(crate) mod util;
 
 pub use error::ShairplayError;
 pub use net::mdns::AirPlayServiceInfo;
+pub use net::mdns_scope::{MdnsScope, MdnsScopeApplied};
 #[cfg(feature = "diagnostic-headers")]
 pub use net::protocol_diagnostics::HeaderDiagnostics;
 pub use net::server::BindConfig;

@@ -1801,6 +1801,7 @@ dependencies = [
  "hkdf",
  "hmac",
  "httparse",
+ "if-addrs",
  "md-5",
  "mdns-sd",
  "minifb",

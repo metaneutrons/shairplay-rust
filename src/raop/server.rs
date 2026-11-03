@@ -7,6 +7,7 @@ use crate::crypto::pairing::Pairing;
 use crate::crypto::rsa::RsaKey;
 use crate::error::{ServerError, ShairplayError};
 use crate::net::mdns::{AirPlayServiceInfo, MdnsService};
+use crate::net::mdns_scope::{self, MdnsScope, MdnsScopeApplied};
 #[cfg(feature = "diagnostic-headers")]
 use crate::net::protocol_diagnostics::HeaderDiagnostics;
 use crate::net::server::{BindConfig, HttpServer};
@@ -69,6 +70,7 @@ pub struct RaopServerBuilder {
     pipewire_auth_setup_compat: bool,
     name: String,
     bind: BindConfig,
+    mdns_scope: MdnsScope,
     #[cfg(feature = "diagnostic-headers")]
     header_diagnostics: HeaderDiagnostics,
     #[cfg(feature = "ap2")]
@@ -104,6 +106,7 @@ impl RaopServerBuilder {
             pipewire_auth_setup_compat: false,
             name: "Shairplay".to_string(),
             bind: BindConfig::default(),
+            mdns_scope: MdnsScope::default(),
             #[cfg(feature = "diagnostic-headers")]
             header_diagnostics: HeaderDiagnostics::default(),
             #[cfg(feature = "ap2")]
@@ -161,6 +164,22 @@ impl RaopServerBuilder {
     /// Set full bind configuration (address, port, auto-sensing, IPv6).
     pub fn bind(mut self, config: BindConfig) -> Self {
         self.bind = config;
+        self
+    }
+    /// Limit the mDNS announcement to the interfaces that carry the given addresses.
+    /// Default: [`MdnsScope::All`], the announcement goes out on every interface.
+    ///
+    /// [`BindConfig`] limits the listeners only. Without this setting the records
+    /// still leave on every interface, so a receiver bound to `eth0` is announced on
+    /// `nebula1` as well. Pass the same addresses (or [`MdnsScope::from_bind`]) to
+    /// keep both in step.
+    ///
+    /// `start()` fails if an address matches no interface of the host. It never falls
+    /// back to announcing everywhere. After `start()`,
+    /// [`RaopServer::mdns_scope_applied`] reports what applies. The limit is applied
+    /// on Linux and other platforms with `mdns-sd`, and is not available on macOS yet.
+    pub fn mdns_scope(mut self, scope: MdnsScope) -> Self {
+        self.mdns_scope = scope;
         self
     }
     /// Set the AirPlay display name. Default: "Shairplay".
@@ -372,6 +391,7 @@ impl RaopServerBuilder {
             shared,
             httpd,
             mdns: None,
+            mdns_scope: self.mdns_scope,
             bind: self.bind,
             name: self.name,
             hwaddr,
@@ -391,6 +411,7 @@ pub struct RaopServer {
     shared: Arc<RaopShared>,
     httpd: HttpServer,
     mdns: Option<MdnsService>,
+    mdns_scope: MdnsScope,
     bind: BindConfig,
     name: String,
     hwaddr: Vec<u8>,
@@ -409,7 +430,15 @@ impl RaopServer {
     ///
     /// mDNS registration is skipped when the `CI` environment variable is set
     /// (Bonjour/Avahi is typically unavailable on CI runners).
+    ///
+    /// A [`MdnsScope`] that cannot be resolved to interfaces fails here, before any
+    /// port is bound.
     pub async fn start(&mut self) -> Result<(), ShairplayError> {
+        // Validated even when mDNS registration is skipped, so a wrong scope never
+        // depends on the environment.
+        let scope_plan = mdns_scope::plan(&self.mdns_scope)?;
+        let mdns_enabled = std::env::var("CI").is_err();
+
         let _actual_port = self.httpd.start(self.bind.port).await?;
 
         // AirPlay 2 PTP sink: accept the sender's clock on 319/320 so it doesn't
@@ -419,9 +448,9 @@ impl RaopServer {
             crate::net::ptp::spawn_ptp_sink().await;
         }
 
-        if std::env::var("CI").is_err() {
+        if mdns_enabled {
             let info = self.service_info();
-            let mut mdns = MdnsService::new()?;
+            let mut mdns = MdnsService::new(scope_plan.as_ref())?;
             mdns.register_raop(&info)?;
             #[cfg(feature = "ap2")]
             if self.mode == AirPlayMode::AirPlay2 {
@@ -431,6 +460,12 @@ impl RaopServer {
         }
 
         Ok(())
+    }
+
+    /// What was done with the requested [`MdnsScope`], or `None` while no mDNS service
+    /// is registered (not started, or skipped because `CI` is set).
+    pub fn mdns_scope_applied(&self) -> Option<&MdnsScopeApplied> {
+        self.mdns.as_ref().map(MdnsService::applied)
     }
 
     /// Whether the server is currently running.

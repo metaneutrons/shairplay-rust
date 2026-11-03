@@ -70,6 +70,8 @@ thiserror = "2"
 # Logging
 tracing = "0.1"
 hex = "0.4"
+# Interface table, to resolve an mDNS scope (already a dependency of mdns-sd)
+if-addrs = "0.15"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 astro-dnssd = "0.3"
