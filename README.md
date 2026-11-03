@@ -127,6 +127,7 @@ let mut server = RaopServer::builder()
 | `.pipewire_auth_setup_compat()` | `false` | `pipewire-auth-setup-compat` | Experimental fixed-probe acknowledgement in classic RAOP; not MFi authentication |
 | `.max_clients()` | `10` | | Maximum concurrent connections |
 | `.bind()` | all interfaces | | Bind to specific IPs (multi-interface) |
+| `.mdns_scope()` | `MdnsScope::All` | | Limit the mDNS announcement to the interfaces that carry given addresses (Linux; not yet on macOS) |
 | `.header_diagnostics()` | `Disabled` | `diagnostic-headers` | Structured, redacted RTSP header diagnostics |
 | `.advertise_codecs()` | PCM + ALAC | AP1 | Set the ordered AP1 `cn` capability list |
 | `.advertise_encryption()` | none | AP1 | Set the ordered AP1 `et` capability list |
@@ -137,6 +138,29 @@ let mut server = RaopServer::builder()
 | `.pairing_store()` | `MemoryPairingStore` | `ap2` | Persistent key storage |
 | `.video_handler()` | none | `video` | Video session factory |
 | `.hls_handler()` | none | `hls` | HLS video playback handler |
+
+### Limiting the mDNS announcement
+
+`.bind()` limits the listeners only. Without `.mdns_scope()` the records still leave on every
+interface of the host, so a receiver bound to `eth0` is also announced on `nebula1`.
+
+```rust
+use shairplay::{BindConfig, MdnsScope, RaopServer};
+
+let bind = BindConfig::new().addrs(["192.168.1.10".parse().unwrap()]);
+let server = RaopServer::builder()
+    .mdns_scope(MdnsScope::from_bind(&bind))
+    .bind(bind)
+    .build(handler)?;
+```
+
+`start()` fails if an address is a wildcard or belongs to no interface of the host. It never falls
+back to announcing everywhere. `RaopServer::mdns_scope_applied()` reports what applies:
+
+| Platform | Result |
+|----------|--------|
+| Linux and others (`mdns-sd`) | `Interfaces(..)`. The address selects the interface, so other addresses on it are announced too. |
+| macOS (Bonjour) | `Unsupported`, the announcement stays on every interface. `astro-dnssd` registers with interface index 0 only. |
 
 ### AirPlay 1 Discovery Capabilities
 

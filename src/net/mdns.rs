@@ -4,6 +4,7 @@
 //! `mdns-sd` (pure Rust) on Linux and other platforms.
 
 use crate::error::NetworkError;
+use crate::net::mdns_scope::{MdnsScopeApplied, ScopePlan};
 use crate::raop::config::Ap1Advertisement;
 use crate::util;
 
@@ -224,16 +225,35 @@ fn txt_map(txt: &[(String, String)]) -> std::collections::HashMap<String, String
 pub(crate) struct MdnsService {
     _raop_reg: Option<astro_dnssd::RegisteredDnsService>,
     _airplay_reg: Option<astro_dnssd::RegisteredDnsService>,
+    applied: MdnsScopeApplied,
 }
 
 #[cfg(target_os = "macos")]
 impl MdnsService {
     /// Create a new mDNS service manager.
-    pub(crate) fn new() -> Result<Self, NetworkError> {
+    ///
+    /// Bonjour registers on every interface here: `astro-dnssd` passes interface index 0,
+    /// so a requested scope is reported as unsupported.
+    pub(crate) fn new(plan: Option<&ScopePlan>) -> Result<Self, NetworkError> {
+        let applied = if plan.is_some() {
+            tracing::warn!(
+                "mDNS: limiting the announcement to interfaces is not supported on macOS; \
+                 announcing on every interface"
+            );
+            MdnsScopeApplied::Unsupported
+        } else {
+            MdnsScopeApplied::All
+        };
         Ok(Self {
             _raop_reg: None,
             _airplay_reg: None,
+            applied,
         })
+    }
+
+    /// What was done with the requested scope.
+    pub(crate) fn applied(&self) -> &MdnsScopeApplied {
+        &self.applied
     }
 
     /// Register the _raop._tcp mDNS service.
@@ -290,19 +310,47 @@ pub(crate) struct MdnsService {
     daemon: mdns_sd::ServiceDaemon,
     raop_fullname: Option<String>,
     airplay_fullname: Option<String>,
+    applied: MdnsScopeApplied,
 }
 
 #[cfg(not(target_os = "macos"))]
 impl MdnsService {
     /// Create a new mDNS service manager.
-    pub(crate) fn new() -> Result<Self, NetworkError> {
+    ///
+    /// With a `plan`, the daemon is limited to the interfaces that carry its addresses
+    /// before anything is registered, so no record leaves on another interface.
+    pub(crate) fn new(plan: Option<&ScopePlan>) -> Result<Self, NetworkError> {
         let daemon =
             mdns_sd::ServiceDaemon::new().map_err(|e| NetworkError::Mdns(format!("{e}")))?;
+        let applied = match plan {
+            None => MdnsScopeApplied::All,
+            Some(plan) => {
+                let limit = || -> Result<(), mdns_sd::Error> {
+                    daemon.disable_interface(mdns_sd::IfKind::All)?;
+                    for addr in &plan.addrs {
+                        daemon.enable_interface(mdns_sd::IfKind::Addr(*addr))?;
+                    }
+                    Ok(())
+                };
+                if let Err(e) = limit() {
+                    let _ = daemon.shutdown();
+                    return Err(NetworkError::Mdns(format!("mDNS scope: {e}")));
+                }
+                tracing::info!(interfaces = ?plan.interfaces, "mDNS: announcement limited");
+                MdnsScopeApplied::Interfaces(plan.interfaces.clone())
+            }
+        };
         Ok(Self {
             daemon,
             raop_fullname: None,
             airplay_fullname: None,
+            applied,
         })
+    }
+
+    /// What was done with the requested scope.
+    pub(crate) fn applied(&self) -> &MdnsScopeApplied {
+        &self.applied
     }
 
     /// Register the _raop._tcp mDNS service.
