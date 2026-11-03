@@ -223,8 +223,12 @@ fn txt_map(txt: &[(String, String)]) -> std::collections::HashMap<String, String
 /// On Linux and other platforms, uses pure Rust `mdns-sd`.
 #[cfg(target_os = "macos")]
 pub(crate) struct MdnsService {
-    _raop_reg: Option<astro_dnssd::RegisteredDnsService>,
-    _airplay_reg: Option<astro_dnssd::RegisteredDnsService>,
+    /// One registration per interface index. A scope needs one per interface, no scope one for
+    /// all interfaces (index 0).
+    _raop_regs: Vec<astro_dnssd::RegisteredDnsService>,
+    _airplay_regs: Vec<astro_dnssd::RegisteredDnsService>,
+    /// Interface indexes to register on. `[0]` means every interface.
+    indexes: Vec<u32>,
     applied: MdnsScopeApplied,
 }
 
@@ -232,21 +236,33 @@ pub(crate) struct MdnsService {
 impl MdnsService {
     /// Create a new mDNS service manager.
     ///
-    /// Bonjour registers on every interface here: `astro-dnssd` passes interface index 0,
-    /// so a requested scope is reported as unsupported.
+    /// With a `plan`, every service is registered once per interface of the plan, with that
+    /// interface's index. Bonjour then announces the service records on those interfaces only.
+    /// The address records of the host belong to the system and stay on every interface.
     pub(crate) fn new(plan: Option<&ScopePlan>) -> Result<Self, NetworkError> {
-        let applied = if plan.is_some() {
-            tracing::warn!(
-                "mDNS: limiting the announcement to interfaces is not supported on macOS; \
-                 announcing on every interface"
-            );
-            MdnsScopeApplied::Unsupported
-        } else {
-            MdnsScopeApplied::All
+        let (indexes, applied) = match plan {
+            None => (vec![0], MdnsScopeApplied::All),
+            Some(plan) => {
+                let mut indexes = Vec::with_capacity(plan.interfaces.len());
+                for (name, index) in plan.interfaces.iter().zip(&plan.indexes) {
+                    let Some(index) = index else {
+                        return Err(NetworkError::Mdns(format!(
+                            "mDNS scope: interface {name} reports no index"
+                        )));
+                    };
+                    indexes.push(*index);
+                }
+                tracing::info!(interfaces = ?plan.interfaces, "mDNS: announcement limited");
+                (
+                    indexes,
+                    MdnsScopeApplied::Interfaces(plan.interfaces.clone()),
+                )
+            }
         };
         Ok(Self {
-            _raop_reg: None,
-            _airplay_reg: None,
+            _raop_regs: Vec::new(),
+            _airplay_regs: Vec::new(),
+            indexes,
             applied,
         })
     }
@@ -256,15 +272,32 @@ impl MdnsService {
         &self.applied
     }
 
+    /// Register `regtype` once per interface index.
+    fn register_all(
+        &self,
+        regtype: &str,
+        name: &str,
+        port: u16,
+        txt: &[(String, String)],
+    ) -> Result<Vec<astro_dnssd::RegisteredDnsService>, NetworkError> {
+        let mut regs = Vec::with_capacity(self.indexes.len());
+        for &index in &self.indexes {
+            let reg = astro_dnssd::DNSServiceBuilder::new(regtype, port)
+                .with_name(name)
+                .with_txt_record(txt_map(txt))
+                .with_interface_index(index)
+                .register()
+                .map_err(|e| NetworkError::Mdns(format!("{e:?}")))?;
+            regs.push(reg);
+        }
+        Ok(regs)
+    }
+
     /// Register the _raop._tcp mDNS service.
     pub(crate) fn register_raop(&mut self, info: &AirPlayServiceInfo) -> Result<(), NetworkError> {
-        let reg = astro_dnssd::DNSServiceBuilder::new("_raop._tcp", info.port)
-            .with_name(&info.raop_name)
-            .with_txt_record(txt_map(&info.raop_txt))
-            .register()
-            .map_err(|e| NetworkError::Mdns(format!("{e:?}")))?;
+        self._raop_regs =
+            self.register_all("_raop._tcp", &info.raop_name, info.port, &info.raop_txt)?;
         tracing::info!(name = %info.raop_name, port = info.port, "mDNS: _raop._tcp registered");
-        self._raop_reg = Some(reg);
         Ok(())
     }
 
@@ -274,23 +307,23 @@ impl MdnsService {
         &mut self,
         info: &AirPlayServiceInfo,
     ) -> Result<(), NetworkError> {
-        let reg = astro_dnssd::DNSServiceBuilder::new("_airplay._tcp", info.port)
-            .with_name(&info.airplay_name)
-            .with_txt_record(txt_map(&info.airplay_txt))
-            .register()
-            .map_err(|e| NetworkError::Mdns(format!("{e:?}")))?;
+        self._airplay_regs = self.register_all(
+            "_airplay._tcp",
+            &info.airplay_name,
+            info.port,
+            &info.airplay_txt,
+        )?;
         tracing::info!(name = %info.airplay_name, port = info.port, "mDNS: _airplay._tcp registered");
-        self._airplay_reg = Some(reg);
         Ok(())
     }
 
     /// Unregister the _raop._tcp mDNS service.
     pub(crate) fn unregister_raop(&mut self) {
-        self._raop_reg = None;
+        self._raop_regs.clear();
     }
     /// Unregister the _airplay._tcp mDNS service.
     pub(crate) fn unregister_airplay(&mut self) {
-        self._airplay_reg = None;
+        self._airplay_regs.clear();
     }
 }
 

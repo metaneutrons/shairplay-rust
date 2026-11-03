@@ -127,7 +127,7 @@ let mut server = RaopServer::builder()
 | `.pipewire_auth_setup_compat()` | `false` | `pipewire-auth-setup-compat` | Experimental fixed-probe acknowledgement in classic RAOP; not MFi authentication |
 | `.max_clients()` | `10` | | Maximum concurrent connections |
 | `.bind()` | all interfaces | | Bind to specific IPs (multi-interface) |
-| `.mdns_scope()` | `MdnsScope::All` | | Limit the mDNS announcement to the interfaces that carry given addresses (Linux; not yet on macOS) |
+| `.mdns_scope()` | `MdnsScope::All` | | Limit the mDNS announcement to the interfaces that carry given addresses (Linux, Windows and macOS) |
 | `.header_diagnostics()` | `Disabled` | `diagnostic-headers` | Structured, redacted RTSP header diagnostics |
 | `.advertise_codecs()` | PCM + ALAC | AP1 | Set the ordered AP1 `cn` capability list |
 | `.advertise_encryption()` | none | AP1 | Set the ordered AP1 `et` capability list |
@@ -160,7 +160,7 @@ back to announcing everywhere. `RaopServer::mdns_scope_applied()` reports what a
 | Platform | Result |
 |----------|--------|
 | Linux and others (`mdns-sd`) | `Interfaces(..)`. The address selects the interface, so other addresses on it are announced too. |
-| macOS (Bonjour) | `Unsupported`, the announcement stays on every interface. `astro-dnssd` registers with interface index 0 only. |
+| macOS (Bonjour) | `Interfaces(..)`. Each service is registered once per interface index, which limits its service records (PTR, SRV, TXT). The address records of the host belong to the system and stay on every interface. |
 
 ### AirPlay 1 Discovery Capabilities
 

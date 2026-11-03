@@ -74,7 +74,7 @@ hex = "0.4"
 if-addrs = "0.15"
 
 [target.'cfg(target_os = "macos")'.dependencies]
-astro-dnssd = "0.3"
+astro-dnssd = "0.3.8"
 
 [target.'cfg(not(target_os = "macos"))'.dependencies]
 mdns-sd = "0.21"
