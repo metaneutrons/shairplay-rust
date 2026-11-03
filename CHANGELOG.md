@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0](https://github.com/metaneutrons/shairplay-rust/compare/v0.11.0...v0.12.0) (2026-11-03)
+
+
+### Features
+
+* **mdns:** limit the announcement to the interfaces of chosen addresses ([#81](https://github.com/metaneutrons/shairplay-rust/issues/81)) ([7d64771](https://github.com/metaneutrons/shairplay-rust/commit/7d64771c90c6f3d1f10da5f3401ef473c8c8f1ba)), closes [#78](https://github.com/metaneutrons/shairplay-rust/issues/78)
+
 ## [0.11.0](https://github.com/metaneutrons/shairplay-rust/compare/v0.10.0...v0.11.0) (2026-11-02)
 
 
