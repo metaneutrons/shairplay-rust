@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.0](https://github.com/metaneutrons/shairplay-rust/compare/v0.10.0...v0.11.0) (2026-11-02)
+
+
+### Features
+
+* **crypto:** rewrite FairPlay behind a default-on feature and document its provenance ([9c3101b](https://github.com/metaneutrons/shairplay-rust/commit/9c3101b77355c4a97be9cc2732fb7d9393215410)), closes [#77](https://github.com/metaneutrons/shairplay-rust/issues/77)
+
 ## [0.10.0](https://github.com/metaneutrons/shairplay-rust/compare/v0.9.1...v0.10.0) (2026-09-06)
 
 
