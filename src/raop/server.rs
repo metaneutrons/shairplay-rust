@@ -176,8 +176,11 @@ impl RaopServerBuilder {
     ///
     /// `start()` fails if an address matches no interface of the host. It never falls
     /// back to announcing everywhere. After `start()`,
-    /// [`RaopServer::mdns_scope_applied`] reports what applies. The limit is applied
-    /// on Linux and other platforms with `mdns-sd`, and is not available on macOS yet.
+    /// [`RaopServer::mdns_scope_applied`] reports what applies. On Linux and other
+    /// platforms (`mdns-sd`) the announcement leaves only on those interfaces. On macOS
+    /// (Bonjour) each service is registered once per interface index, which limits its
+    /// service records; the address records of the host belong to the system and stay on
+    /// every interface.
     pub fn mdns_scope(mut self, scope: MdnsScope) -> Self {
         self.mdns_scope = scope;
         self

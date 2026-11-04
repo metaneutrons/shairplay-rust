@@ -63,8 +63,11 @@ pub enum MdnsScopeApplied {
     ///
     /// Other addresses of the same interfaces are still announced.
     Interfaces(Vec<String>),
-    /// A limit was requested, but this platform cannot apply it. The announcement
+    /// A limit was requested, but the backend cannot apply it. The announcement
     /// goes out on every interface.
+    ///
+    /// No platform returns this at present. It stays so that a backend that cannot limit
+    /// the announcement can say so instead of pretending.
     Unsupported,
 }
 
@@ -73,6 +76,8 @@ pub enum MdnsScopeApplied {
 pub(crate) struct HostAddr {
     pub(crate) name: String,
     pub(crate) ip: IpAddr,
+    /// Operating system index of the interface, if it reports one.
+    pub(crate) index: Option<u32>,
 }
 
 /// A validated scope: the requested addresses and the interfaces they live on.
@@ -80,6 +85,8 @@ pub(crate) struct HostAddr {
 pub(crate) struct ScopePlan {
     pub(crate) addrs: Vec<IpAddr>,
     pub(crate) interfaces: Vec<String>,
+    /// Index of each interface in `interfaces`, in the same order. Bonjour registers per index.
+    pub(crate) indexes: Vec<Option<u32>>,
 }
 
 /// Validate `scope` against the interface table of this host.
@@ -93,6 +100,7 @@ pub(crate) fn plan(scope: &MdnsScope) -> Result<Option<ScopePlan>, NetworkError>
         .into_iter()
         .map(|i| HostAddr {
             ip: i.ip(),
+            index: i.index,
             name: i.name,
         })
         .collect();
@@ -106,6 +114,7 @@ pub(crate) fn plan_with(addrs: &[IpAddr], table: &[HostAddr]) -> Result<ScopePla
     }
     let mut unique: Vec<IpAddr> = Vec::new();
     let mut interfaces: Vec<String> = Vec::new();
+    let mut indexes: Vec<Option<u32>> = Vec::new();
     for addr in addrs {
         if addr.is_unspecified() {
             return Err(scope_error(&format!(
@@ -122,11 +131,13 @@ pub(crate) fn plan_with(addrs: &[IpAddr], table: &[HostAddr]) -> Result<ScopePla
         }
         if !interfaces.contains(&host.name) {
             interfaces.push(host.name.clone());
+            indexes.push(host.index);
         }
     }
     Ok(ScopePlan {
         addrs: unique,
         interfaces,
+        indexes,
     })
 }
 
@@ -142,6 +153,12 @@ mod tests {
         HostAddr {
             name: name.into(),
             ip: ip.parse().unwrap(),
+            index: match name {
+                "lo" => Some(1),
+                "eth0" => Some(2),
+                "nebula1" => Some(3),
+                _ => None,
+            },
         }
     }
 
@@ -188,6 +205,22 @@ mod tests {
     fn addresses_of_two_interfaces_name_both() {
         let p = plan_with(&ips(&["10.77.0.5", "192.168.1.10"]), &table()).unwrap();
         assert_eq!(p.interfaces, ["nebula1", "eth0"]);
+    }
+
+    #[test]
+    fn indexes_follow_the_interfaces_in_order() {
+        let p = plan_with(&ips(&["10.77.0.5", "192.168.1.10", "fd00::10"]), &table()).unwrap();
+        assert_eq!(p.interfaces, ["nebula1", "eth0"]);
+        assert_eq!(p.indexes, [Some(3), Some(2)]);
+    }
+
+    #[test]
+    fn an_interface_without_an_index_is_kept_with_none() {
+        let mut t = table();
+        t.push(host("tun9", "10.8.0.2"));
+        let p = plan_with(&ips(&["10.8.0.2"]), &t).unwrap();
+        assert_eq!(p.interfaces, ["tun9"]);
+        assert_eq!(p.indexes, [None]);
     }
 
     #[test]

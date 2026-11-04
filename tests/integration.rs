@@ -1257,7 +1257,6 @@ async fn mdns_scope_on_loopback_starts() {
     assert!(server.is_running());
     // `CI` skips the mDNS registration, so only a registered service reports a scope.
     if std::env::var("CI").is_err() {
-        #[cfg(not(target_os = "macos"))]
         assert!(
             matches!(
                 server.mdns_scope_applied(),
@@ -1265,11 +1264,6 @@ async fn mdns_scope_on_loopback_starts() {
             ),
             "{:?}",
             server.mdns_scope_applied()
-        );
-        #[cfg(target_os = "macos")]
-        assert_eq!(
-            server.mdns_scope_applied(),
-            Some(&shairplay::MdnsScopeApplied::Unsupported)
         );
     }
     server.stop().await;
