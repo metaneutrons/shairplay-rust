@@ -1818,6 +1818,7 @@ dependencies = [
  "sha2",
  "subtle",
  "symphonia",
+ "tempfile",
  "thiserror 2.0.20",
  "tokio",
  "tracing",
