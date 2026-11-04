@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.13.0](https://github.com/metaneutrons/shairplay-rust/compare/v0.12.0...v0.13.0) (2026-11-04)
+
+
+### Features
+
+* **mdns:** limit the announcement on macOS too ([#83](https://github.com/metaneutrons/shairplay-rust/issues/83)) ([dafbb60](https://github.com/metaneutrons/shairplay-rust/commit/dafbb60d894abb782f67fe586c1fcc88630bd0ee))
+
+## [0.12.0](https://github.com/metaneutrons/shairplay-rust/compare/v0.11.0...v0.12.0) (2026-11-03)
+
+
+### Features
+
+* **mdns:** limit the announcement to the interfaces of chosen addresses ([#81](https://github.com/metaneutrons/shairplay-rust/issues/81)) ([7d64771](https://github.com/metaneutrons/shairplay-rust/commit/7d64771c90c6f3d1f10da5f3401ef473c8c8f1ba)), closes [#78](https://github.com/metaneutrons/shairplay-rust/issues/78)
+
+## [0.11.0](https://github.com/metaneutrons/shairplay-rust/compare/v0.10.0...v0.11.0) (2026-11-02)
+
+
+### Features
+
+* **crypto:** rewrite FairPlay behind a default-on feature and document its provenance ([9c3101b](https://github.com/metaneutrons/shairplay-rust/commit/9c3101b77355c4a97be9cc2732fb7d9393215410)), closes [#77](https://github.com/metaneutrons/shairplay-rust/issues/77)
+
 ## [0.10.0](https://github.com/metaneutrons/shairplay-rust/compare/v0.9.1...v0.10.0) (2026-09-06)
 
 

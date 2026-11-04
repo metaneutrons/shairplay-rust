@@ -59,18 +59,19 @@ openssl pkeyutl -encrypt -pubin -inkey airport.pub \
 ```
 Test: `decrypt(rsaaeskey_b64)` == the 16 known bytes.
 
-### 3. FairPlay key recovery — `FairPlay::decrypt` / `playfair_decrypt` 📱 / 🔧 (highest value)
-The whole DRM is currently pinned only to the port's own output on **fabricated** inputs. One real
-`(keymsg_164B, ekey_72B) → aes_key_16B` triple anchors the entire pipeline (modified_md5, garble,
-cycle, session-key, S-box tables).
+### 3. FairPlay key recovery — `FairPlay::decrypt` 📱 / 🔧 (highest value)
+The whole DRM is currently pinned to golden vectors from the C reference on **pseudo-random** inputs
+(`tests/data/fairplay_golden.txt`), not to a real session. One real `(keymsg_164B, ekey_72B) →
+aes_key_16B` triple anchors the entire pipeline (MD5 variant, scrambling hash with the blender,
+unwrap cipher, session key, constant tables).
 
 - **📱 easiest, given your setup:** add `trace!` of the M2 `keymsg` (in `FairPlay::handshake`), the
   ANNOUNCE `ekey` (the 72-byte FairPlay-encrypted key), and the recovered `aes_key` (out of
   `FairPlay::decrypt`). Play audio from a real iPhone; if it **plays correctly**, the recovered key
   is provably right (the audio is AES-encrypted under it). Save the three hex blobs to
   `tests/data/fairplay/ios_session.txt`.
-- **🔧 most faithful:** instrument C `shairplay` `playfair_decrypt()` (`src/lib/playfair/`) to printf
-  `message3`, `cipher_text`, and the output `key`, then run any fp-setup.
+- **🔧 most faithful:** build the C reference separately (it is not part of this repository), print
+  its inputs `message3` and `cipher_text` and the output `key`, then run any fp-setup.
 
 Test: `let mut fp = FairPlay::new(); fp.handshake(&keymsg)?; assert_eq!(fp.decrypt(&ekey)?, aes_key);`
 

@@ -2,7 +2,7 @@
 resolver = "3"
 
 [workspace.package]
-version = "0.10.0"
+version = "0.13.0"
 
 [package]
 name = "shairplay"
@@ -70,22 +70,29 @@ thiserror = "2.0.21"
 # Logging
 tracing = "0.1"
 hex = "0.4"
+# Interface table, to resolve an mDNS scope (already a dependency of mdns-sd)
+if-addrs = "0.15"
 
 [target.'cfg(target_os = "macos")'.dependencies]
-astro-dnssd = "0.3"
+astro-dnssd = "0.3.8"
 
 [target.'cfg(not(target_os = "macos"))'.dependencies]
 mdns-sd = "0.21.6"
 gethostname = "1"
 
 [features]
-default = []
+default = ["fairplay"]
+# FairPlay handshake and key decryption (`POST /fp-setup`, `a=fpaeskey`, AP2 video
+# keys). Enabled by default. The code is a rewrite of a reference that upstream ships
+# under the GPL-3.0, so its provenance carries some uncertainty. See
+# docs/fairplay-provenance.md. Build with `default-features = false` to leave it out.
+fairplay = []
 pipewire-auth-setup-compat = []
 diagnostic-headers = []
 dangerous-raw-headers = ["diagnostic-headers"]
 resample = ["dep:rubato"]
 ap2 = ["resample", "dep:chacha20poly1305", "dep:hkdf", "dep:num-bigint", "dep:uuid", "dep:symphonia"]
-video = ["ap2"]
+video = ["ap2", "fairplay"]
 hls = ["video"]
 
 [dev-dependencies]

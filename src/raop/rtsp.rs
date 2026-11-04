@@ -107,6 +107,7 @@ const ROUTES: &[Route] = &[
         path: "/pair-verify",
         handler: handlers::handle_pair_verify,
     },
+    #[cfg(feature = "fairplay")]
     Route {
         method: "POST",
         path: "/fp-setup",

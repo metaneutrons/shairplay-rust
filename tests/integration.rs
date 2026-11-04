@@ -162,17 +162,24 @@ fn ap1_advertisement_defaults_and_custom_order_are_stable() {
     assert_eq!(raop_txt(&default.service_info(), "cn"), "0,1");
     assert_eq!(raop_txt(&default.service_info(), "et"), "0");
 
-    let custom = ap1_builder("CustomAdvertisement")
-        .advertise_codecs([Ap1Codec::Alac, Ap1Codec::Pcm])
-        .advertise_encryption([
+    #[cfg(feature = "fairplay")]
+    let (encryption, expected_et) = (
+        vec![
             Ap1Encryption::FairPlay,
             Ap1Encryption::None,
             Ap1Encryption::Rsa,
-        ])
+        ],
+        "3,0,1",
+    );
+    #[cfg(not(feature = "fairplay"))]
+    let (encryption, expected_et) = (vec![Ap1Encryption::None, Ap1Encryption::Rsa], "0,1");
+    let custom = ap1_builder("CustomAdvertisement")
+        .advertise_codecs([Ap1Codec::Alac, Ap1Codec::Pcm])
+        .advertise_encryption(encryption)
         .build(empty_handler())
         .unwrap();
     assert_eq!(raop_txt(&custom.service_info(), "cn"), "1,0");
-    assert_eq!(raop_txt(&custom.service_info(), "et"), "3,0,1");
+    assert_eq!(raop_txt(&custom.service_info(), "et"), expected_et);
 }
 
 #[test]
@@ -478,6 +485,7 @@ async fn pair_setup_returns_public_key() {
     server.stop().await;
 }
 
+#[cfg(feature = "fairplay")]
 #[tokio::test]
 #[serial]
 async fn fp_setup_returns_142_bytes() {
@@ -1207,5 +1215,56 @@ async fn set_parameter_coverart_calls_handler() {
         assert_eq!(&art[0], jpeg);
     }
 
+    server.stop().await;
+}
+
+#[tokio::test]
+async fn mdns_scope_with_an_unknown_address_refuses_to_start() {
+    // 203.0.113.0/24 is reserved for documentation and is on no interface.
+    let mut server = ap1_builder("ScopeRefused")
+        .mdns_scope(shairplay::MdnsScope::Addrs(vec![
+            "203.0.113.7".parse().unwrap(),
+        ]))
+        .build(empty_handler())
+        .unwrap();
+    let err = server.start().await.expect_err("scope must be refused");
+    assert!(err.to_string().contains("203.0.113.7"), "{err}");
+    assert!(!server.is_running(), "no listener may be left behind");
+    assert!(server.mdns_scope_applied().is_none());
+}
+
+#[tokio::test]
+async fn mdns_scope_with_a_wildcard_refuses_to_start() {
+    let mut server = ap1_builder("ScopeWildcard")
+        .mdns_scope(shairplay::MdnsScope::Addrs(vec![
+            "0.0.0.0".parse().unwrap(),
+        ]))
+        .build(empty_handler())
+        .unwrap();
+    assert!(server.start().await.is_err());
+    assert!(!server.is_running());
+}
+
+#[tokio::test]
+async fn mdns_scope_on_loopback_starts() {
+    let mut server = ap1_builder("ScopeLoopback")
+        .mdns_scope(shairplay::MdnsScope::Addrs(vec![
+            "127.0.0.1".parse().unwrap(),
+        ]))
+        .build(empty_handler())
+        .unwrap();
+    server.start().await.expect("loopback is on every host");
+    assert!(server.is_running());
+    // `CI` skips the mDNS registration, so only a registered service reports a scope.
+    if std::env::var("CI").is_err() {
+        assert!(
+            matches!(
+                server.mdns_scope_applied(),
+                Some(shairplay::MdnsScopeApplied::Interfaces(names)) if names.len() == 1
+            ),
+            "{:?}",
+            server.mdns_scope_applied()
+        );
+    }
     server.stop().await;
 }

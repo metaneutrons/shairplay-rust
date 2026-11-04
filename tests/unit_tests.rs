@@ -1,7 +1,6 @@
 //! Unit tests with test vectors generated from the original C implementation.
 
 use shairplay::crypto::aes::AesCtr;
-use shairplay::crypto::fairplay::FairPlay;
 use shairplay::crypto::pairing::Pairing;
 use shairplay::net::mdns::AirPlayServiceInfo;
 use shairplay::proto::digest;
@@ -257,43 +256,6 @@ fn pairing_derive_key_deterministic() {
     let k2 = s.derive_key(b"test-salt", 16).unwrap();
     assert_eq!(k1, k2);
     assert_eq!(k1.len(), 16);
-}
-
-// ============================================================
-// FairPlay — setup/handshake protocol
-// ============================================================
-#[test]
-fn fairplay_setup_modes() {
-    let mut fp = FairPlay::new();
-    for mode in 0..4u8 {
-        let mut req = [0u8; 16];
-        req[4] = 0x03; // version
-        req[14] = mode;
-        let res = fp.setup(&req).unwrap();
-        assert_eq!(res.len(), 142);
-        assert_eq!(&res[..4], b"FPLY");
-    }
-}
-
-#[test]
-fn fairplay_handshake_response() {
-    let mut fp = FairPlay::new();
-    let mut req = [0u8; 164];
-    req[4] = 0x03;
-    for (i, b) in req.iter_mut().enumerate().skip(144) {
-        *b = i as u8;
-    }
-    let res = fp.handshake(&req).unwrap();
-    assert_eq!(&res[..4], b"FPLY");
-    assert_eq!(&res[12..32], &req[144..164]); // echo bytes
-}
-
-#[test]
-fn fairplay_reject_bad_version() {
-    let mut fp = FairPlay::new();
-    let mut req = [0u8; 16];
-    req[4] = 0x02; // wrong version
-    assert!(fp.setup(&req).is_err());
 }
 
 // ============================================================
