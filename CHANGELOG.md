@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.0](https://github.com/metaneutrons/shairplay-rust/compare/v0.12.0...v0.13.0) (2026-11-04)
+
+
+### Features
+
+* **mdns:** limit the announcement on macOS too ([#83](https://github.com/metaneutrons/shairplay-rust/issues/83)) ([dafbb60](https://github.com/metaneutrons/shairplay-rust/commit/dafbb60d894abb782f67fe586c1fcc88630bd0ee))
+
 ## [0.12.0](https://github.com/metaneutrons/shairplay-rust/compare/v0.11.0...v0.12.0) (2026-11-03)
 
 
