@@ -43,3 +43,34 @@ pub(crate) fn derive_stream_key_iv(
     ]);
     (key, iv)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn hex_encode(data: &[u8]) -> String {
+        data.iter().map(|b| format!("{b:02x}")).collect()
+    }
+
+    #[test]
+    fn eaes_key_known_answer() {
+        let fp: [u8; 16] = std::array::from_fn(|i| i as u8);
+        let ecdh: [u8; 32] = std::array::from_fn(|i| 100 + i as u8);
+        assert_eq!(
+            hex_encode(&derive_eaes_key(&fp, &ecdh)),
+            "8bb46dd24d1d37bfbad9ccd07edb7828"
+        );
+    }
+
+    #[test]
+    fn stream_key_iv_known_answer() {
+        let seed: [u8; 16] = std::array::from_fn(|i| i as u8);
+        let (key, iv) = derive_stream_key_iv(&seed, 1_234_567_890);
+        assert_eq!(hex_encode(&key), "69d267de5cd56e2d2cda2f2d9fc1d5d5");
+        assert_eq!(hex_encode(&iv), "ebb81481e427947b5298263fda24fcb9");
+        // A different connection id yields different material.
+        let (key2, iv2) = derive_stream_key_iv(&seed, 1_234_567_891);
+        assert_ne!(key, key2);
+        assert_ne!(iv, iv2);
+    }
+}

@@ -39,7 +39,7 @@ impl ExampleResampler {
         }
         let params = SincInterpolationParameters {
             sinc_len: 64,
-            f_cutoff: 0.95,
+            f_cutoff: Some(0.95),
             interpolation: SincInterpolationType::Linear,
             oversampling_factor: 128,
             window: WindowFunction::BlackmanHarris2,
@@ -77,7 +77,7 @@ impl ExampleResampler {
                 }
             }
             if let Ok(input) = SequentialSliceOfVecs::new(&ch_vecs, self.channels, self.chunk_size)
-                && let Ok(result) = self.resampler.process(&input, 0, None)
+                && let Ok(result) = self.resampler.process(&input, None)
             {
                 output.extend(result.take_data());
             }
@@ -449,7 +449,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let ring_for_cpal = ring.clone();
 
             match device.build_output_stream(
-                &config,
+                config,
                 move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
                     let mut ring = ring_for_cpal.lock().unwrap();
                     for sample in data.iter_mut() {
@@ -491,7 +491,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         None => {
             let mut mac = [0u8; 6];
             mac[0] = 0x02;
-            rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut mac[1..]);
+            rand::Rng::fill_bytes(&mut rand::rng(), &mut mac[1..]);
             state.mac = Some(mac);
             if let Some(path) = &persist_path {
                 state.save(path);

@@ -214,9 +214,9 @@ async fn unavailable_probe_in_explicit_ap1_mode_keeps_et_unchanged() {
 
 fn authorization(nonce: &str, password: &str) -> String {
     // Independent client calculation: do not ask the server validator for its answer.
-    let ha1 = format!("{:x}", Md5::digest(format!("user:airplay:{password}")));
-    let ha2 = format!("{:x}", Md5::digest(b"POST:/auth-setup"));
-    let response = format!("{:x}", Md5::digest(format!("{ha1}:{nonce}:{ha2}")));
+    let ha1 = hex::encode(Md5::digest(format!("user:airplay:{password}")));
+    let ha2 = hex::encode(Md5::digest(b"POST:/auth-setup"));
+    let response = hex::encode(Md5::digest(format!("{ha1}:{nonce}:{ha2}")));
     format!(
         "Digest username=\"user\", realm=\"airplay\", nonce=\"{nonce}\", uri=\"/auth-setup\", response=\"{response}\""
     )
