@@ -150,7 +150,7 @@ pub fn parse_announce(buf: &[u8]) -> Option<u64> {
 /// Received messages are decoded at `debug`; the first is noted once at `info`.
 /// Binds gracefully — ports <1024 may need root / `CAP_NET_BIND_SERVICE`; on bind
 /// failure it logs one line and returns, leaving normal operation untouched.
-/// IPv6-unspecified bind (AirPlay timing traffic is IPv6). Set `SHAIRPLAY_NO_PTP`
+/// IPv6-unspecified bind (AirPlay timing traffic is IPv6), IPv4 on hosts without IPv6. Set `SHAIRPLAY_NO_PTP`
 /// to skip the bind (for A/B measuring the effect).
 pub(crate) async fn spawn_ptp_sink() {
     if std::env::var("SHAIRPLAY_NO_PTP").is_ok() {
@@ -160,7 +160,14 @@ pub(crate) async fn spawn_ptp_sink() {
     let seen = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let mut bound = 0u8;
     for port in [319u16, 320u16] {
-        match tokio::net::UdpSocket::bind((std::net::Ipv6Addr::UNSPECIFIED, port)).await {
+        let bind = match tokio::net::UdpSocket::bind((std::net::Ipv6Addr::UNSPECIFIED, port)).await
+        {
+            Err(e) if e.kind() != std::io::ErrorKind::PermissionDenied => {
+                tokio::net::UdpSocket::bind((std::net::Ipv4Addr::UNSPECIFIED, port)).await
+            }
+            r => r,
+        };
+        match bind {
             Ok(sock) => {
                 bound += 1;
                 let seen = seen.clone();
