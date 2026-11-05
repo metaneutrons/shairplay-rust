@@ -74,7 +74,9 @@ impl DacpRemoteControl {
 impl RemoteControl for DacpRemoteControl {
     fn send_command(&self, cmd: RemoteCommand) -> Result<(), crate::error::ShairplayError> {
         let result = match cmd {
-            RemoteCommand::Play | RemoteCommand::Pause => self.client.play_pause_blocking(),
+            // not playpause: a play to a sender that plays (a receiver resuming it) would pause it
+            RemoteCommand::Play => self.client.play_blocking(),
+            RemoteCommand::Pause => self.client.pause_blocking(),
             RemoteCommand::NextTrack => self.client.next_blocking(),
             RemoteCommand::PreviousTrack => self.client.prev_blocking(),
             RemoteCommand::SetVolume(v) => self.client.set_volume_blocking(v),
@@ -96,5 +98,40 @@ impl RemoteControl for DacpRemoteControl {
             RemoteCommand::ToggleRepeat,
             RemoteCommand::Stop,
         ]
+    }
+}
+
+#[cfg(test)]
+mod dacp_tests {
+    use super::*;
+    use std::io::Read;
+
+    #[test]
+    fn play_and_pause_send_their_own_commands() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let sender = std::thread::spawn(move || {
+            (0..2)
+                .map(|_| {
+                    let (mut conn, _) = listener.accept().unwrap();
+                    let mut buf = [0u8; 256];
+                    let n = conn.read(&mut buf).unwrap();
+                    let request = String::from_utf8_lossy(&buf[..n]);
+                    request.lines().next().unwrap().to_string()
+                })
+                .collect::<Vec<_>>()
+        });
+        let remote = DacpRemoteControl {
+            client: crate::dacp::DacpClient::new("id", "1").with_addr(addr),
+        };
+        remote.send_command(RemoteCommand::Play).unwrap();
+        remote.send_command(RemoteCommand::Pause).unwrap();
+        assert_eq!(
+            sender.join().unwrap(),
+            [
+                "GET /ctrl-int/1/play HTTP/1.1",
+                "GET /ctrl-int/1/pause HTTP/1.1"
+            ]
+        );
     }
 }
