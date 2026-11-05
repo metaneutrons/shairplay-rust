@@ -796,8 +796,8 @@ fn setup_stream_buffered(
     stream_resp.insert("dataPort".into(), plist::Value::Integer(audio_port.into()));
     stream_resp.insert(
         "audioBufferSize".into(),
-        plist::Value::Integer(0x10_0000_i64.into()),
-    ); // 1 MB
+        plist::Value::Integer(i64::from(conn.shared.audio_buffer_size).into()),
+    );
     Some(())
 }
 
