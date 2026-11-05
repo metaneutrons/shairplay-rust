@@ -32,6 +32,9 @@ pub(crate) struct RaopShared {
     /// Only consulted by the AP2 mixdown path; dead in AP1-only builds.
     #[cfg_attr(not(feature = "ap2"), allow(dead_code))]
     pub(crate) output_max_channels: Option<u8>,
+    /// AP2 buffered audio: the buffer size advertised to the sender (how far ahead it may send).
+    #[cfg_attr(not(feature = "ap2"), allow(dead_code))]
+    pub(crate) audio_buffer_size: u32,
     #[cfg(feature = "ap2")]
     pub(crate) pin: Option<String>,
     #[cfg(feature = "video")]

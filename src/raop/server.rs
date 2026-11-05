@@ -79,6 +79,7 @@ pub struct RaopServerBuilder {
     mode: AirPlayMode,
     output_sample_rate: Option<u32>,
     output_max_channels: Option<u8>,
+    audio_buffer_size: u32,
     ap1_codecs: Option<Vec<Ap1Codec>>,
     ap1_encryption: Option<Vec<Ap1Encryption>>,
     #[cfg(feature = "ap2")]
@@ -115,6 +116,7 @@ impl RaopServerBuilder {
             mode: AirPlayMode::default(),
             output_sample_rate: None,
             output_max_channels: None,
+            audio_buffer_size: 0x10_0000,
             ap1_codecs: None,
             ap1_encryption: None,
             #[cfg(feature = "ap2")]
@@ -232,6 +234,14 @@ impl RaopServerBuilder {
     /// Default: pass through native channel count.
     pub fn output_max_channels(mut self, channels: u8) -> Self {
         self.output_max_channels = Some(channels);
+        self
+    }
+
+    /// Set the AirPlay 2 buffered-audio buffer size advertised to senders, in bytes of compressed audio:
+    /// how far ahead of playout a sender may stream (1 MB, about 30 s of 256 kb/s AAC, by default). The
+    /// receiver holds that much compressed audio; lower it on small-memory devices.
+    pub fn audio_buffer_size(mut self, bytes: u32) -> Self {
+        self.audio_buffer_size = bytes;
         self
     }
 
@@ -365,6 +375,7 @@ impl RaopServerBuilder {
             identity_seed,
             output_sample_rate: self.output_sample_rate,
             output_max_channels: self.output_max_channels,
+            audio_buffer_size: self.audio_buffer_size,
             #[cfg(feature = "ap2")]
             pin: self.pin,
             #[cfg(feature = "video")]
