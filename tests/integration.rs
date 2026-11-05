@@ -460,6 +460,26 @@ async fn oversized_header_returns_400_and_closes_connection() {
     server.stop().await;
 }
 
+/// Each route takes the body it needs, refused on its headers: every route took 32 MiB from anyone.
+#[tokio::test]
+#[serial]
+async fn bodies_larger_than_the_route_needs_are_refused_on_their_headers() {
+    let (mut server, port, _) = start_server().await;
+    for req in [
+        "POST /pair-setup RTSP/1.0\r\nCSeq: 1\r\nContent-Length: 5000\r\n\r\n",
+        "ANNOUNCE rtsp://x/1 RTSP/1.0\r\nCSeq: 1\r\nContent-Type: application/sdp\r\nContent-Length: 33554432\r\n\r\n",
+        "SET_PARAMETER rtsp://x/1 RTSP/1.0\r\nCSeq: 1\r\nContent-Type: image/jpeg\r\nContent-Length: 2000000\r\n\r\n",
+    ] {
+        let mut stream = TcpStream::connect(format!("127.0.0.1:{port}"))
+            .await
+            .unwrap();
+        let resp = send_rtsp(&mut stream, req).await;
+        assert!(resp.contains("RTSP/1.0 400 Bad Request"), "{req}: {resp}");
+        assert!(resp.contains("Connection: close"));
+    }
+    server.stop().await;
+}
+
 #[tokio::test]
 #[serial]
 async fn pair_setup_returns_public_key() {
