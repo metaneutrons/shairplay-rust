@@ -130,10 +130,12 @@ impl SrpServer {
             ));
         }
 
+        // Flags is a TLV8 integer: little-endian, any length (iOS sends one byte, some senders four)
         self.is_transient = tlv
             .get_type(TlvType::Flags)
-            .map(|f| f.len() == 1 && f[0] == PAIRING_FLAGS_TRANSIENT)
-            .unwrap_or(false);
+            .filter(|f| (1..=4).contains(&f.len()))
+            .map(|f| f.iter().rev().fold(0u32, |v, &b| v << 8 | u32::from(b)))
+            .is_some_and(|flags| flags & u32::from(PAIRING_FLAGS_TRANSIENT) != 0);
         if self.is_transient && !self.allow_transient {
             return Err(CryptoError::PairingHandshake(
                 "transient pair-setup is disabled when a PIN is configured".into(),
@@ -832,6 +834,28 @@ mod tests {
 
         // Shared secret should match
         assert_eq!(server.shared_secret().unwrap(), &session_key[..]);
+    }
+
+    /// Flags is a TLV8 integer: little-endian, and not always one byte long.
+    #[test]
+    fn m1_flags_are_read_as_a_little_endian_integer() {
+        let cases: [(&[u8], bool); 6] = [
+            (&[0x10], true),
+            (&[0x10, 0, 0, 0], true),
+            (&[0x10, 0, 0, 0x01], true),
+            (&[0, 0x10], false),
+            (&[0], false),
+            (&[0x10, 0, 0, 0, 0], false),
+        ];
+        for (flags, transient) in cases {
+            let mut server = SrpServer::new(None).unwrap();
+            let mut m1 = TlvValues::new();
+            m1.add(TlvType::State as u8, &[1]);
+            m1.add(TlvType::Method as u8, &[PAIRING_METHOD_PAIR_SETUP]);
+            m1.add(TlvType::Flags as u8, flags);
+            server.process_m1(&m1.encode()).unwrap();
+            assert_eq!(server.is_transient(), transient, "{flags:02x?}");
+        }
     }
 
     #[test]
