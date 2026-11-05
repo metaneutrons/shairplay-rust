@@ -433,14 +433,22 @@ impl MdnsService {
     /// Unregister the _raop._tcp mDNS service.
     pub(crate) fn unregister_raop(&mut self) {
         if let Some(name) = self.raop_fullname.take() {
-            let _ = self.daemon.unregister(&name);
+            self.unregister(&name);
         }
     }
 
     /// Unregister the _airplay._tcp mDNS service.
     pub(crate) fn unregister_airplay(&mut self) {
         if let Some(name) = self.airplay_fullname.take() {
-            let _ = self.daemon.unregister(&name);
+            self.unregister(&name);
+        }
+    }
+
+    /// Unregister a service and wait until the daemon has sent its goodbye (it answers after the first one), so a
+    /// process that exits right after stopping the server still tells the browsers' caches the records are gone.
+    fn unregister(&self, name: &str) {
+        if let Ok(done) = self.daemon.unregister(name) {
+            let _ = done.recv_timeout(std::time::Duration::from_secs(1));
         }
     }
 }
