@@ -161,7 +161,6 @@ impl Drop for RaopConnectionHandler {
 }
 
 impl ConnectionHandler for RaopConnectionHandler {
-    #[cfg(feature = "pipewire-auth-setup-compat")]
     fn request_body_policy(
         &self,
         request: &HttpRequest,
