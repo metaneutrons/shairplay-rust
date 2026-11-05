@@ -673,8 +673,18 @@ impl AlacDecoder {
             output_size,
             self.bytes_per_sample as usize,
         );
-        if *output_samples == 0 {
+        if *output_samples == 0 || *output_samples > self.max_samples_per_frame as usize {
+            // a frame header may carry its own sample count: one larger than the stream's frame length would run
+            // past the decode buffers (sized from the SETUP's fmtp), so the frame is dropped
+            if *output_samples != 0 {
+                tracing::warn!(
+                    samples = *output_samples,
+                    max = self.max_samples_per_frame,
+                    "ALAC frame larger than the stream's frame length: dropped"
+                );
+            }
             *output_size = 0;
+            *output_samples = 0;
             return;
         }
 
@@ -750,8 +760,18 @@ impl AlacDecoder {
             output_size,
             self.bytes_per_sample as usize,
         );
-        if *output_samples == 0 {
+        if *output_samples == 0 || *output_samples > self.max_samples_per_frame as usize {
+            // a frame header may carry its own sample count: one larger than the stream's frame length would run
+            // past the decode buffers (sized from the SETUP's fmtp), so the frame is dropped
+            if *output_samples != 0 {
+                tracing::warn!(
+                    samples = *output_samples,
+                    max = self.max_samples_per_frame,
+                    "ALAC frame larger than the stream's frame length: dropped"
+                );
+            }
             *output_size = 0;
+            *output_samples = 0;
             return;
         }
 
@@ -978,6 +998,35 @@ mod decode_tests {
         assert_eq!(decoded.len(), samples.len());
         for (actual, expected) in decoded.iter().zip(samples) {
             assert!((*actual - expected as f32 / 8_388_608.0).abs() < f32::EPSILON);
+        }
+    }
+
+    /// A frame's header can carry its own sample count: one past the stream's frame length
+    /// must not reach the decode buffers, which are sized from that length.
+    #[test]
+    fn frame_longer_than_the_stream_is_dropped() {
+        for channels in [1u32, 2] {
+            let mut dec = AlacDecoder::new(16, channels as i32);
+            dec.set_info(&config_16(4));
+
+            let mut w = BitWriter::new();
+            w.put(channels - 1, 3);
+            w.put(0, 4);
+            w.put(0, 12);
+            w.put(1, 1); // has_size = 1
+            w.put(0, 2); // uncompressed_bytes = 0
+            w.put(1, 1); // is_not_compressed = 1
+            w.put(5, 32); // one sample more than the stream's 4
+            for _ in 0..5 * channels {
+                w.put(0, 16);
+            }
+
+            let mut out = [0u8; 64];
+            assert_eq!(
+                dec.decode_frame(&w.bytes, &mut out),
+                0,
+                "{channels} channels"
+            );
         }
     }
 
