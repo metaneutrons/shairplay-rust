@@ -14,7 +14,8 @@ use tracing::debug;
 /// Default DACP port, used when mDNS discovery of the `_dacp._tcp` service fails.
 const DACP_DEFAULT_PORT: u16 = 3689;
 
-const PLAY_PAUSE_PATH: &str = "/ctrl-int/1/playpause";
+const PLAY_PATH: &str = "/ctrl-int/1/play";
+const PAUSE_PATH: &str = "/ctrl-int/1/pause";
 const NEXT_PATH: &str = "/ctrl-int/1/nextitem";
 const PREVIOUS_PATH: &str = "/ctrl-int/1/previtem";
 const STOP_PATH: &str = "/ctrl-int/1/stop";
@@ -76,7 +77,7 @@ fn discover_dacp_port(dacp_id: &str, _remote_ip: std::net::IpAddr) -> Option<u16
 /// let mut client = DacpClient::new("7711DA8B47838CB5", "1986535575");
 /// client.discover_from_remote("192.168.1.5".parse().unwrap());
 /// // Then from a synchronous remote-control callback:
-/// // client.play_pause_blocking().ok();
+/// // client.pause_blocking().ok();
 /// ```
 /// HTTP client for sending DACP playback commands to the iPhone.
 #[derive(Debug)]
@@ -95,6 +96,12 @@ impl DacpClient {
             active_remote: active_remote.to_string(),
             addr: None,
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_addr(mut self, addr: SocketAddr) -> Self {
+        self.addr = Some(addr);
+        self
     }
 
     /// Discover the Apple device's DACP service via mDNS.
@@ -132,8 +139,12 @@ impl DacpClient {
         Ok(())
     }
 
-    pub(crate) fn play_pause_blocking(&self) -> Result<(), NetworkError> {
-        self.command_blocking(PLAY_PAUSE_PATH)
+    pub(crate) fn play_blocking(&self) -> Result<(), NetworkError> {
+        self.command_blocking(PLAY_PATH)
+    }
+
+    pub(crate) fn pause_blocking(&self) -> Result<(), NetworkError> {
+        self.command_blocking(PAUSE_PATH)
     }
 
     pub(crate) fn next_blocking(&self) -> Result<(), NetworkError> {
