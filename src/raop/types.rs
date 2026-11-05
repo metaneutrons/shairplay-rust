@@ -126,6 +126,13 @@ pub trait AudioHandler: Send + Sync + 'static {
     fn on_client_connected(&self, _addr: &str) {}
     /// Called when a client disconnects.
     fn on_client_disconnected(&self, _addr: &str) {}
+    /// Called when a sender starts a session: AirPlay 2's first SETUP (no `streams`) unless `isRemoteControlOnly`
+    /// (iOS opens those to show and control what a receiver plays, from Control Center or the Home app, without
+    /// making it the output), AirPlay 1's ANNOUNCE. Not for the probes and remote-control connections.
+    fn on_session_setup(&self, _addr: &str) {}
+    /// Called when the connection that started a session (`on_session_setup`) closes: the sender let go of this
+    /// receiver as its output. Its remote-control-only connections may stay open.
+    fn on_session_end(&self, _addr: &str) {}
     /// Called when the library hits a runtime error on a connection — e.g. a
     /// pairing/pair-verify failure, a FairPlay or session-key decrypt failure, a
     /// rejected stream format, or an audio-decoder init failure. Fired at most

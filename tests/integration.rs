@@ -513,6 +513,129 @@ async fn fp_setup_returns_142_bytes() {
     server.stop().await;
 }
 
+#[derive(Default)]
+struct SessionEvents(Mutex<Vec<&'static str>>);
+
+impl AudioHandler for SessionEvents {
+    fn audio_init(&self, _format: AudioFormat) -> Box<dyn AudioSession> {
+        Box::new(TestSession)
+    }
+    fn on_session_setup(&self, _addr: &str) {
+        self.0.lock().unwrap().push("setup");
+    }
+    fn on_session_end(&self, _addr: &str) {
+        self.0.lock().unwrap().push("end");
+    }
+}
+
+impl SessionEvents {
+    fn seen(&self) -> Vec<&'static str> {
+        self.0.lock().unwrap().clone()
+    }
+
+    /// The connection's end is noticed on the server's side, a moment after the client drops it.
+    async fn wait_for(&self, expected: &[&str]) {
+        for _ in 0..200 {
+            if self.seen() == expected {
+                return;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        assert_eq!(self.seen(), expected);
+    }
+}
+
+async fn start_session_server() -> (RaopServer, u16, Arc<SessionEvents>) {
+    let events = Arc::new(SessionEvents::default());
+    let mut server = RaopServer::builder()
+        .name("IntegrationTest")
+        .hwaddr([0x00, 0x11, 0x22, 0x33, 0x44, 0x55])
+        .port(0)
+        .build(events.clone())
+        .unwrap();
+    server.start().await.unwrap();
+    let port = server.service_info().port;
+    (server, port, events)
+}
+
+/// A probe is no session; an ANNOUNCE starts one, once, and its connection's end ends it.
+#[tokio::test]
+#[serial]
+async fn session_hooks_follow_the_connection_that_announced() {
+    let (mut server, port, events) = start_session_server().await;
+
+    let mut probe = TcpStream::connect(format!("127.0.0.1:{port}"))
+        .await
+        .unwrap();
+    let response = send_rtsp(&mut probe, "OPTIONS * RTSP/1.0\r\nCSeq: 1\r\n\r\n").await;
+    assert!(response.contains("RTSP/1.0 200 OK"), "got: {response}");
+    drop(probe);
+
+    let sdp = concat!(
+        "v=0\r\n",
+        "o=Test 0 0 IN IP4 127.0.0.1\r\n",
+        "s=AirTunes\r\n",
+        "c=IN IP4 127.0.0.1\r\n",
+        "t=0 0\r\n",
+        "m=audio 0 RTP/AVP 96\r\n",
+        "a=rtpmap:96 L16/44100/2\r\n",
+    );
+    let announce = format!(
+        "ANNOUNCE rtsp://127.0.0.1/stream RTSP/1.0\r\nCSeq: 2\r\nContent-Type: application/sdp\r\nContent-Length: {}\r\n\r\n{sdp}",
+        sdp.len()
+    );
+    let mut sender = TcpStream::connect(format!("127.0.0.1:{port}"))
+        .await
+        .unwrap();
+    send_rtsp(&mut sender, &announce).await;
+    send_rtsp(&mut sender, &announce).await;
+    assert_eq!(events.seen(), ["setup"]);
+
+    drop(sender);
+    events.wait_for(&["setup", "end"]).await;
+    server.stop().await;
+}
+
+/// iOS's remote-control-only connections are no session; a first SETUP without that flag is.
+#[cfg(feature = "ap2")]
+#[tokio::test]
+#[serial]
+async fn session_hooks_skip_remote_control_only_setups() {
+    async fn setup(stream: &mut TcpStream, dict: plist::Dictionary) {
+        let mut body = Vec::new();
+        plist::to_writer_binary(&mut body, &plist::Value::Dictionary(dict)).unwrap();
+        let head = format!(
+            "SETUP rtsp://127.0.0.1/stream RTSP/1.0\r\nCSeq: 1\r\nContent-Type: application/x-apple-binary-plist\r\nContent-Length: {}\r\n\r\n",
+            body.len()
+        );
+        stream.write_all(head.as_bytes()).await.unwrap();
+        stream.write_all(&body).await.unwrap();
+        let mut buf = [0u8; 4096];
+        assert_ne!(stream.read(&mut buf).await.unwrap(), 0);
+    }
+
+    let (mut server, port, events) = start_session_server().await;
+
+    let mut remote = TcpStream::connect(format!("127.0.0.1:{port}"))
+        .await
+        .unwrap();
+    let mut rc_only = plist::Dictionary::new();
+    rc_only.insert("isRemoteControlOnly".into(), plist::Value::Boolean(true));
+    setup(&mut remote, rc_only).await;
+    assert!(events.seen().is_empty());
+
+    let mut sender = TcpStream::connect(format!("127.0.0.1:{port}"))
+        .await
+        .unwrap();
+    setup(&mut sender, plist::Dictionary::new()).await;
+    assert_eq!(events.seen(), ["setup"]);
+
+    drop(remote);
+    drop(sender);
+    events.wait_for(&["setup", "end"]).await;
+    server.stop().await;
+}
+
 #[tokio::test]
 #[serial]
 async fn unauthorized_without_password_header() {

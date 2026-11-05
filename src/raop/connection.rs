@@ -94,6 +94,7 @@ fn new_raop_connection(
         local_addr: socket_ip_bytes(local),
         remote_addr: socket_ip_bytes(remote),
         remote_socket: remote,
+        session: false,
         nonce: digest::generate_nonce(MAX_NONCE_LEN),
         #[cfg(feature = "ap2")]
         srp_server: None,
@@ -153,6 +154,9 @@ struct RaopConnectionHandler {
 
 impl Drop for RaopConnectionHandler {
     fn drop(&mut self) {
+        if self.conn.session {
+            self.conn.shared.handler.on_session_end(&self.remote_addr);
+        }
         self.conn
             .shared
             .handler

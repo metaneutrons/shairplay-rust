@@ -23,6 +23,8 @@ pub(crate) struct RaopConnection {
     #[allow(dead_code)] // read in AP2 event channel binding
     pub(crate) remote_addr: Vec<u8>,
     pub(crate) remote_socket: std::net::SocketAddr,
+    /// This connection started a session (`AudioHandler::on_session_setup`): its end is the session's end.
+    pub(crate) session: bool,
     pub(crate) nonce: String,
     /// Cheap shared handle to server-wide config (identity, keys, handler, settings).
     /// Replaces the ~17 fields that were previously deep-copied into every connection.
@@ -239,6 +241,12 @@ pub(crate) fn handle_announce(
 ) -> Option<Vec<u8>> {
     let data = request.data()?;
     let sdp_str = std::str::from_utf8(data).ok()?;
+    if !conn.session {
+        conn.session = true;
+        conn.shared
+            .handler
+            .on_session_setup(&conn.remote_socket.ip().to_string());
+    }
     let sdp = Sdp::parse(sdp_str);
 
     let remote = sdp.connection()?;
@@ -532,6 +540,7 @@ mod tests {
             local_addr: vec![127, 0, 0, 1],
             remote_addr: vec![127, 0, 0, 1],
             remote_socket: "127.0.0.1:5000".parse().unwrap(),
+            session: false,
             nonce: String::new(),
             shared,
         }
