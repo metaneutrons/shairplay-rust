@@ -59,11 +59,25 @@ fn discover_dacp_port(dacp_id: &str, _remote_ip: std::net::IpAddr) -> Option<u16
 }
 
 /// Browse `_dacp._tcp` via Bonjour and return the port for the given DACP-ID.
-/// Always returns None on macOS — astro-dnssd doesn't expose a synchronous
-/// browse+resolve API. The caller falls back to port 3689.
+/// Returns None if not found within 2 seconds.
 #[cfg(target_os = "macos")]
 fn discover_dacp_port(dacp_id: &str, _remote_ip: std::net::IpAddr) -> Option<u16> {
-    let _ = dacp_id;
+    let browser = astro_dnssd::ServiceBrowserBuilder::new("_dacp._tcp")
+        .browse()
+        .ok()?;
+    let target = dacp_id.to_uppercase();
+    let deadline = std::time::Instant::now() + Duration::from_secs(2);
+
+    while std::time::Instant::now() < deadline {
+        match browser.recv_timeout(deadline.duration_since(std::time::Instant::now())) {
+            Ok(service) => {
+                if service.name.to_uppercase().contains(&target) {
+                    return Some(service.port);
+                }
+            }
+            Err(_) => break,
+        }
+    }
     None
 }
 
