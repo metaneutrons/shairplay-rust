@@ -2,7 +2,9 @@
 //!
 //! Demonstrates handling sample rate mismatches in the application layer:
 //! the library delivers audio at the source's native rate, and the example
-//! resamples to the output device's rate using rubato.
+//! automatically resamples to the output device's rate using rubato whenever
+//! the two differ. FLUSH (e.g. a seek) discards pending input, resampler history
+//! and queued output.
 //!
 //! Usage:
 //!   cargo run --example player
@@ -10,7 +12,9 @@
 //!   cargo run --example player -- --bind 192.168.1.100
 //!   cargo run --example player -- --bind 192.168.1.100 --bind fd00::1
 //!   cargo run --example player -- --persist state.json
-//!   cargo run --example player -- --resample
+//!
+//! `--resample` is still accepted for compatibility but has no effect: resampling
+//! is automatic.
 //!
 //! Then select the speaker as AirPlay output on your iPhone/Mac.
 
@@ -83,6 +87,12 @@ impl ExampleResampler {
             }
         }
         output
+    }
+
+    /// Discard pending input and the resampler's filter history.
+    fn reset(&mut self) {
+        self.pending.clear();
+        self.resampler.reset();
     }
 }
 use shairplay::{AudioFormat, AudioHandler, AudioSession, BindConfig, RaopServer};
@@ -287,13 +297,16 @@ impl AudioRing {
     fn pop_sample(&mut self) -> f32 {
         self.buffer.pop_front().unwrap_or(0.0)
     }
+
+    fn clear(&mut self) {
+        self.buffer.clear();
+    }
 }
 
 struct Handler {
     ring: Arc<Mutex<AudioRing>>,
     device_rate: u32,
     device_channels: u16,
-    use_resample: bool,
 }
 
 impl AudioHandler for Handler {
@@ -303,26 +316,27 @@ impl AudioHandler for Handler {
             format.channels, format.bits, format.sample_rate
         );
 
-        let resampler = if self.use_resample && format.sample_rate != self.device_rate {
-            eprintln!(
-                "🔄 Resampling {}Hz → {}Hz (in example app)",
-                format.sample_rate, self.device_rate
-            );
-            ExampleResampler::new(
+        let resampler = if format.sample_rate == self.device_rate {
+            eprintln!("✅ Source rate matches device — no resampling needed");
+            None
+        } else {
+            let resampler = ExampleResampler::new(
                 format.sample_rate,
                 self.device_rate,
                 format.channels as usize,
-            )
-        } else {
-            if format.sample_rate != self.device_rate {
+            );
+            if resampler.is_some() {
                 eprintln!(
-                    "⚠️  Source {}Hz ≠ device {}Hz — use --resample to convert",
+                    "🔄 Resampling {}Hz → {}Hz for the output device",
                     format.sample_rate, self.device_rate
                 );
             } else {
-                eprintln!("✅ Source rate matches device — no resampling needed");
+                eprintln!(
+                    "⚠️  Could not initialize resampling for {}Hz → {}Hz",
+                    format.sample_rate, self.device_rate
+                );
             }
-            None
+            resampler
         };
 
         Box::new(Session {
@@ -350,18 +364,29 @@ impl AudioSession for Session {
             samples = rs.lock().unwrap().process(&samples);
         }
 
-        // Mix down to device channels if needed
-        let final_samples: Vec<f32> = if self.source_channels > self.device_channels {
-            samples
-                .chunks_exact(self.source_channels)
-                .flat_map(|frame| &frame[..self.device_channels])
-                .copied()
-                .collect()
-        } else {
-            samples
-        };
-
+        // CPAL needs samples for every output channel; preserve stereo and pad
+        // each frame so audio remains aligned on multichannel devices.
+        let output_channels = self.device_channels.max(1);
+        let mut final_samples =
+            Vec::with_capacity(samples.len() / self.source_channels.max(1) * output_channels);
+        for frame in samples.chunks_exact(self.source_channels.max(1)) {
+            if output_channels == 1 {
+                final_samples.push(frame.iter().copied().sum::<f32>() / frame.len().max(1) as f32);
+            } else {
+                let copied = frame.len().min(output_channels);
+                final_samples.extend_from_slice(&frame[..copied]);
+                final_samples.resize(final_samples.len() + output_channels - copied, 0.0);
+            }
+        }
         self.ring.lock().unwrap().push_samples(&final_samples);
+    }
+
+    /// FLUSH (e.g. a seek): drop everything derived from audio before the flush point.
+    fn audio_flush(&mut self) {
+        if let Some(ref rs) = self.resampler {
+            rs.lock().unwrap().reset();
+        }
+        self.ring.lock().unwrap().clear();
     }
 }
 
@@ -417,7 +442,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     #[cfg(not(feature = "ap2"))]
     let _ = &pin;
-    let use_resample = args.iter().any(|a| a == "--resample");
+    if args.iter().any(|a| a == "--resample") {
+        eprintln!("ℹ️  --resample is no longer needed: resampling is automatic");
+    }
 
     // Detect output device and its native sample rate
     let host = cpal::default_host();
@@ -520,7 +547,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ring,
         device_rate,
         device_channels,
-        use_resample,
     });
     let mut builder = RaopServer::builder();
     builder = builder.name(name).hwaddr(mac);
@@ -599,4 +625,88 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     server.stop().await;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const SOURCE_RATE: u32 = 44100;
+    const DEVICE_RATE: u32 = 48000;
+    const CHANNELS: usize = 2;
+
+    /// The example's actual stereo session, resampling 44.1 kHz to a 48 kHz device.
+    fn resampling_session(ring: &Arc<Mutex<AudioRing>>) -> Box<dyn AudioSession> {
+        let handler = Handler {
+            ring: ring.clone(),
+            device_rate: DEVICE_RATE,
+            device_channels: CHANNELS as u16,
+        };
+        handler.audio_init(AudioFormat {
+            codec: shairplay::AudioCodec::Pcm,
+            bits: 32,
+            channels: CHANNELS as u8,
+            sample_rate: SOURCE_RATE,
+        })
+    }
+
+    fn frames(value: f32, count: usize) -> Vec<f32> {
+        vec![value; count * CHANNELS]
+    }
+
+    fn drain(ring: &Arc<Mutex<AudioRing>>) -> Vec<f32> {
+        ring.lock().unwrap().buffer.drain(..).collect()
+    }
+
+    fn peak(samples: &[f32]) -> f32 {
+        samples.iter().fold(0.0, |peak, s| peak.max(s.abs()))
+    }
+
+    /// Feed `before` frames of full-scale audio, optionally flush, then 128 silent frames,
+    /// returning the output queued after the flush point.
+    fn output_after_silence(before: usize, flush: bool) -> Vec<f32> {
+        let ring = Arc::new(Mutex::new(AudioRing::new()));
+        let mut session = resampling_session(&ring);
+        session.audio_process(&frames(1.0, before));
+        if flush {
+            session.audio_flush();
+        } else {
+            drain(&ring);
+        }
+        session.audio_process(&frames(0.0, 128));
+        drain(&ring)
+    }
+
+    #[test]
+    fn resampler_history_reaches_silence_without_flush() {
+        // Guards the tests below: without FLUSH the prior audio is still audible.
+        assert!(peak(&output_after_silence(128, false)) > 0.5);
+    }
+
+    #[test]
+    fn flush_discards_resampler_history() {
+        let output = output_after_silence(128, true);
+        assert!(!output.is_empty(), "silence should still be resampled");
+        assert_eq!(peak(&output), 0.0);
+    }
+
+    #[test]
+    fn flush_discards_pending_input_and_history() {
+        // 200 frames: one 128-frame chunk enters the resampler, 72 frames stay pending.
+        let output = output_after_silence(200, true);
+        assert!(!output.is_empty(), "silence should still be resampled");
+        assert_eq!(peak(&output), 0.0);
+    }
+
+    #[test]
+    fn flush_discards_queued_output() {
+        let ring = Arc::new(Mutex::new(AudioRing::new()));
+        let mut session = resampling_session(&ring);
+        session.audio_process(&frames(1.0, 256));
+        assert!(!ring.lock().unwrap().buffer.is_empty());
+
+        session.audio_flush();
+
+        assert!(ring.lock().unwrap().buffer.is_empty());
+    }
 }

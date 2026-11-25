@@ -88,10 +88,12 @@ impl StreamResampler {
 
 /// ITU-R BS.775 downmix coefficient (−3 dB) applied to centre and surround
 /// channels when folding 5.1/7.1 into stereo.
+#[cfg(any(feature = "ap2", test))]
 const DOWNMIX_3DB: f32 = 0.707;
 
 /// Mix down multi-channel F32 audio to fewer channels.
 /// Uses ITU-R BS.775 downmix coefficients for 5.1 and 7.1.
+#[cfg(any(feature = "ap2", test))]
 pub(crate) fn mixdown(input: &[f32], in_channels: usize, out_channels: usize) -> Vec<f32> {
     if in_channels == out_channels {
         return input.to_vec();
@@ -135,6 +137,7 @@ pub(crate) fn mixdown(input: &[f32], in_channels: usize, out_channels: usize) ->
 /// Mix `samples` down to `out_channels` (if `src_channels` is larger) and then
 /// resample through `resampler` (if present). This is the shared tail of the AP2
 /// realtime and buffered receive pipelines.
+#[cfg(any(feature = "ap2", test))]
 pub(crate) fn mixdown_and_resample(
     mut samples: Vec<f32>,
     src_channels: u8,

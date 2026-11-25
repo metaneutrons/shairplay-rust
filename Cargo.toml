@@ -63,6 +63,7 @@ num-bigint = { version = "0.5", optional = true }
 uuid = { version = "1.29.0", features = ["v4"], optional = true }
 rubato = { version = "5", optional = true }
 symphonia = { version = "0.6", optional = true, features = ["aac"] }
+rusty_aac = { version = "2.0.1", optional = true }
 
 # Error handling
 thiserror = "2.0.21"
@@ -98,7 +99,7 @@ diagnostic-headers = []
 dangerous-raw-headers = ["diagnostic-headers"]
 resample = ["dep:rubato"]
 ap2 = ["resample", "dep:chacha20poly1305", "dep:hkdf", "dep:num-bigint", "dep:uuid", "dep:symphonia", "dep:libc", "dep:windows-sys"]
-video = ["ap2", "fairplay"]
+video = ["ap2", "fairplay", "dep:rusty_aac"]
 hls = ["video"]
 
 [dev-dependencies]
@@ -115,6 +116,8 @@ minifb = "0.29.0"
 [[example]]
 name = "player"
 required-features = []
+# Run the example's Session regression tests with `cargo test`.
+test = true
 
 [lints]
 workspace = true

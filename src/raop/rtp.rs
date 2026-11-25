@@ -1,4 +1,4 @@
-//! AP1 RTP audio streaming — UDP and TCP receiver with ALAC decode.
+//! Legacy RTP audio streaming — UDP and TCP with ALAC, AAC-ELD and L16 decode.
 //!
 //! Manages the full AP1 audio receive pipeline:
 //!
@@ -21,7 +21,7 @@ use tracing::info;
 
 use crate::error::{NetworkError, ShairplayError};
 use crate::raop::buffer::{RAOP_PACKET_LEN, RaopBuffer, StreamFormat};
-use crate::raop::{AudioCodec, AudioFormat, AudioHandler};
+use crate::raop::{AudioCodec, AudioFormat, AudioHandler, AudioSession};
 
 /// Sentinel value for [`RtpState::flush`] indicating no flush is pending.
 const NO_FLUSH: i32 = -42;
@@ -74,6 +74,25 @@ pub(crate) fn remote_addr_bytes(remote: &str) -> Vec<u8> {
     }
 }
 
+/// Deliver all contiguous frames after either a data packet or a retransmission.
+fn play_queued_audio(
+    buffer: &mut RaopBuffer,
+    no_resend: bool,
+    session: &mut dyn AudioSession,
+    #[cfg(feature = "resample")] resampler: &mut Option<crate::codec::resample::StreamResampler>,
+) {
+    while let Some(samples) = buffer.dequeue(no_resend) {
+        #[cfg(feature = "resample")]
+        if let Some(rs) = resampler {
+            session.audio_process(&rs.process(samples));
+        } else {
+            session.audio_process(samples);
+        }
+        #[cfg(not(feature = "resample"))]
+        session.audio_process(samples);
+    }
+}
+
 /// Mutable state shared between the RTP receive loop and the RTSP handler thread.
 /// Updated via async message passing (tokio Mutex), consumed in the receive loop.
 struct RtpState {
@@ -98,12 +117,22 @@ pub(crate) struct RtpConfig {
     pub(crate) rtpmap: String,
     /// Optional SDP `a=fmtp` attribute. Required for ALAC and unused for L16.
     pub(crate) fmtp: Option<String>,
+    /// AAC-ELD is selected by AirPlay's `ct=8` screen-mirroring stream setup.
+    pub(crate) aac_eld: Option<AacEldConfig>,
     /// AES-CBC parameters when encryption was negotiated; `None` for plaintext RTP.
     pub(crate) encryption: Option<RtpEncryption>,
     /// If set, resample decoded audio to this rate.
     pub(crate) output_sample_rate: Option<u32>,
     /// Full socket address of the remote peer (preserves scope_id for link-local IPv6).
     pub(crate) remote_socket: std::net::SocketAddr,
+}
+
+/// Out-of-band format for a legacy AirPlay AAC-ELD RTP stream.
+#[allow(dead_code)]
+pub(crate) struct AacEldConfig {
+    pub(crate) sample_rate: u32,
+    pub(crate) channels: u8,
+    pub(crate) frame_samples: u32,
 }
 
 /// Validated AES-CBC parameters for an encrypted RTP session.
@@ -130,7 +159,7 @@ pub(crate) struct RaopRtp {
     output_sample_rate: Option<u32>,
     /// Decoded output stream format (channels + source sample rate).
     format: StreamFormat,
-    /// Shared packet buffer (decrypt + decode on queue, dequeue in order).
+    /// Shared packet buffer (decrypt on queue, decode AAC-ELD in dequeue order).
     buffer: Arc<Mutex<RaopBuffer>>,
     /// Shared mutable state for cross-task event delivery.
     state: Arc<Mutex<RtpState>>,
@@ -172,11 +201,30 @@ impl RaopRtp {
     /// Returns `None` if the peer-supplied codec configuration is unsupported or malformed.
     pub(crate) fn new(callbacks: Arc<dyn AudioHandler>, config: RtpConfig) -> Option<Self> {
         let fmtp = config.fmtp.as_deref().unwrap_or_default();
-        let buffer = match config.encryption {
-            Some(encryption) => {
-                RaopBuffer::new(&config.rtpmap, fmtp, &encryption.key, &encryption.iv)
+        let buffer = if let Some(aac_eld) = config.aac_eld {
+            let encryption = config.encryption?;
+            #[cfg(feature = "video")]
+            {
+                RaopBuffer::new_aac_eld(
+                    aac_eld.sample_rate,
+                    aac_eld.channels,
+                    aac_eld.frame_samples,
+                    &encryption.key,
+                    &encryption.iv,
+                )
             }
-            None => RaopBuffer::new_unencrypted(&config.rtpmap, fmtp),
+            #[cfg(not(feature = "video"))]
+            {
+                let _ = (aac_eld, encryption);
+                None
+            }
+        } else {
+            match config.encryption {
+                Some(encryption) => {
+                    RaopBuffer::new(&config.rtpmap, fmtp, &encryption.key, &encryption.iv)
+                }
+                None => RaopBuffer::new_unencrypted(&config.rtpmap, fmtp),
+            }
         }?;
         let format = buffer.format();
         Some(Self {
@@ -279,19 +327,13 @@ impl RaopRtp {
                                 && len >= 12 {
                                     let mut buf = buffer.lock().await;
                                     buf.queue(&data_packet[..len], true);
-                                    while let Some(samples) = buf.dequeue(no_resend) {
-                                        {
-                                            #[cfg(feature = "resample")]
-                                            if let Some(ref mut rs) = resampler {
-                                                let resampled = rs.process(samples);
-                                                session.audio_process(&resampled);
-                                            } else {
-                                                session.audio_process(samples);
-                                            }
-                                            #[cfg(not(feature = "resample"))]
-                                            session.audio_process(samples);
-                                        }
-                                    }
+                                    play_queued_audio(
+                                        &mut buf,
+                                        no_resend,
+                                        session.as_mut(),
+                                        #[cfg(feature = "resample")]
+                                        &mut resampler,
+                                    );
                                 }
                         }
                         // Control channel: retransmit responses (payload type 0x56).
@@ -300,7 +342,16 @@ impl RaopRtp {
                                 && len >= 12 && (ctrl_packet[1] & !0x80) == CTRL_PAYLOAD_TYPE {
                                     let mut buf = buffer.lock().await;
                                     // Retransmit packets have a 4-byte header before the original RTP.
-                                    if len > RETRANSMIT_HEADER_LEN { buf.queue(&ctrl_packet[RETRANSMIT_HEADER_LEN..len], true); }
+                                    if len > RETRANSMIT_HEADER_LEN {
+                                        buf.queue(&ctrl_packet[RETRANSMIT_HEADER_LEN..len], true);
+                                    }
+                                    play_queued_audio(
+                                        &mut buf,
+                                        no_resend,
+                                        session.as_mut(),
+                                        #[cfg(feature = "resample")]
+                                        &mut resampler,
+                                    );
                                 }
                         }
                         _ = shutdown_rx.changed() => break,
@@ -385,19 +436,13 @@ impl RaopRtp {
                                 if packet_buf.len() < 4 + rtp_len { break; }
                                 let mut buf = buffer.lock().await;
                                 buf.queue(&packet_buf[4..4 + rtp_len], false);
-                                if let Some(samples) = buf.dequeue(true) {
-                                    {
-                                            #[cfg(feature = "resample")]
-                                            if let Some(ref mut rs) = resampler {
-                                                let resampled = rs.process(samples);
-                                                session.audio_process(&resampled);
-                                            } else {
-                                                session.audio_process(samples);
-                                            }
-                                            #[cfg(not(feature = "resample"))]
-                                            session.audio_process(samples);
-                                        }
-                                }
+                                play_queued_audio(
+                                    &mut buf,
+                                    true,
+                                    session.as_mut(),
+                                    #[cfg(feature = "resample")]
+                                    &mut resampler,
+                                );
                                 drop(buf);
                                 packet_buf.drain(..4 + rtp_len);
                             }
