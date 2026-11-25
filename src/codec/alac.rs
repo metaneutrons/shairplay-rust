@@ -1121,4 +1121,15 @@ mod decode_tests {
     fn golden_mono_compressed_matches_apple_encoder() {
         check_golden(include_bytes!("../../tests/data/alac/mono.alac"));
     }
+
+    // AirPlay's 352-sample frames: synthetic audio encoded with the alac-encoder crate (a port of Apple's encoder).
+    #[test]
+    fn golden_stereo_352_matches_encoder() {
+        check_golden(include_bytes!("../../tests/data/alac/stereo352.alac"));
+    }
+
+    #[test]
+    fn golden_mono_352_matches_encoder() {
+        check_golden(include_bytes!("../../tests/data/alac/mono352.alac"));
+    }
 }
