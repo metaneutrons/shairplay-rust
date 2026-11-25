@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.14.0](https://github.com/metaneutrons/shairplay-rust/compare/v0.13.0...v0.14.0) (2026-11-25)
+
+
+### Features
+
+* **raop:** make the advertised audio buffer size a builder option ([#94](https://github.com/metaneutrons/shairplay-rust/issues/94)) ([ae442f0](https://github.com/metaneutrons/shairplay-rust/commit/ae442f087c34953db68ac63ce36af528d48f0851))
+
+
+### Bug Fixes
+
+* **dacp:** send play and pause instead of the toggle ([#92](https://github.com/metaneutrons/shairplay-rust/issues/92)) ([b40bfad](https://github.com/metaneutrons/shairplay-rust/commit/b40bfadd94ffd2f9215ed3ff25dda9dff036d1cf))
+* **digest:** refuse a value that is only an opening quote ([#86](https://github.com/metaneutrons/shairplay-rust/issues/86)) ([1416687](https://github.com/metaneutrons/shairplay-rust/commit/14166873f156edc1ee03468bbb9cb4f8607e9232))
+* **dmap:** end the parse at a length that wraps on 32-bit targets ([#85](https://github.com/metaneutrons/shairplay-rust/issues/85)) ([9cfe80e](https://github.com/metaneutrons/shairplay-rust/commit/9cfe80e7de273d8ed64cfe755a5113c270c59da6))
+* **ptp:** fall back to IPv4 where IPv6 is unavailable ([#91](https://github.com/metaneutrons/shairplay-rust/issues/91)) ([35dc35d](https://github.com/metaneutrons/shairplay-rust/commit/35dc35d4a1b67d55d22d740064afdb97a4ecc771))
+
 ## [0.13.0](https://github.com/metaneutrons/shairplay-rust/compare/v0.12.0...v0.13.0) (2026-11-04)
 
 
