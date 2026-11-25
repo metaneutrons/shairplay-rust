@@ -1803,6 +1803,7 @@ dependencies = [
  "hmac",
  "httparse",
  "if-addrs",
+ "libc",
  "md-5",
  "mdns-sd",
  "minifb",
@@ -1824,6 +1825,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
+ "windows-sys",
  "x25519-dalek",
 ]
 
