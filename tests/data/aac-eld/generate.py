@@ -8,7 +8,8 @@ import hashlib
 import math
 import platform
 import struct
-import subprocess
+# The generator invokes only the fixed Apple encoder with internally generated paths.
+import subprocess  # nosec B404
 import tempfile
 import wave
 from pathlib import Path
@@ -148,9 +149,10 @@ def generate() -> bytes:
         input_wave = temp / "synthetic.wav"
         encoded_caf = temp / "encoded.caf"
         synthesize_wave(input_wave)
-        subprocess.run(
+        # The executable is fixed; both paths are created in our own temporary directory.
+        subprocess.run(  # nosec B603
             [
-                str(encoder),
+                "/usr/bin/afconvert",
                 "-f",
                 "caff",
                 "-d",
