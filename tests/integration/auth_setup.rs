@@ -125,6 +125,13 @@ async fn read_response(client: &mut BufReader<TcpStream>) -> Response {
     .expect("response deadline")
 }
 
+#[cfg(feature = "ap2")]
+pub(super) async fn read_success_response_body(client: &mut BufReader<TcpStream>) -> Vec<u8> {
+    let response = read_response(client).await;
+    assert_eq!(response.status, 200, "buffered SETUP response status");
+    response.body
+}
+
 #[test]
 fn source_probe_survives_every_request_split() {
     let body = probe();

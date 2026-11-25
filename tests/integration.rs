@@ -3,6 +3,8 @@
 
 use serial_test::serial;
 use std::sync::{Arc, Mutex};
+#[cfg(feature = "ap2")]
+use tokio::io::BufReader;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
@@ -1267,4 +1269,57 @@ async fn mdns_scope_on_loopback_starts() {
         );
     }
     server.stop().await;
+}
+
+/// A buffered-audio SETUP advertises the builder's compressed-audio window, 1 MiB unless set.
+#[cfg(feature = "ap2")]
+#[tokio::test]
+#[serial]
+async fn buffered_setup_advertises_the_audio_buffer_size() {
+    for (size, expected) in [(None, 0x10_0000_u64), (Some(256 * 1024), 256 * 1024)] {
+        let mut builder = RaopServer::builder()
+            .name("IntegrationTest")
+            .hwaddr([0x00, 0x11, 0x22, 0x33, 0x44, 0x55])
+            .port(0);
+        if let Some(size) = size {
+            builder = builder.audio_buffer_size(size);
+        }
+        let mut server = builder.build(empty_handler()).unwrap();
+        server.start().await.unwrap();
+        let port = server.service_info().port;
+        let mut stream = BufReader::new(
+            TcpStream::connect(format!("127.0.0.1:{port}"))
+                .await
+                .unwrap(),
+        );
+
+        let mut stream0 = plist::Dictionary::new();
+        stream0.insert("type".into(), plist::Value::Integer(103u64.into()));
+        stream0.insert("shk".into(), plist::Value::Data(vec![0; 32]));
+        let mut setup = plist::Dictionary::new();
+        setup.insert(
+            "streams".into(),
+            plist::Value::Array(vec![plist::Value::Dictionary(stream0)]),
+        );
+        let mut body = Vec::new();
+        plist::to_writer_binary(&mut body, &plist::Value::Dictionary(setup)).unwrap();
+        let head = format!(
+            "SETUP rtsp://127.0.0.1/stream RTSP/1.0\r\nCSeq: 1\r\nContent-Type: application/x-apple-binary-plist\r\nContent-Length: {}\r\n\r\n",
+            body.len()
+        );
+        stream.get_mut().write_all(head.as_bytes()).await.unwrap();
+        stream.get_mut().write_all(&body).await.unwrap();
+
+        let response = auth_setup::read_success_response_body(&mut stream).await;
+        let answer: plist::Value = plist::from_bytes(&response).unwrap();
+        let advertised = answer.as_dictionary().unwrap()["streams"]
+            .as_array()
+            .unwrap()[0]
+            .as_dictionary()
+            .unwrap()["audioBufferSize"]
+            .as_unsigned_integer()
+            .unwrap();
+        assert_eq!(advertised, expected);
+        server.stop().await;
+    }
 }
