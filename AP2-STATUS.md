@@ -165,7 +165,9 @@ implementation and may no longer be accurate:
 - **No AP2 audio with video** — UxPlay features disable AP2 buffered audio
 - **openh264 decode errors** — Software decoder struggles at 30fps in debug mode
 - **Screen mirroring audio is experimental** — Type 96 AAC-ELD (`ct=8`) is
-  decoded, but has only been verified with live iPhone captures so far
+  decoded and covered by synthetic and Apple-encoded regression vectors; live
+  iPhone captures are reported, but broad device and audio/video synchronization
+  qualification remains outstanding
 
 ### Stream Type 120 — Video Relay (Not Implemented)
 

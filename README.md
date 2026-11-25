@@ -202,7 +202,7 @@ limits and requirements for conformant receiver authentication.
 | `resample` | rubato | Sample rate conversion + channel mixdown |
 | `fairplay` | none (on by default) | FairPlay handshake and key decryption (`/fp-setup`, `a=fpaeskey`, `Ap1Encryption::FairPlay`). Provenance uncertainty, see [docs/fairplay-provenance.md](docs/fairplay-provenance.md) |
 | `ap2` | chacha20poly1305, hkdf, symphonia, … (implies `resample`) | Full AirPlay 2 audio |
-| `video` | (implies `ap2` and `fairplay`) | Legacy feature set for screen mirroring (`0x527FFEE6`) |
+| `video` | rusty_aac (implies `ap2` and `fairplay`) | Legacy feature set for screen mirroring (`0x527FFEE6`) |
 | `hls` | (implies `video`) | HLS video playback (YouTube, etc.) — receiver relays URL to app |
 
 ### Experimental PipeWire Probe Compatibility
@@ -284,15 +284,17 @@ feature set; AP2 buffered audio is intentionally disabled while video is enabled
 
 The video feature switches to a UxPlay-compatible legacy feature set
 (`0x527FFEE6`) to receive screen mirroring data from iOS 18+. AP2
-buffered audio is not available — the iPhone falls back to legacy ALAC
-(type 96) which is fully supported with FairPlay key decryption and
-NTP timing.
+buffered audio is not available — the iPhone falls back to legacy type 96
+streams with FairPlay key decryption and NTP timing: ALAC (`ct=2`) or
+experimental AAC-ELD (`ct=8`) for mirroring audio.
 
 Screen-mirroring audio (legacy type 96 with `ct=8`, AAC-ELD) is decoded
 experimentally: it has been verified with live iPhone captures, but not yet
 broadly tested. A type 96 SETUP with an unsupported codec type or out-of-range
 parameters, without FairPlay keys, or whose receiver cannot be created is
 answered with a non-success RTSP status and reported via `AudioHandler::on_error`.
+An unsuccessful replacement SETUP leaves the existing receiver running. Successful
+legacy SETUP replies advertise the receiver's live UDP control port.
 
 Video decryption is implemented for the legacy feature-set path; AP2+video
 hybrid operation remains research work. See [AP2-STATUS.md](AP2-STATUS.md)

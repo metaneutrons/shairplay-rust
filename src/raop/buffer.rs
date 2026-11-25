@@ -11,7 +11,7 @@ use crate::codec::alac::{AlacConfig, AlacDecoder};
 use aes::cipher::{BlockModeDecrypt, KeyIvInit};
 use std::borrow::Cow;
 
-#[cfg(all(test, feature = "ap2"))]
+#[cfg(all(test, feature = "video"))]
 mod tests;
 
 /// AES-128 key length in bytes.
@@ -28,20 +28,20 @@ const RAOP_BUFFER_LENGTH: usize = 32;
 const PCM_DEFAULT_FRAME_SAMPLES: usize = 352;
 
 /// Supported MPEG-4 sampling frequencies in AudioSpecificConfig index order.
-#[cfg(feature = "ap2")]
+#[cfg(feature = "video")]
 const AAC_SAMPLE_RATES: [u32; 13] = [
     96_000, 88_200, 64_000, 48_000, 44_100, 32_000, 24_000, 22_050, 16_000, 12_000, 11_025, 8_000,
     7_350,
 ];
 
-#[cfg(feature = "ap2")]
+#[cfg(feature = "video")]
 fn write_aac_bits(bits: &mut Vec<bool>, value: u32, width: usize) {
     for shift in (0..width).rev() {
         bits.push((value >> shift) & 1 != 0);
     }
 }
 
-#[cfg(feature = "ap2")]
+#[cfg(feature = "video")]
 fn pack_aac_bits(bits: &[bool]) -> Vec<u8> {
     bits.as_chunks::<8>()
         .0
@@ -53,7 +53,7 @@ fn pack_aac_bits(bits: &[bool]) -> Vec<u8> {
         .collect()
 }
 
-#[cfg(feature = "ap2")]
+#[cfg(feature = "video")]
 /// Build AAC-ELD configuration from the negotiated stream parameters.
 fn aac_eld_audio_specific_config(
     sample_rate: u32,
@@ -132,9 +132,9 @@ enum Codec {
         decoder: AlacDecoder,
     },
     /// AAC-ELD used by legacy AirPlay screen mirroring (stream `ct=8`).
-    #[cfg(feature = "ap2")]
+    #[cfg(feature = "video")]
     AacEld {
-        decoder: Box<rusty_aac::AacDecoder>,
+        decoder: Box<rusty_aac::decode::Decoder>,
         config: Box<rusty_aac::config::StreamConfig>,
     },
     /// Raw linear PCM (`L16`): big-endian interleaved S16, no compression.
@@ -144,9 +144,11 @@ enum Codec {
 impl Codec {
     /// Discard synthesis history after a discontinuity, retaining the format.
     fn reset_history(&mut self) {
-        #[cfg(feature = "ap2")]
+        #[cfg(feature = "video")]
         if let Self::AacEld { decoder, config } = self {
-            **decoder = rusty_aac::AacDecoder::with_stream_config((**config).clone());
+            // This immutable configuration already constructed the original decoder.
+            **decoder = rusty_aac::decode::Decoder::with_stream_config((**config).clone())
+                .expect("previously validated AAC-ELD configuration");
         }
     }
 }
@@ -176,7 +178,7 @@ struct BufferEntry {
     /// Actual number of valid samples in `audio_buffer`.
     audio_buffer_len: usize,
     /// Decrypted AAC-ELD access unit, decoded only when this slot is dequeued.
-    #[cfg(feature = "ap2")]
+    #[cfg(feature = "video")]
     encoded_buffer: Vec<u8>,
 }
 
@@ -337,7 +339,7 @@ impl RaopBuffer {
 
     /// Create a legacy AAC-ELD mirroring buffer using the RTP stream's
     /// out-of-band format fields and FairPlay AES-CBC keys.
-    #[cfg(feature = "ap2")]
+    #[cfg(feature = "video")]
     pub(crate) fn new_aac_eld(
         sample_rate: u32,
         channels: u8,
@@ -347,7 +349,7 @@ impl RaopBuffer {
     ) -> Option<Self> {
         let config = aac_eld_audio_specific_config(sample_rate, channels, frame_samples)?;
         let config = rusty_aac::config::parse(&config).ok()?;
-        let decoder = rusty_aac::AacDecoder::with_stream_config(config.clone());
+        let decoder = rusty_aac::decode::Decoder::with_stream_config(config.clone()).ok()?;
         let frame_capacity = frame_samples as usize * channels as usize;
         let entries = (0..RAOP_BUFFER_LENGTH)
             .map(|_| BufferEntry {
@@ -415,7 +417,7 @@ impl RaopBuffer {
                 ssrc: 0,
                 audio_buffer: vec![0.0f32; frame_capacity],
                 audio_buffer_len: 0,
-                #[cfg(feature = "ap2")]
+                #[cfg(feature = "video")]
                 encoded_buffer: Vec::new(),
             })
             .collect();
@@ -439,7 +441,7 @@ impl RaopBuffer {
                 num_channels: config.num_channels,
                 sample_rate: config.sample_rate,
             },
-            #[cfg(feature = "ap2")]
+            #[cfg(feature = "video")]
             Codec::AacEld { config, .. } => StreamFormat {
                 num_channels: config.channels() as u8,
                 sample_rate: config.sample_rate,
@@ -464,7 +466,7 @@ impl RaopBuffer {
         }
         // AAC-ELD sends a short startup marker in place of encoded audio. It is
         // not encrypted and must not be passed to the codec decoder.
-        #[cfg(feature = "ap2")]
+        #[cfg(feature = "video")]
         if matches!(&self.codec, Codec::AacEld { .. })
             && datalen == 16
             && data[12..] == [0x00, 0x68, 0x34, 0x00]
@@ -547,7 +549,7 @@ impl RaopBuffer {
                 }
                 n
             }
-            #[cfg(feature = "ap2")]
+            #[cfg(feature = "video")]
             Codec::AacEld { .. } => {
                 let encoded = &mut self.entries[idx].encoded_buffer;
                 encoded.clear();
@@ -621,7 +623,7 @@ impl RaopBuffer {
 
         self.first_seqnum = self.first_seqnum.wrapping_add(1);
 
-        #[cfg(feature = "ap2")]
+        #[cfg(feature = "video")]
         if let Codec::AacEld { decoder, config } = &mut self.codec {
             let entry = &mut self.entries[idx];
             if entry.available {
@@ -664,7 +666,7 @@ impl RaopBuffer {
         for entry in &mut self.entries {
             entry.available = false;
             entry.audio_buffer_len = 0;
-            #[cfg(feature = "ap2")]
+            #[cfg(feature = "video")]
             entry.encoded_buffer.clear();
         }
         if !(0..=0xffff).contains(&next_seq) {

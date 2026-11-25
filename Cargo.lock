@@ -1637,9 +1637,9 @@ checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
 
 [[package]]
 name = "rusty_aac"
-version = "1.1.0"
+version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "be358888c3ae0cc16d17f50c76b76d8ce903845a97413559cecf38db1ca9c62d"
+checksum = "93388483e43ffd3bb3c347794a849edb204438258d8642b8449992a56433798a"
 
 [[package]]
 name = "safe_arch"

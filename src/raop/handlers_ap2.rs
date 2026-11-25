@@ -440,10 +440,22 @@ fn stream_uint<T: TryFrom<u64>>(
         .as_unsigned_integer()
         .and_then(|v| T::try_from(v).ok())
         .ok_or_else(|| {
+            let value_type = match value {
+                plist::Value::Array(_) => "array",
+                plist::Value::Dictionary(_) => "dictionary",
+                plist::Value::Boolean(_) => "boolean",
+                plist::Value::Data(_) => "data",
+                plist::Value::Date(_) => "date",
+                plist::Value::Real(_) => "real",
+                plist::Value::Integer(_) => "integer",
+                plist::Value::String(_) => "string",
+                plist::Value::Uid(_) => "UID",
+                _ => "unknown",
+            };
             decline_stream(
                 conn,
                 ShairplayError::Protocol(ProtocolError::InvalidRtsp(format!(
-                    "stream SETUP: {key} is not an in-range unsigned integer: {value:?}"
+                    "stream SETUP: {key} is not an in-range unsigned integer (value type: {value_type})"
                 ))),
                 SetupRejection::BadRequest,
             )
@@ -485,14 +497,17 @@ fn setup_streams(
         }
     }
 
-    // Control port (shared across streams)
-    let ctrl_sock = std::net::UdpSocket::bind(bind_addr_for(conn)).map_err(|_| Unspecified)?;
-    let ctrl_port = ctrl_sock.local_addr().map_err(|_| Unspecified)?.port();
-    drop(ctrl_sock);
-    stream_resp.insert(
-        "controlPort".into(),
-        plist::Value::Integer(ctrl_port.into()),
-    );
+    // Realtime legacy SETUP already inserted its bound control port. Keep it;
+    // only streams without a live control socket get the shared fallback port.
+    if !stream_resp.contains_key("controlPort") {
+        let ctrl_sock = std::net::UdpSocket::bind(bind_addr_for(conn)).map_err(|_| Unspecified)?;
+        let ctrl_port = ctrl_sock.local_addr().map_err(|_| Unspecified)?.port();
+        drop(ctrl_sock);
+        stream_resp.insert(
+            "controlPort".into(),
+            plist::Value::Integer(ctrl_port.into()),
+        );
+    }
 
     let mut resp_dict = plist::Dictionary::new();
     resp_dict.insert(
@@ -801,10 +816,6 @@ fn setup_stream_realtime(
             };
             let control_port: u16 = stream_uint(conn, stream0, "controlPort", 0)?;
 
-            // A new legacy stream replaces any previous receiver on this connection.
-            if let Some(mut previous) = conn.raop_rtp.take() {
-                previous.stop();
-            }
             let codec = if aac_eld.is_some() {
                 "AAC-ELD"
             } else {
@@ -842,7 +853,11 @@ fn setup_stream_realtime(
                     return Err(decline_stream(conn, error, SetupRejection::Internal));
                 }
             };
-            conn.raop_rtp = Some(rtp);
+            // Start the candidate before replacing the current receiver. If
+            // construction or binding fails, the existing stream stays live.
+            if let Some(mut previous) = conn.raop_rtp.replace(rtp) {
+                previous.stop();
+            }
             stream_resp.insert("dataPort".into(), plist::Value::Integer(dport.into()));
             stream_resp.insert("controlPort".into(), plist::Value::Integer(cport.into()));
         }

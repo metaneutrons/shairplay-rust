@@ -50,10 +50,10 @@ its documented command directly; do not bypass a failing check.
 
 | Flag | Description |
 |------|-------------|
-| (default) | AP1 only |
+| (default) | AP1 with FairPlay; use `--no-default-features` to omit FairPlay |
 | `resample` | Adds rubato for sample rate conversion |
 | `ap2` | AirPlay 2 (implies `resample`) |
-| `video` | Screen mirroring (implies `ap2`) |
+| `video` | Experimental screen mirroring and AAC-ELD decoding (implies `ap2`, `fairplay`) |
 
 ## Release Process
 
