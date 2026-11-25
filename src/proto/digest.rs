@@ -119,17 +119,39 @@ pub fn is_valid(
 
 /// Extract a quoted value from a "key=\"value\"" pair.
 fn extract_quoted<'a>(part: &'a str, key: &str) -> Option<&'a str> {
-    let prefix = format!("{key}=\"");
-    if part.starts_with(&prefix) && part.ends_with('"') {
-        Some(&part[prefix.len()..part.len() - 1])
-    } else {
-        None
-    }
+    part.strip_prefix(key)?
+        .strip_prefix("=\"")?
+        .strip_suffix('"')
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A value that is only its opening quote used to slice `[10..9]` and panic.
+    #[test]
+    fn malformed_headers_are_refused() {
+        for header in [
+            "Digest username=\"",
+            "Digest username=\"\"",
+            "Digest response=\",",
+            "Digest",
+            "Basic abc",
+            "Digest \u{e9}=\"",
+        ] {
+            assert!(
+                !is_valid(
+                    "raop",
+                    "secret",
+                    "n1",
+                    "ANNOUNCE",
+                    "rtsp://x/1",
+                    Some(header)
+                ),
+                "{header}"
+            );
+        }
+    }
 
     /// MD5 per RFC 1321 appendix A.5 plus the `md5_to_hex` formatter.
     #[test]
