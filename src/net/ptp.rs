@@ -140,6 +140,26 @@ pub fn parse_announce(buf: &[u8]) -> Option<u64> {
     Some(clock_id)
 }
 
+/// Socket creation can report an unsupported family through an OS-specific error.
+fn ipv6_unavailable(error: &std::io::Error) -> bool {
+    #[cfg(unix)]
+    const FAMILY_ERRORS: &[i32] = &[libc::EAFNOSUPPORT, libc::EPROTONOSUPPORT];
+    #[cfg(windows)]
+    const FAMILY_ERRORS: &[i32] = &[
+        windows_sys::Win32::Networking::WinSock::WSAEAFNOSUPPORT,
+        windows_sys::Win32::Networking::WinSock::WSAEPROTONOSUPPORT,
+    ];
+    #[cfg(not(any(unix, windows)))]
+    const FAMILY_ERRORS: &[i32] = &[];
+
+    matches!(
+        error.kind(),
+        std::io::ErrorKind::AddrNotAvailable | std::io::ErrorKind::Unsupported
+    ) || error
+        .raw_os_error()
+        .is_some_and(|code| FAMILY_ERRORS.contains(&code))
+}
+
 /// AirPlay 2 PTP sink: bind the PTP event (319) and general (320) ports and
 /// drain the sender's clock stream. We do not discipline a clock — draining is
 /// enough. With nothing bound, every PTP packet the sender emits bounces an
@@ -150,7 +170,7 @@ pub fn parse_announce(buf: &[u8]) -> Option<u64> {
 /// Received messages are decoded at `debug`; the first is noted once at `info`.
 /// Binds gracefully — ports <1024 may need root / `CAP_NET_BIND_SERVICE`; on bind
 /// failure it logs one line and returns, leaving normal operation untouched.
-/// IPv6-unspecified bind (AirPlay timing traffic is IPv6). Set `SHAIRPLAY_NO_PTP`
+/// IPv6-unspecified bind (AirPlay timing traffic is IPv6), IPv4 on hosts without IPv6. Set `SHAIRPLAY_NO_PTP`
 /// to skip the bind (for A/B measuring the effect).
 pub(crate) async fn spawn_ptp_sink() {
     if std::env::var("SHAIRPLAY_NO_PTP").is_ok() {
@@ -160,7 +180,15 @@ pub(crate) async fn spawn_ptp_sink() {
     let seen = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let mut bound = 0u8;
     for port in [319u16, 320u16] {
-        match tokio::net::UdpSocket::bind((std::net::Ipv6Addr::UNSPECIFIED, port)).await {
+        let bind = match tokio::net::UdpSocket::bind((std::net::Ipv6Addr::UNSPECIFIED, port)).await
+        {
+            Err(e) if ipv6_unavailable(&e) => {
+                tracing::debug!(port, error = %e, "IPv6 unavailable for PTP; binding IPv4");
+                tokio::net::UdpSocket::bind((std::net::Ipv4Addr::UNSPECIFIED, port)).await
+            }
+            r => r,
+        };
+        match bind {
             Ok(sock) => {
                 bound += 1;
                 let seen = seen.clone();
@@ -300,6 +328,28 @@ impl OffsetSmoother {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ipv4_fallback_requires_unavailable_ipv6() {
+        use std::io::{Error, ErrorKind};
+
+        assert!(ipv6_unavailable(&Error::from(ErrorKind::AddrNotAvailable)));
+        #[cfg(unix)]
+        assert!(ipv6_unavailable(&Error::from_raw_os_error(
+            libc::EAFNOSUPPORT
+        )));
+        #[cfg(windows)]
+        assert!(ipv6_unavailable(&Error::from_raw_os_error(
+            windows_sys::Win32::Networking::WinSock::WSAEAFNOSUPPORT
+        )));
+        for kind in [
+            ErrorKind::AddrInUse,
+            ErrorKind::PermissionDenied,
+            ErrorKind::OutOfMemory,
+        ] {
+            assert!(!ipv6_unavailable(&Error::from(kind)));
+        }
+    }
 
     #[test]
     fn parse_follow_up_valid() {
