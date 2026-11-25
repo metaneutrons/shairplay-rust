@@ -32,10 +32,10 @@ impl TrackMetadata {
             let len =
                 u32::from_be_bytes(data[pos + 4..pos + 8].try_into().unwrap_or([0; 4])) as usize;
             pos += 8;
-            if pos + len > data.len() {
+            // never pos + len: on 32-bit a length near 2^32 wraps it past the check
+            let Some(chunk) = data.get(pos..).and_then(|rest| rest.get(..len)) else {
                 break;
-            }
-            let chunk = &data[pos..pos + len];
+            };
             let as_str = || std::str::from_utf8(chunk).ok().map(String::from);
             let as_u32 = || chunk.try_into().ok().map(u32::from_be_bytes);
             let as_u16 = || chunk.try_into().ok().map(u16::from_be_bytes);
@@ -102,6 +102,14 @@ mod tests {
     fn dmap_parse_truncated() {
         let meta = TrackMetadata::from_dmap(&DMAP_FULL[..8]);
         assert_eq!(meta.title, None);
+    }
+
+    #[test]
+    fn dmap_length_near_the_address_space_stops_the_parse() {
+        // on a 32-bit target pos + len wrapped to 0 here, and the slice panicked
+        let mut data = b"mlit\0\0\0\0minm\xff\xff\xff\xf0".to_vec();
+        data.extend_from_slice(b"rest");
+        assert_eq!(TrackMetadata::from_dmap(&data).title, None);
     }
 
     #[test]
