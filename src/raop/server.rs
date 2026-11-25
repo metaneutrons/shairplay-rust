@@ -237,9 +237,10 @@ impl RaopServerBuilder {
         self
     }
 
-    /// Set the AirPlay 2 buffered-audio buffer size advertised to senders, in bytes of compressed audio:
-    /// how far ahead of playout a sender may stream (1 MB, about 30 s of 256 kb/s AAC, by default). The
-    /// receiver holds that much compressed audio; lower it on small-memory devices.
+    /// Set the AirPlay 2 buffered-audio window advertised to senders, in bytes of compressed audio.
+    /// It controls how much encoded audio the sender may send ahead of playout; it does not set or
+    /// bound the receiver's PCM buffer or total local memory use. Default: 1 MiB (about 33 s of
+    /// 256 kb/s AAC).
     pub fn audio_buffer_size(mut self, bytes: u32) -> Self {
         self.audio_buffer_size = bytes;
         self

@@ -3,6 +3,8 @@
 
 use serial_test::serial;
 use std::sync::{Arc, Mutex};
+#[cfg(feature = "ap2")]
+use tokio::io::BufReader;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
@@ -1269,7 +1271,7 @@ async fn mdns_scope_on_loopback_starts() {
     server.stop().await;
 }
 
-/// A buffered-audio SETUP advertises the builder's buffer size, 1 MB unless set.
+/// A buffered-audio SETUP advertises the builder's compressed-audio window, 1 MiB unless set.
 #[cfg(feature = "ap2")]
 #[tokio::test]
 #[serial]
@@ -1285,9 +1287,11 @@ async fn buffered_setup_advertises_the_audio_buffer_size() {
         let mut server = builder.build(empty_handler()).unwrap();
         server.start().await.unwrap();
         let port = server.service_info().port;
-        let mut stream = TcpStream::connect(format!("127.0.0.1:{port}"))
-            .await
-            .unwrap();
+        let mut stream = BufReader::new(
+            TcpStream::connect(format!("127.0.0.1:{port}"))
+                .await
+                .unwrap(),
+        );
 
         let mut stream0 = plist::Dictionary::new();
         stream0.insert("type".into(), plist::Value::Integer(103u64.into()));
@@ -1303,31 +1307,11 @@ async fn buffered_setup_advertises_the_audio_buffer_size() {
             "SETUP rtsp://127.0.0.1/stream RTSP/1.0\r\nCSeq: 1\r\nContent-Type: application/x-apple-binary-plist\r\nContent-Length: {}\r\n\r\n",
             body.len()
         );
-        stream.write_all(head.as_bytes()).await.unwrap();
-        stream.write_all(&body).await.unwrap();
+        stream.get_mut().write_all(head.as_bytes()).await.unwrap();
+        stream.get_mut().write_all(&body).await.unwrap();
 
-        // The answer's headers and binary plist, read until the plist is complete.
-        let mut response = Vec::new();
-        let plist_start = loop {
-            let mut buf = [0u8; 1024];
-            let n = stream.read(&mut buf).await.unwrap();
-            assert_ne!(n, 0, "connection closed: {response:?}");
-            response.extend_from_slice(&buf[..n]);
-            let Some(end) = response.windows(4).position(|w| w == b"\r\n\r\n") else {
-                continue;
-            };
-            let headers = String::from_utf8_lossy(&response[..end]).to_string();
-            let length: usize = headers
-                .lines()
-                .find_map(|line| line.strip_prefix("Content-Length: "))
-                .unwrap()
-                .parse()
-                .unwrap();
-            if response.len() >= end + 4 + length {
-                break end + 4;
-            }
-        };
-        let answer: plist::Value = plist::from_bytes(&response[plist_start..]).unwrap();
+        let response = auth_setup::read_success_response_body(&mut stream).await;
+        let answer: plist::Value = plist::from_bytes(&response).unwrap();
         let advertised = answer.as_dictionary().unwrap()["streams"]
             .as_array()
             .unwrap()[0]
