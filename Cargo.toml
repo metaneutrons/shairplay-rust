@@ -73,6 +73,12 @@ hex = "0.4"
 # Interface table, to resolve an mDNS scope (already a dependency of mdns-sd)
 if-addrs = "0.15"
 
+[target.'cfg(unix)'.dependencies]
+libc = { version = "0.2", optional = true }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", optional = true, features = ["Win32_Networking_WinSock"] }
+
 [target.'cfg(target_os = "macos")'.dependencies]
 astro-dnssd = "0.3.8"
 
@@ -91,7 +97,7 @@ pipewire-auth-setup-compat = []
 diagnostic-headers = []
 dangerous-raw-headers = ["diagnostic-headers"]
 resample = ["dep:rubato"]
-ap2 = ["resample", "dep:chacha20poly1305", "dep:hkdf", "dep:num-bigint", "dep:uuid", "dep:symphonia"]
+ap2 = ["resample", "dep:chacha20poly1305", "dep:hkdf", "dep:num-bigint", "dep:uuid", "dep:symphonia", "dep:libc", "dep:windows-sys"]
 video = ["ap2", "fairplay"]
 hls = ["video"]
 
