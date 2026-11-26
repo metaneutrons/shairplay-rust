@@ -317,9 +317,12 @@ Framing/policy failures return `400` with `Connection: close`; body deadlines
 close without a success response. No draining of a rejected body is attempted.
 
 The opt-in route now selects the 33-byte/five-second policy in production.
-With either gate disabled, or for ineligible paths/connections, the existing
-default policy remains (32 MiB, no body deadline). The transport stays generic;
-the route owns its admission policy and does not duplicate Digest checks.
+With either gate disabled, or for ineligible paths/connections, the route's
+ordinary policy applies: 4 KiB for the pairing requests, the builder's
+`max_artwork_size` (8 MiB unless set, at most 32 MiB) for `SET_PARAMETER` and
+`POST /command`, 64 KiB for the rest, each with a ten-second body deadline. The
+transport stays generic; the route owns its admission policy and does not
+duplicate Digest checks.
 
 The transport reads 4096-byte chunks. Encrypted input has a separate 1 MiB raw
 buffer ceiling checked before copying; the existing cipher may materialize a
