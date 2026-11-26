@@ -15,6 +15,11 @@ use std::sync::Arc;
 
 const AIRPORT_KEY: &str = include_str!("../../airport.key");
 
+/// `RaopServerBuilder::max_artwork_size` unless set.
+pub(crate) const DEFAULT_MAX_ARTWORK_SIZE: usize = 8 * 1024 * 1024;
+/// The most `max_artwork_size` may be: the largest body the transport takes for any request.
+const MAX_ARTWORK_SIZE: usize = crate::proto::http::MAX_BODY_BYTES;
+
 fn airport_rsakey() -> Arc<RsaKey> {
     use std::sync::OnceLock;
     static KEY: OnceLock<Arc<RsaKey>> = OnceLock::new();
@@ -80,6 +85,7 @@ pub struct RaopServerBuilder {
     output_sample_rate: Option<u32>,
     output_max_channels: Option<u8>,
     audio_buffer_size: u32,
+    max_artwork_size: usize,
     ap1_codecs: Option<Vec<Ap1Codec>>,
     ap1_encryption: Option<Vec<Ap1Encryption>>,
     #[cfg(feature = "ap2")]
@@ -117,6 +123,7 @@ impl RaopServerBuilder {
             output_sample_rate: None,
             output_max_channels: None,
             audio_buffer_size: 0x10_0000,
+            max_artwork_size: DEFAULT_MAX_ARTWORK_SIZE,
             ap1_codecs: None,
             ap1_encryption: None,
             #[cfg(feature = "ap2")]
@@ -243,6 +250,21 @@ impl RaopServerBuilder {
     /// 256 kb/s AAC).
     pub fn audio_buffer_size(mut self, bytes: u32) -> Self {
         self.audio_buffer_size = bytes;
+        self
+    }
+
+    /// Set the largest body a sender may send with cover art, in bytes: AirPlay 1's `SET_PARAMETER`
+    /// (`image/jpeg`, `image/png`, and the DMAP metadata and volume on the same method) and AirPlay 2's
+    /// `POST /command` (now-playing info, which can include artwork). A request announcing a larger
+    /// body is refused with 400 Bad Request when its headers arrive and its connection closed, which
+    /// ends that sender's session, so the limit should be above the largest artwork the senders in
+    /// use send. Default: 8 MiB. At most 32 MiB, the largest body any request may have; a larger
+    /// value is taken as 32 MiB.
+    ///
+    /// Each connection may hold one such body while it arrives (10 s at most), so the receiver's
+    /// memory for them is up to `max_clients` times this.
+    pub fn max_artwork_size(mut self, bytes: usize) -> Self {
+        self.max_artwork_size = bytes.min(MAX_ARTWORK_SIZE);
         self
     }
 
@@ -377,6 +399,7 @@ impl RaopServerBuilder {
             output_sample_rate: self.output_sample_rate,
             output_max_channels: self.output_max_channels,
             audio_buffer_size: self.audio_buffer_size,
+            max_artwork_size: self.max_artwork_size,
             #[cfg(feature = "ap2")]
             pin: self.pin,
             #[cfg(feature = "video")]

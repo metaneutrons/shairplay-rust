@@ -524,6 +524,7 @@ mod tests {
             output_sample_rate: None,
             output_max_channels: None,
             audio_buffer_size: 0x10_0000,
+            max_artwork_size: crate::raop::server::DEFAULT_MAX_ARTWORK_SIZE,
         });
         let pairing = shared.pairing.create_session();
         RaopConnection {

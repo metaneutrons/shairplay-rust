@@ -66,8 +66,8 @@ const BODY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
 /// How much body a request may carry, by what the route needs, decided when its headers arrive and before any of
 /// the body is kept: pairing messages are a few hundred bytes, cover art (AirPlay 1's SET_PARAMETER) and now-playing
-/// info with artwork (AirPlay 2's /command) up to about a megabyte, the rest small. Anyone may send any request:
-/// 32 MiB for every route was 128 MiB for four connections.
+/// info with artwork (AirPlay 2's /command) up to the builder's `max_artwork_size`, the rest small. Anyone may send
+/// any request: 32 MiB for every route was 128 MiB for four connections.
 pub(super) fn request_body_policy(
     conn: &RaopConnection,
     request: &HttpRequest,
@@ -76,13 +76,11 @@ pub(super) fn request_body_policy(
     if pipewire_auth_setup_route(conn, request).is_some() {
         return super::auth_setup::body_policy(request);
     }
-    #[cfg(not(feature = "pipewire-auth-setup-compat"))]
-    let _ = conn;
     let url = request.url().unwrap_or("");
     let path = url.split('?').next().unwrap_or(url);
     let max_bytes = match (request.method().unwrap_or(""), path) {
         ("POST", "/pair-setup" | "/pair-verify" | "/pair-pin-start") => 4 * 1024,
-        ("SET_PARAMETER", _) | ("POST", "/command") => 1024 * 1024,
+        ("SET_PARAMETER", _) | ("POST", "/command") => conn.shared.max_artwork_size,
         _ => 64 * 1024,
     };
     Ok(crate::net::server::RequestBodyPolicy {

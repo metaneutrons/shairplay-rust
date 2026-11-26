@@ -5,7 +5,7 @@ use serial_test::serial;
 use std::sync::{Arc, Mutex};
 #[cfg(feature = "ap2")]
 use tokio::io::BufReader;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
 use shairplay::{AudioCodec, AudioFormat, AudioHandler, AudioSession, RaopServer, TrackMetadata};
@@ -470,7 +470,8 @@ async fn bodies_larger_than_the_route_needs_are_refused_on_their_headers() {
     for req in [
         "POST /pair-setup RTSP/1.0\r\nCSeq: 1\r\nContent-Length: 5000\r\n\r\n",
         "ANNOUNCE rtsp://x/1 RTSP/1.0\r\nCSeq: 1\r\nContent-Type: application/sdp\r\nContent-Length: 33554432\r\n\r\n",
-        "SET_PARAMETER rtsp://x/1 RTSP/1.0\r\nCSeq: 1\r\nContent-Type: image/jpeg\r\nContent-Length: 2000000\r\n\r\n",
+        // the default artwork limit, 8 MiB, and a byte
+        "SET_PARAMETER rtsp://x/1 RTSP/1.0\r\nCSeq: 1\r\nContent-Type: image/jpeg\r\nContent-Length: 8388609\r\n\r\n",
     ] {
         let mut stream = TcpStream::connect(format!("127.0.0.1:{port}"))
             .await
@@ -480,6 +481,89 @@ async fn bodies_larger_than_the_route_needs_are_refused_on_their_headers() {
         assert!(resp.contains("Connection: close"));
     }
     server.stop().await;
+}
+
+/// Sends SET_PARAMETER announcing cover art of `len` bytes (and the art, if `send_art`), then OPTIONS
+/// on the same connection; returns both responses' status lines.
+async fn coverart_then_options(port: u16, len: usize, send_art: bool) -> (String, String) {
+    let mut stream = tokio::io::BufReader::new(
+        TcpStream::connect(format!("127.0.0.1:{port}"))
+            .await
+            .unwrap(),
+    );
+    let head = format!(
+        "SET_PARAMETER rtsp://127.0.0.1/1 RTSP/1.0\r\nCSeq: 1\r\nContent-Type: image/jpeg\r\nContent-Length: {len}\r\n\r\n"
+    );
+    stream.get_mut().write_all(head.as_bytes()).await.unwrap();
+    if send_art {
+        stream
+            .get_mut()
+            .write_all(&vec![0xa5u8; len])
+            .await
+            .unwrap();
+    }
+    let first = read_status_and_headers(&mut stream).await;
+    let _ = stream
+        .get_mut()
+        .write_all(b"OPTIONS * RTSP/1.0\r\nCSeq: 2\r\n\r\n")
+        .await;
+    let second = read_status_and_headers(&mut stream).await;
+    (first, second)
+}
+
+/// The status line of the next response, or "" at the end of the connection; its headers are read
+/// and dropped (these responses have no body).
+async fn read_status_and_headers(stream: &mut tokio::io::BufReader<TcpStream>) -> String {
+    let mut status = String::new();
+    if stream.read_line(&mut status).await.unwrap_or(0) == 0 {
+        return String::new();
+    }
+    let mut line = String::new();
+    while stream.read_line(&mut line).await.unwrap_or(0) > 2 {
+        line.clear();
+    }
+    status.trim_end().to_string()
+}
+
+/// Cover art up to the artwork limit is taken and the connection goes on: the session a sender's
+/// playback uses is not cut by its artwork. Above it, the request is refused and the connection
+/// closed. The limit is the builder's, or 8 MiB, and at most 32 MiB.
+#[tokio::test]
+#[serial]
+async fn coverart_up_to_the_artwork_limit_keeps_the_connection() {
+    const MIB: usize = 1024 * 1024;
+    for (limit, expected) in [
+        (None, 8 * MIB),
+        (Some(64 * 1024), 64 * 1024),
+        (Some(usize::MAX), 32 * MIB),
+    ] {
+        let mut builder = RaopServer::builder()
+            .name("IntegrationTest")
+            .hwaddr([0x00, 0x11, 0x22, 0x33, 0x44, 0x55])
+            .port(0);
+        if let Some(limit) = limit {
+            builder = builder.max_artwork_size(limit);
+        }
+        let mut server = builder.build(empty_handler()).unwrap();
+        server.start().await.unwrap();
+        let port = server.service_info().port;
+
+        let (art, options) = coverart_then_options(port, expected, true).await;
+        assert_eq!(art, "RTSP/1.0 200 OK", "{limit:?}: {expected} bytes");
+        assert_eq!(
+            options, "RTSP/1.0 200 OK",
+            "{limit:?}: OPTIONS after the art"
+        );
+
+        // refused on its headers: the art isn't sent (unread data at the close would reset the connection)
+        let (art, options) = coverart_then_options(port, expected + 1, false).await;
+        assert_eq!(
+            art, "RTSP/1.0 400 Bad Request",
+            "{limit:?}: {expected} + 1 bytes"
+        );
+        assert_eq!(options, "", "{limit:?}: the connection is closed");
+        server.stop().await;
+    }
 }
 
 #[tokio::test]

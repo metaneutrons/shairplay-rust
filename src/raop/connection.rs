@@ -36,6 +36,8 @@ pub(crate) struct RaopShared {
     /// This does not size or bound the receiver's local PCM buffer.
     #[cfg_attr(not(feature = "ap2"), allow(dead_code))]
     pub(crate) audio_buffer_size: u32,
+    /// The largest body a request carrying cover art may have (`RaopServerBuilder::max_artwork_size`).
+    pub(crate) max_artwork_size: usize,
     #[cfg(feature = "ap2")]
     pub(crate) pin: Option<String>,
     #[cfg(feature = "video")]
