@@ -485,12 +485,6 @@ fn setup_initial(conn: &mut RaopConnection, dict: &plist::Dictionary) -> Option<
         .get("isRemoteControlOnly")
         .and_then(|v| v.as_boolean())
         .unwrap_or(false);
-    if !is_rc_only && !conn.session {
-        conn.session = true;
-        conn.shared
-            .handler
-            .on_session_setup(&conn.remote_socket.ip().to_string());
-    }
 
     if is_rc_only {
         tracing::info!("Remote Control Only connection - establishing event channel");
@@ -625,6 +619,8 @@ fn setup_initial(conn: &mut RaopConnection, dict: &plist::Dictionary) -> Option<
         plist::Value::Integer((timing_port as u64).into()),
     );
 
+    // a remote-control-only connection returned above: this one is a session's, set up
+    conn.session_started();
     Some(resp_dict)
 }
 

@@ -516,7 +516,7 @@ async fn fp_setup_returns_142_bytes() {
 }
 
 #[derive(Default)]
-struct SessionEvents(Mutex<Vec<&'static str>>);
+struct SessionEvents(Mutex<Vec<&'static str>>, std::sync::atomic::AtomicUsize);
 
 impl AudioHandler for SessionEvents {
     fn audio_init(&self, _format: AudioFormat) -> Box<dyn AudioSession> {
@@ -527,6 +527,9 @@ impl AudioHandler for SessionEvents {
     }
     fn on_session_end(&self, _addr: &str) {
         self.0.lock().unwrap().push("end");
+    }
+    fn on_client_disconnected(&self, _addr: &str) {
+        self.1.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     }
 }
 
@@ -545,6 +548,24 @@ impl SessionEvents {
         }
         assert_eq!(self.seen(), expected);
     }
+
+    /// Waits until `n` connections have closed on the server's side.
+    async fn wait_for_disconnects(&self, n: usize) {
+        for _ in 0..200 {
+            if self.1.load(std::sync::atomic::Ordering::SeqCst) >= n {
+                return;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        panic!("{n} connections did not close");
+    }
+}
+
+fn announce(sdp: &str) -> String {
+    format!(
+        "ANNOUNCE rtsp://127.0.0.1/stream RTSP/1.0\r\nCSeq: 2\r\nContent-Type: application/sdp\r\nContent-Length: {}\r\n\r\n{sdp}",
+        sdp.len()
+    )
 }
 
 async fn start_session_server() -> (RaopServer, u16, Arc<SessionEvents>) {
@@ -582,10 +603,7 @@ async fn session_hooks_follow_the_connection_that_announced() {
         "m=audio 0 RTP/AVP 96\r\n",
         "a=rtpmap:96 L16/44100/2\r\n",
     );
-    let announce = format!(
-        "ANNOUNCE rtsp://127.0.0.1/stream RTSP/1.0\r\nCSeq: 2\r\nContent-Type: application/sdp\r\nContent-Length: {}\r\n\r\n{sdp}",
-        sdp.len()
-    );
+    let announce = announce(sdp);
     let mut sender = TcpStream::connect(format!("127.0.0.1:{port}"))
         .await
         .unwrap();
@@ -595,6 +613,38 @@ async fn session_hooks_follow_the_connection_that_announced() {
 
     drop(sender);
     events.wait_for(&["setup", "end"]).await;
+    server.stop().await;
+}
+
+/// An ANNOUNCE that is refused (here an audio format the receiver doesn't decode) starts no
+/// session: neither hook is called, also when the connection then closes.
+#[tokio::test]
+#[serial]
+async fn session_hooks_skip_a_refused_announce() {
+    let (mut server, port, events) = start_session_server().await;
+    let sdp = concat!(
+        "v=0\r\n",
+        "o=Test 0 0 IN IP4 127.0.0.1\r\n",
+        "s=AirTunes\r\n",
+        "c=IN IP4 127.0.0.1\r\n",
+        "t=0 0\r\n",
+        "m=audio 0 RTP/AVP 96\r\n",
+        "a=rtpmap:96 NOTACODEC/44100/2\r\n",
+    );
+    let mut sender = TcpStream::connect(format!("127.0.0.1:{port}"))
+        .await
+        .unwrap();
+    send_rtsp(&mut sender, &announce(sdp)).await;
+    let mut rest = [0u8; 64];
+    let closed = tokio::time::timeout(std::time::Duration::from_secs(2), sender.read(&mut rest));
+    assert_eq!(
+        closed.await.unwrap().unwrap(),
+        0,
+        "the server closes the connection"
+    );
+
+    events.wait_for_disconnects(1).await;
+    assert!(events.seen().is_empty(), "{:?}", events.seen());
     server.stop().await;
 }
 

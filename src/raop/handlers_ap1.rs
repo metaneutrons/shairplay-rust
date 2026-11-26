@@ -233,6 +233,20 @@ pub(crate) fn handle_options(
     None
 }
 
+impl RaopConnection {
+    /// The connection's setup succeeded (AirPlay 1's ANNOUNCE, AirPlay 2's initial SETUP): it is the
+    /// session's, and the handler hears of it once (`AudioHandler::on_session_setup`). Its close is
+    /// the session's end (`on_session_end`).
+    pub(crate) fn session_started(&mut self) {
+        if !self.session {
+            self.session = true;
+            self.shared
+                .handler
+                .on_session_setup(&self.remote_socket.ip().to_string());
+        }
+    }
+}
+
 /// RTSP ANNOUNCE: parse SDP, extract AES keys, create RTP session.
 pub(crate) fn handle_announce(
     conn: &mut RaopConnection,
@@ -241,12 +255,6 @@ pub(crate) fn handle_announce(
 ) -> Option<Vec<u8>> {
     let data = request.data()?;
     let sdp_str = std::str::from_utf8(data).ok()?;
-    if !conn.session {
-        conn.session = true;
-        conn.shared
-            .handler
-            .on_session_setup(&conn.remote_socket.ip().to_string());
-    }
     let sdp = Sdp::parse(sdp_str);
 
     let remote = sdp.connection()?;
@@ -350,6 +358,8 @@ pub(crate) fn handle_announce(
                 format!("ANNOUNCE rtpmap={rtpmap} fmtp={fmtp}"),
             )));
         response.set_disconnect(true);
+    } else {
+        conn.session_started();
     }
     None
 }
