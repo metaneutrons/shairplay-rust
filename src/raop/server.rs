@@ -479,8 +479,7 @@ impl RaopServer {
     /// Stop the server: unregister mDNS services and close all listeners.
     pub async fn stop(&mut self) {
         if let Some(mut mdns) = self.mdns.take() {
-            mdns.unregister_raop();
-            mdns.unregister_airplay();
+            mdns.unregister_all().await;
         }
         self.httpd.stop().await;
     }
