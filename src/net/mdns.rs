@@ -510,6 +510,51 @@ mod goodbye_tests {
         );
     }
 
+    const GOODBYE_CHILD: &str = "SHAIRPLAY_TEST_GOODBYE_CHILD";
+
+    /// The child of `goodbye_is_out_when_unregister_all_returns`: registers `name`, and on a line
+    /// from stdin unregisters it and exits at once.
+    fn goodbye_child(name: &str) -> ! {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let mut mdns = MdnsService::new(None).unwrap();
+            let info = AirPlayServiceInfo::new(name, 5000, &[2, 0, 0, 0, 0, 1], false);
+            mdns.register_raop(&info).unwrap();
+            let mut line = String::new();
+            std::io::stdin().read_line(&mut line).unwrap();
+            mdns.unregister_all().await;
+        });
+        std::process::exit(0);
+    }
+
+    /// Waits up to 5 s for `name` to be resolved (`removed` false) or removed (`removed` true).
+    fn browse_for(
+        events: &mdns_sd::Receiver<mdns_sd::ServiceEvent>,
+        name: &str,
+        removed: bool,
+    ) -> bool {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while let Ok(event) = events.recv_deadline(deadline) {
+            match event {
+                mdns_sd::ServiceEvent::ServiceResolved(info)
+                    if !removed && info.get_fullname().contains(name) =>
+                {
+                    return true;
+                }
+                mdns_sd::ServiceEvent::ServiceRemoved(_, fullname)
+                    if removed && fullname.contains(name) =>
+                {
+                    return true;
+                }
+                _ => {}
+            }
+        }
+        false
+    }
+
     /// `unregister_all` returns once the goodbyes are out, so a process that exits right after it
     /// still has browsers drop its records (they would keep them for the records' TTL, 2 min). The
     /// service is registered by a child process, this test binary again, which exits as soon as
@@ -518,62 +563,31 @@ mod goodbye_tests {
     fn goodbye_is_out_when_unregister_all_returns() {
         use std::io::Write;
 
-        const CHILD: &str = "SHAIRPLAY_TEST_GOODBYE_CHILD";
-        if let Ok(name) = std::env::var(CHILD) {
-            let runtime = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .unwrap();
-            runtime.block_on(async {
-                let mut mdns = MdnsService::new(None).unwrap();
-                let info = AirPlayServiceInfo::new(&name, 5000, &[2, 0, 0, 0, 0, 1], false);
-                mdns.register_raop(&info).unwrap();
-                let mut line = String::new();
-                std::io::stdin().read_line(&mut line).unwrap();
-                mdns.unregister_all().await;
-                std::process::exit(0);
-            });
+        if let Ok(name) = std::env::var(GOODBYE_CHILD) {
+            goodbye_child(&name);
         }
-
         let name = format!("GoodbyeTest{}", std::process::id());
         let browser = mdns_sd::ServiceDaemon::new().unwrap();
         let events = browser.browse("_raop._tcp.local.").unwrap();
-        let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+        // the test binary, as cargo started it
+        let test_binary = std::env::args_os().next().unwrap();
+        let mut child = std::process::Command::new(test_binary)
             .args([
                 "--exact",
                 "net::mdns::goodbye_tests::goodbye_is_out_when_unregister_all_returns",
                 "--nocapture",
             ])
-            .env(CHILD, &name)
+            .env(GOODBYE_CHILD, &name)
             .stdin(std::process::Stdio::piped())
             .spawn()
             .unwrap();
-        let wait_for = |removed: bool| {
-            let deadline = Instant::now() + Duration::from_secs(5);
-            while let Ok(event) = events.recv_deadline(deadline) {
-                match event {
-                    mdns_sd::ServiceEvent::ServiceResolved(info)
-                        if !removed && info.get_fullname().contains(&name) =>
-                    {
-                        return true;
-                    }
-                    mdns_sd::ServiceEvent::ServiceRemoved(_, fullname)
-                        if removed && fullname.contains(&name) =>
-                    {
-                        return true;
-                    }
-                    _ => {}
-                }
-            }
-            false
-        };
 
-        let seen = wait_for(false);
+        let seen = browse_for(&events, &name, false);
         child.stdin.take().unwrap().write_all(b"stop\n").unwrap();
         assert!(child.wait().unwrap().success());
         assert!(seen, "the child's service was never resolved");
         assert!(
-            wait_for(true),
+            browse_for(&events, &name, true),
             "no goodbye from the child, which exited when unregister_all returned"
         );
         let _ = browser.shutdown();
