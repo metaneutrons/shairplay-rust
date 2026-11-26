@@ -205,13 +205,16 @@ struct PredictorHeader {
 
 /// Parse the leading subframe header shared by mono and stereo elements.
 /// Updates `output_samples`/`output_size` when an explicit frame size is present
-/// and returns `(uncompressed_bytes, is_not_compressed)`.
+/// and returns `(uncompressed_bytes, is_not_compressed)`. Returns `None` for a
+/// frame whose explicit size is larger than `max_samples`, the stream's frame
+/// length the decode buffers are sized from.
 fn parse_subframe_header(
     reader: &mut BitReader,
     output_samples: &mut usize,
     output_size: &mut usize,
+    max_samples: usize,
     bytes_per_sample: usize,
-) -> (u32, u32) {
+) -> Option<(u32, u32)> {
     reader.readbits(4);
     reader.readbits(12);
     let has_size = reader.readbits(1);
@@ -219,11 +222,20 @@ fn parse_subframe_header(
     let is_not_compressed = reader.readbits(1);
 
     if has_size != 0 {
-        *output_samples = reader.readbits(32) as usize;
-        *output_size = *output_samples * bytes_per_sample;
+        let samples = reader.readbits(32) as usize;
+        if samples > max_samples {
+            tracing::warn!(
+                samples,
+                max = max_samples,
+                "ALAC frame larger than the stream's frame length: dropped"
+            );
+            return None;
+        }
+        *output_samples = samples;
+        *output_size = samples.checked_mul(bytes_per_sample)?;
     }
 
-    (uncompressed_bytes, is_not_compressed)
+    Some((uncompressed_bytes, is_not_compressed))
 }
 
 /// Read one channel's predictor header (type/quant/rice-modifier/coefficients).
@@ -566,7 +578,10 @@ impl AlacDecoder {
         let mut reader = BitReader::new(input);
         let mut output_samples = self.max_samples_per_frame as usize;
         let channels = reader.readbits(3);
-        let mut output_size = output_samples * self.bytes_per_sample as usize;
+        let Some(mut output_size) = output_samples.checked_mul(self.bytes_per_sample as usize)
+        else {
+            return 0;
+        };
 
         match channels {
             0 => self.decode_mono(&mut reader, output, &mut output_samples, &mut output_size),
@@ -585,7 +600,8 @@ impl AlacDecoder {
             return None;
         }
 
-        let max_output_size = self.max_samples_per_frame as usize * self.bytes_per_sample as usize;
+        let max_output_size =
+            (self.max_samples_per_frame as usize).checked_mul(self.bytes_per_sample as usize)?;
         let mut pcm_buf = vec![0u8; max_output_size];
         let len = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             self.decode_frame(input, &mut pcm_buf)
@@ -667,26 +683,21 @@ impl AlacDecoder {
         output_samples: &mut usize,
         output_size: &mut usize,
     ) {
-        let (uncompressed_bytes, is_not_compressed) = parse_subframe_header(
+        // A frame header may carry its own sample count; one larger than the stream's frame length
+        // (the SETUP's fmtp, which sized the decode buffers) drops the frame.
+        let header = parse_subframe_header(
             reader,
             output_samples,
             output_size,
+            self.max_samples_per_frame as usize,
             self.bytes_per_sample as usize,
         );
-        if *output_samples == 0 || *output_samples > self.max_samples_per_frame as usize {
-            // a frame header may carry its own sample count: one larger than the stream's frame length would run
-            // past the decode buffers (sized from the SETUP's fmtp), so the frame is dropped
-            if *output_samples != 0 {
-                tracing::warn!(
-                    samples = *output_samples,
-                    max = self.max_samples_per_frame,
-                    "ALAC frame larger than the stream's frame length: dropped"
-                );
-            }
+        let Some((uncompressed_bytes, is_not_compressed)) = header.filter(|_| *output_samples != 0)
+        else {
             *output_size = 0;
             *output_samples = 0;
             return;
-        }
+        };
 
         let readsamplesize = self.sample_size_config as u32 - uncompressed_bytes * 8;
 
@@ -754,26 +765,21 @@ impl AlacDecoder {
         output_samples: &mut usize,
         output_size: &mut usize,
     ) {
-        let (uncompressed_bytes, is_not_compressed) = parse_subframe_header(
+        // A frame header may carry its own sample count; one larger than the stream's frame length
+        // (the SETUP's fmtp, which sized the decode buffers) drops the frame.
+        let header = parse_subframe_header(
             reader,
             output_samples,
             output_size,
+            self.max_samples_per_frame as usize,
             self.bytes_per_sample as usize,
         );
-        if *output_samples == 0 || *output_samples > self.max_samples_per_frame as usize {
-            // a frame header may carry its own sample count: one larger than the stream's frame length would run
-            // past the decode buffers (sized from the SETUP's fmtp), so the frame is dropped
-            if *output_samples != 0 {
-                tracing::warn!(
-                    samples = *output_samples,
-                    max = self.max_samples_per_frame,
-                    "ALAC frame larger than the stream's frame length: dropped"
-                );
-            }
+        let Some((uncompressed_bytes, is_not_compressed)) = header.filter(|_| *output_samples != 0)
+        else {
             *output_size = 0;
             *output_samples = 0;
             return;
-        }
+        };
 
         let readsamplesize = self.sample_size_config as u32 - uncompressed_bytes * 8 + 1;
         let mut interlacing_shift = 0u8;
@@ -1002,31 +1008,34 @@ mod decode_tests {
     }
 
     /// A frame's header can carry its own sample count: one past the stream's frame length
-    /// must not reach the decode buffers, which are sized from that length.
+    /// must not reach the decode buffers, which are sized from that length, nor the output size
+    /// arithmetic (`u32::MAX` samples times the bytes per sample wraps a 32-bit `usize`).
     #[test]
     fn frame_longer_than_the_stream_is_dropped() {
         for channels in [1u32, 2] {
-            let mut dec = AlacDecoder::new(16, channels as i32);
-            dec.set_info(&config_16(4));
+            for samples in [5, u32::MAX] {
+                let mut dec = AlacDecoder::new(16, channels as i32);
+                dec.set_info(&config_16(4));
 
-            let mut w = BitWriter::new();
-            w.put(channels - 1, 3);
-            w.put(0, 4);
-            w.put(0, 12);
-            w.put(1, 1); // has_size = 1
-            w.put(0, 2); // uncompressed_bytes = 0
-            w.put(1, 1); // is_not_compressed = 1
-            w.put(5, 32); // one sample more than the stream's 4
-            for _ in 0..5 * channels {
-                w.put(0, 16);
+                let mut w = BitWriter::new();
+                w.put(channels - 1, 3);
+                w.put(0, 4);
+                w.put(0, 12);
+                w.put(1, 1); // has_size = 1
+                w.put(0, 2); // uncompressed_bytes = 0
+                w.put(1, 1); // is_not_compressed = 1
+                w.put(samples, 32); // more samples than the stream's 4
+                for _ in 0..5 * channels {
+                    w.put(0, 16);
+                }
+
+                let mut out = [0u8; 64];
+                assert_eq!(
+                    dec.decode_frame(&w.bytes, &mut out),
+                    0,
+                    "{channels} channels, {samples} samples"
+                );
             }
-
-            let mut out = [0u8; 64];
-            assert_eq!(
-                dec.decode_frame(&w.bytes, &mut out),
-                0,
-                "{channels} channels"
-            );
         }
     }
 
