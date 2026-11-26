@@ -317,21 +317,11 @@ impl MdnsService {
         Ok(())
     }
 
-    /// Unregister the _raop._tcp mDNS service.
-    pub(crate) fn unregister_raop(&mut self) {
+    /// Unregister the services. Bonjour's daemon, mDNSResponder, sends their goodbyes itself,
+    /// also after this process exits, so there is nothing to wait for.
+    pub(crate) async fn unregister_all(&mut self) {
         self._raop_regs.clear();
-    }
-    /// Unregister the _airplay._tcp mDNS service.
-    pub(crate) fn unregister_airplay(&mut self) {
         self._airplay_regs.clear();
-    }
-}
-
-#[cfg(target_os = "macos")]
-impl Drop for MdnsService {
-    fn drop(&mut self) {
-        self.unregister_raop();
-        self.unregister_airplay();
     }
 }
 
@@ -430,27 +420,177 @@ impl MdnsService {
         Ok(())
     }
 
-    /// Unregister the _raop._tcp mDNS service.
-    pub(crate) fn unregister_raop(&mut self) {
-        if let Some(name) = self.raop_fullname.take() {
-            let _ = self.daemon.unregister(&name);
-        }
+    /// Unregister the services and wait until the daemon has sent their goodbyes, so that a
+    /// process exiting right after stopping the server still tells browsers' caches the records
+    /// are gone. Both unregisters are asked for first; the daemon acknowledges each after the
+    /// service's first goodbye, and the acknowledgements are awaited together, for at most
+    /// [`GOODBYE_TIMEOUT`].
+    pub(crate) async fn unregister_all(&mut self) {
+        let names = [self.raop_fullname.take(), self.airplay_fullname.take()];
+        let acks: Vec<_> = names
+            .into_iter()
+            .flatten()
+            .filter_map(|name| self.daemon.unregister(&name).ok())
+            .map(|ack| {
+                move |deadline| {
+                    let _ = ack.recv_deadline(deadline);
+                }
+            })
+            .collect();
+        wait_until_all(acks, GOODBYE_TIMEOUT).await;
     }
+}
 
-    /// Unregister the _airplay._tcp mDNS service.
-    pub(crate) fn unregister_airplay(&mut self) {
-        if let Some(name) = self.airplay_fullname.take() {
-            let _ = self.daemon.unregister(&name);
-        }
+/// How long stopping waits for the daemon to send the services' goodbyes, for all of them together.
+#[cfg(not(target_os = "macos"))]
+const GOODBYE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// Runs blocking `waits`, each given one deadline `timeout` from now, on Tokio's blocking pool, and
+/// awaits them: the runtime's workers go on with other tasks however long the waits take.
+#[cfg(not(target_os = "macos"))]
+async fn wait_until_all<F>(waits: Vec<F>, timeout: std::time::Duration)
+where
+    F: FnOnce(std::time::Instant) + Send + 'static,
+{
+    if waits.is_empty() {
+        return;
     }
+    let deadline = std::time::Instant::now() + timeout;
+    let _ = tokio::task::spawn_blocking(move || waits.into_iter().for_each(|wait| wait(deadline)))
+        .await;
 }
 
 #[cfg(not(target_os = "macos"))]
 impl Drop for MdnsService {
+    /// Stops the daemon without waiting: its exit sends the goodbyes of services still registered
+    /// (a server dropped without `stop`). Only `RaopServer::stop` waits for them.
     fn drop(&mut self) {
-        self.unregister_raop();
-        self.unregister_airplay();
         let _ = self.daemon.shutdown();
+    }
+}
+
+#[cfg(all(test, not(target_os = "macos")))]
+mod goodbye_tests {
+    use super::*;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::{Duration, Instant};
+
+    /// Acknowledgements that don't come keep only the waiting task: on a runtime with one worker,
+    /// other tasks run meanwhile, and the waits end together at one deadline.
+    #[tokio::test(flavor = "current_thread")]
+    async fn delayed_acknowledgements_leave_the_runtime_free() {
+        let ticks = Arc::new(AtomicUsize::new(0));
+        let ticker = tokio::spawn({
+            let ticks = ticks.clone();
+            async move {
+                loop {
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                    ticks.fetch_add(1, Ordering::Relaxed);
+                }
+            }
+        });
+        let never_acknowledged = |deadline| std::thread::sleep(deadline - Instant::now());
+        let start = Instant::now();
+        wait_until_all(
+            vec![never_acknowledged, never_acknowledged],
+            Duration::from_millis(300),
+        )
+        .await;
+        let waited = start.elapsed();
+        ticker.abort();
+        assert!(
+            ticks.load(Ordering::Relaxed) >= 10,
+            "other tasks ran {} times",
+            ticks.load(Ordering::Relaxed)
+        );
+        assert!(
+            waited >= Duration::from_millis(300) && waited < Duration::from_millis(550),
+            "one deadline for both: {waited:?}"
+        );
+    }
+
+    const GOODBYE_CHILD: &str = "SHAIRPLAY_TEST_GOODBYE_CHILD";
+
+    /// The child of `goodbye_is_out_when_unregister_all_returns`: registers `name`, and on a line
+    /// from stdin unregisters it and exits at once.
+    fn goodbye_child(name: &str) -> ! {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let mut mdns = MdnsService::new(None).unwrap();
+            let info = AirPlayServiceInfo::new(name, 5000, &[2, 0, 0, 0, 0, 1], false);
+            mdns.register_raop(&info).unwrap();
+            let mut line = String::new();
+            std::io::stdin().read_line(&mut line).unwrap();
+            mdns.unregister_all().await;
+        });
+        std::process::exit(0);
+    }
+
+    /// Waits up to 5 s for `name` to be resolved (`removed` false) or removed (`removed` true).
+    fn browse_for(
+        events: &mdns_sd::Receiver<mdns_sd::ServiceEvent>,
+        name: &str,
+        removed: bool,
+    ) -> bool {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while let Ok(event) = events.recv_deadline(deadline) {
+            match event {
+                mdns_sd::ServiceEvent::ServiceResolved(info)
+                    if !removed && info.get_fullname().contains(name) =>
+                {
+                    return true;
+                }
+                mdns_sd::ServiceEvent::ServiceRemoved(_, fullname)
+                    if removed && fullname.contains(name) =>
+                {
+                    return true;
+                }
+                _ => {}
+            }
+        }
+        false
+    }
+
+    /// `unregister_all` returns once the goodbyes are out, so a process that exits right after it
+    /// still has browsers drop its records (they would keep them for the records' TTL, 2 min). The
+    /// service is registered by a child process, this test binary again, which exits as soon as
+    /// `unregister_all` returns; a browser here must see the service removed.
+    #[test]
+    fn goodbye_is_out_when_unregister_all_returns() {
+        use std::io::Write;
+
+        if let Ok(name) = std::env::var(GOODBYE_CHILD) {
+            goodbye_child(&name);
+        }
+        let name = format!("GoodbyeTest{}", std::process::id());
+        let browser = mdns_sd::ServiceDaemon::new().unwrap();
+        let events = browser.browse("_raop._tcp.local.").unwrap();
+        // the test binary, as cargo started it
+        let test_binary = std::env::args_os().next().unwrap();
+        let mut child = std::process::Command::new(test_binary)
+            .args([
+                "--exact",
+                "net::mdns::goodbye_tests::goodbye_is_out_when_unregister_all_returns",
+                "--nocapture",
+            ])
+            .env(GOODBYE_CHILD, &name)
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+
+        let seen = browse_for(&events, &name, false);
+        child.stdin.take().unwrap().write_all(b"stop\n").unwrap();
+        assert!(child.wait().unwrap().success());
+        assert!(seen, "the child's service was never resolved");
+        assert!(
+            browse_for(&events, &name, true),
+            "no goodbye from the child, which exited when unregister_all returned"
+        );
+        let _ = browser.shutdown();
     }
 }
 
