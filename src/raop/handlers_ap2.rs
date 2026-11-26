@@ -619,6 +619,8 @@ fn setup_initial(conn: &mut RaopConnection, dict: &plist::Dictionary) -> Option<
         plist::Value::Integer((timing_port as u64).into()),
     );
 
+    // a remote-control-only connection returned above: this one is a session's, set up
+    conn.session_started();
     Some(resp_dict)
 }
 

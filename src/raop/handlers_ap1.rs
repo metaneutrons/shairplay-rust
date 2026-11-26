@@ -23,6 +23,8 @@ pub(crate) struct RaopConnection {
     #[allow(dead_code)] // read in AP2 event channel binding
     pub(crate) remote_addr: Vec<u8>,
     pub(crate) remote_socket: std::net::SocketAddr,
+    /// This connection started a session (`AudioHandler::on_session_setup`): its end is the session's end.
+    pub(crate) session: bool,
     pub(crate) nonce: String,
     /// Cheap shared handle to server-wide config (identity, keys, handler, settings).
     /// Replaces the ~17 fields that were previously deep-copied into every connection.
@@ -231,6 +233,20 @@ pub(crate) fn handle_options(
     None
 }
 
+impl RaopConnection {
+    /// The connection's setup succeeded (AirPlay 1's ANNOUNCE, AirPlay 2's initial SETUP): it is the
+    /// session's, and the handler hears of it once (`AudioHandler::on_session_setup`). Its close is
+    /// the session's end (`on_session_end`).
+    pub(crate) fn session_started(&mut self) {
+        if !self.session {
+            self.session = true;
+            self.shared
+                .handler
+                .on_session_setup(&self.remote_socket.ip().to_string());
+        }
+    }
+}
+
 /// RTSP ANNOUNCE: parse SDP, extract AES keys, create RTP session.
 pub(crate) fn handle_announce(
     conn: &mut RaopConnection,
@@ -342,6 +358,8 @@ pub(crate) fn handle_announce(
                 format!("ANNOUNCE rtpmap={rtpmap} fmtp={fmtp}"),
             )));
         response.set_disconnect(true);
+    } else {
+        conn.session_started();
     }
     None
 }
@@ -533,6 +551,7 @@ mod tests {
             local_addr: vec![127, 0, 0, 1],
             remote_addr: vec![127, 0, 0, 1],
             remote_socket: "127.0.0.1:5000".parse().unwrap(),
+            session: false,
             nonce: String::new(),
             shared,
         }
